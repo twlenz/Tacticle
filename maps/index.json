@@ -29,6 +29,20 @@
       }
     },
     {
+      "id": "world_war_ii_classic",
+      "name": "World War II Classic",
+      "file": "maps/world_war_ii_classic.json",
+      "territories": 128,
+      "source": "TripleA",
+      "credit": "",
+      "origin": {
+        "repo": "world_war_ii_classic",
+        "branch": "master",
+        "game": "classic.xml",
+        "map": "World War II Classic"
+      }
+    },
+    {
       "id": "world1942",
       "name": "World 1942 (Tacticle original)",
       "file": "maps/world1942.json",

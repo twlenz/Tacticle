@@ -28,6 +28,15 @@
       "difficulty": "medium"
     },
     {
+      "id": "india-s-moment",
+      "file": "puzzles/india-s-moment.json",
+      "title": "India's Moment",
+      "map": "world_war_ii_classic",
+      "ruleset": "1942",
+      "maxTurns": 1,
+      "difficulty": "medium"
+    },
+    {
       "id": "karelian-front",
       "file": "puzzles/karelian-front.json",
       "title": "Karelian Front",

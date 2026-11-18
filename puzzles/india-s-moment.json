@@ -1,0 +1,117 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "india-s-moment",
+  "title": "India's Moment",
+  "description": "As United Kingdom, take French Indo China and Anglo Sudan Egypt from Japan and Germany within 1 turn, and withstand the counterattack.",
+  "author": "Tommy",
+  "map": "world_war_ii_classic",
+  "ruleset": "1942",
+  "difficulty": "medium",
+  "playable": [
+    "anglo_sudan_egypt",
+    "french_indo_china",
+    "india",
+    "kwangtung",
+    "libya",
+    "persia",
+    "syria_jordan"
+  ],
+  "maxTurns": 1,
+  "winCheck": "roundEnd",
+  "income": false,
+  "purchase": false,
+  "powers": {
+    "United Kingdom": {
+      "team": "Allies",
+      "controller": "human",
+      "money": 30
+    },
+    "Japan": {
+      "team": "Axis",
+      "controller": "ai",
+      "money": 25
+    },
+    "Germany": {
+      "team": "Axis",
+      "controller": "ai",
+      "money": 32
+    }
+  },
+  "turnOrder": [
+    "United Kingdom",
+    "Japan",
+    "Germany"
+  ],
+  "setup": {
+    "india": {
+      "units": {
+        "United Kingdom": {
+          "infantry": 2,
+          "fighter": 1,
+          "tank": 1
+        }
+      },
+      "owner": "United Kingdom"
+    },
+    "french_indo_china": {
+      "units": {
+        "Japan": {
+          "infantry": 2,
+          "fighter": 1
+        }
+      },
+      "owner": "Japan"
+    },
+    "syria_jordan": {
+      "units": {
+        "United Kingdom": {
+          "infantry": 2
+        }
+      },
+      "owner": "United Kingdom"
+    },
+    "kwangtung": {
+      "units": {
+        "Japan": {
+          "infantry": 2
+        }
+      },
+      "owner": "Japan"
+    },
+    "anglo_sudan_egypt": {
+      "units": {
+        "Germany": {
+          "infantry": 2
+        }
+      },
+      "owner": "Germany"
+    },
+    "persia": {
+      "units": {
+        "United Kingdom": {
+          "infantry": 2,
+          "tank": 1
+        }
+      },
+      "owner": "United Kingdom"
+    },
+    "libya": {
+      "units": {
+        "Germany": {
+          "infantry": 2
+        }
+      },
+      "owner": "Germany"
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "french_indo_china",
+        "anglo_sudan_egypt"
+      ]
+    }
+  ]
+}
