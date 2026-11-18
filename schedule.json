@@ -1,7 +1,12 @@
 {
   "epoch": "2026-11-18",
   "days": {
-    "2026-11-18": "puzzles/eastern-sample.json",
-    "2026-11-19": "puzzles/auto-test-1.json"
+    "2026-11-18": "puzzles/leningrad-pocket.json",
+    "2026-11-19": "puzzles/desert-sweep.json",
+    "2026-11-20": "puzzles/yellow-river.json",
+    "2026-11-21": "puzzles/ukraine-counterstroke.json",
+    "2026-11-22": "puzzles/fezzan-column.json",
+    "2026-11-23": "puzzles/moscow-gambit.json",
+    "2026-11-24": "puzzles/red-river.json"
   }
 }

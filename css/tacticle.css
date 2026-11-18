@@ -4,7 +4,7 @@
   --ocean: #a9cfe3; --sea: #b5d7e8; --sea-line: #6d9bb8; --lake: #a9cfe3;
   --neutral: #e5dcc6; --inactive-land: #e9e5dc; --inactive-hatch: #ddd7ca; --inactive-sea: #d6e6ee;
   --decor: #ddd6c4; --border: #2d2a24; --label: #1b1914; --label-halo: #fffdf8cc;
-  --hl-move: #ffffffb0; --hl-attack: #ff5a36; --hl-sel: #ffd23f; --obj: #ffcc00;
+  --hl-move: #ffffffb0; --hl-attack: #ff5a36; --hl-sel: #ffd23f; --obj: #ffcc00; --obj-label: #7a5200;
   --shadow: 0 6px 24px #0002; --radius: 12px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: light;
@@ -14,7 +14,7 @@
     --bg: #17191c; --panel: #212428; --ink: #ece8df; --muted: #a29b8e; --line: #3a3e44;
     --ocean: #2d4a5c; --sea: #345467; --sea-line: #5f8aa3; --lake: #2d4a5c;
     --inactive-land: #3a3c3f; --inactive-hatch: #333538; --inactive-sea: #2b3a44; --decor: #45474a;
-    --neutral: #8c8574; --border: #111; --label: #fff; --label-halo: #000a; --shadow: 0 6px 24px #0008;
+    --neutral: #8c8574; --border: #111; --label: #fff; --label-halo: #000a; --shadow: 0 6px 24px #0008; --obj-label: #ffd23f;
     color-scheme: dark;
   }
 }
@@ -22,7 +22,7 @@
   --bg: #17191c; --panel: #212428; --ink: #ece8df; --muted: #a29b8e; --line: #3a3e44;
   --ocean: #2d4a5c; --sea: #345467; --sea-line: #5f8aa3; --lake: #2d4a5c;
   --inactive-land: #3a3c3f; --inactive-hatch: #333538; --inactive-sea: #2b3a44; --decor: #45474a;
-  --neutral: #8c8574; --border: #111; --label: #fff; --label-halo: #000a; --shadow: 0 6px 24px #0008;
+  --neutral: #8c8574; --border: #111; --label: #fff; --label-halo: #000a; --shadow: 0 6px 24px #0008; --obj-label: #ffd23f;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -85,7 +85,7 @@ button.small { padding: 3px 8px; font-size: 13px; }
 .tmap .hit { fill: transparent; }
 .tmap .tlabel { text-anchor: middle; fill: var(--label); paint-order: stroke; stroke: var(--label-halo); stroke-width: .28em; font-weight: 600; pointer-events: none; }
 .tmap .tlabel.sea { font-style: italic; font-weight: 500; fill: #1f4d68; stroke: #ffffffaa; }
-.tmap .tlabel.obj { fill: #7a5200; }
+.tmap .tlabel.obj { fill: var(--obj-label); }
 .tmap .chip { cursor: pointer; }
 .tmap .chip .chipbg { stroke: #0007; stroke-width: .6; }
 .tmap .chip.dim { opacity: .45; }

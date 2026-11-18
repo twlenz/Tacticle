@@ -472,17 +472,18 @@
   function tabPowers(el) {
     const sc = A.sc;
     const playLand = sc.playable.filter((id) => A.T[id] && A.T[id].type === 'land');
-    const rows = (sc.turnOrder || []).filter((p) => sc.powers[p]).map((p, i) => {
+    const capOpts = (p, pw) => `<option value="">${A.map.territories.find((t) => t.capital === p) ? 'Map default' : 'None'}</option><option value="__none" ${pw.capital === null ? 'selected' : ''}>No capital</option>${playLand.map((id) => `<option value="${id}" ${pw.capital === id ? 'selected' : ''}>${esc(A.T[id].name)}</option>`).join('')}`;
+    const cards = (sc.turnOrder || []).filter((p) => sc.powers[p]).map((p, i) => {
       const pw = sc.powers[p];
-      return `<tr><td><span class="swatch" style="background:${powerInfo(p).color}"></span></td><td><b>${esc(p)}</b></td>
-        <td><select data-pw="${esc(p)}" data-k="controller"><option value="human" ${pw.controller === 'human' ? 'selected' : ''}>Player</option><option value="ai" ${pw.controller !== 'human' ? 'selected' : ''}>Computer</option></select></td>
-        <td><select data-pw="${esc(p)}" data-k="team"><option ${pw.team === 'Axis' ? 'selected' : ''}>Axis</option><option ${pw.team === 'Allies' ? 'selected' : ''}>Allies</option></select></td>
-        <td style="width:62px"><input type="number" min="0" data-pw="${esc(p)}" data-k="money" value="${pw.money || 0}" title="Starting IPCs"></td>
-        <td><button class="small" data-up="${i}" title="Earlier in turn order">↑</button><button class="small" data-del="${esc(p)}" title="Remove">✕</button></td></tr>
-        <tr><td></td><td colspan="5"><select data-pw="${esc(p)}" data-k="capital" style="font-size:12px"><option value="">Capital: ${A.map.territories.find((t) => t.capital === p) ? 'map default' : 'none'}</option><option value="__none" ${pw.capital === null ? 'selected' : ''}>No capital</option>${playLand.map((id) => `<option value="${id}" ${pw.capital === id ? 'selected' : ''}>Capital: ${esc(A.T[id].name)}</option>`).join('')}</select></td></tr>`;
+      return `<div class="objbox"><div class="row"><span class="swatch" style="background:${powerInfo(p).color}"></span><b>${i + 1}. ${esc(p)}</b><div class="grow"></div>
+          <button class="small" data-up="${i}" title="Earlier in turn order" ${i ? '' : 'disabled'}>↑</button><button class="small" data-del="${esc(p)}" title="Remove">✕</button></div>
+        <div class="two">${field('Played by', `<select data-pw="${esc(p)}" data-k="controller"><option value="human" ${pw.controller === 'human' ? 'selected' : ''}>Player</option><option value="ai" ${pw.controller !== 'human' ? 'selected' : ''}>Computer</option></select>`)}
+          ${field('Team', `<select data-pw="${esc(p)}" data-k="team"><option ${pw.team === 'Axis' ? 'selected' : ''}>Axis</option><option ${pw.team === 'Allies' ? 'selected' : ''}>Allies</option></select>`)}
+          ${field('Starting IPCs', `<input type="number" min="0" data-pw="${esc(p)}" data-k="money" value="${pw.money || 0}">`)}
+          ${field('Capital', `<select data-pw="${esc(p)}" data-k="capital">${capOpts(p, pw)}</select>`)}</div></div>`;
     }).join('');
-    el.innerHTML = `<p class="hint">Rows are in turn order. The player controls every “Player” power; they must share a team. Money is each power's starting IPCs.</p>
-      <table class="ptable">${rows}</table>
+    el.innerHTML = `<p class="hint">Cards are in turn order. The player controls every “Player” power (they must share a team). Losing the capital stops income; capturing one takes its treasury.</p>
+      ${cards}
       ${field('Add a power', `<select id="pwAdd"><option value="">—</option>${A.map.powers.filter((p) => !sc.powers[p.id]).map((p) => `<option>${esc(p.id)}</option>`).join('')}</select>`)}
       <div class="actions"><button id="pwDefault">Sort by rule-set turn order</button></div>`;
     el.querySelectorAll('[data-pw]').forEach((c) => c.onchange = () => edit(() => {

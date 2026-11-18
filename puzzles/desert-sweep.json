@@ -1,0 +1,200 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "desert-sweep",
+  "title": "Desert Sweep",
+  "description": "As United Kingdom, take Cyrenaica and Tripolitania from Italy within 3 turns.",
+  "author": "Tacticle",
+  "map": "world1942",
+  "ruleset": "1942",
+  "playable": [
+    "egypt",
+    "cyrenaica",
+    "tripolitania",
+    "sudan",
+    "palestine",
+    "syria",
+    "french_equatorial_africa",
+    "sicily",
+    "albania",
+    "east_africa",
+    "eastern_mediterranean",
+    "red_sea",
+    "aegean_sea",
+    "central_mediterranean",
+    "ionian_sea",
+    "angola_basin",
+    "gulf_of_guinea",
+    "tyrrhenian_sea",
+    "adriatic_sea",
+    "somali_basin",
+    "mozambique_channel"
+  ],
+  "maxTurns": 3,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": true,
+  "powers": {
+    "United Kingdom": {
+      "team": "Allies",
+      "controller": "human",
+      "money": 4
+    },
+    "Italy": {
+      "team": "Axis",
+      "controller": "ai",
+      "money": 4
+    }
+  },
+  "turnOrder": [
+    "United Kingdom",
+    "Italy"
+  ],
+  "setup": {
+    "egypt": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "factory": 1,
+          "tank": 1
+        }
+      }
+    },
+    "cyrenaica": {
+      "owner": "Italy",
+      "units": {
+        "Italy": {
+          "infantry": 3,
+          "tank": 1
+        }
+      }
+    },
+    "tripolitania": {
+      "owner": "Italy",
+      "units": {
+        "Italy": {
+          "infantry": 3,
+          "artillery": 1,
+          "tank": 1
+        }
+      }
+    },
+    "sudan": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 3
+        }
+      }
+    },
+    "palestine": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 1,
+          "artillery": 1
+        }
+      }
+    },
+    "syria": {
+      "owner": "United Kingdom",
+      "units": {}
+    },
+    "french_equatorial_africa": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "artillery": 1,
+          "infantry": 2
+        }
+      }
+    },
+    "sicily": {
+      "owner": "Italy",
+      "units": {
+        "Italy": {
+          "infantry": 1
+        }
+      }
+    },
+    "albania": {
+      "owner": "Italy",
+      "units": {
+        "Italy": {
+          "infantry": 1
+        }
+      }
+    },
+    "east_africa": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "artillery": 1
+        }
+      }
+    },
+    "eastern_mediterranean": {
+      "units": {}
+    },
+    "red_sea": {
+      "units": {}
+    },
+    "aegean_sea": {
+      "units": {}
+    },
+    "central_mediterranean": {
+      "units": {
+        "Italy": {
+          "destroyer": 1,
+          "submarine": 1
+        }
+      }
+    },
+    "ionian_sea": {
+      "units": {}
+    },
+    "angola_basin": {
+      "units": {}
+    },
+    "gulf_of_guinea": {
+      "units": {}
+    },
+    "tyrrhenian_sea": {
+      "units": {}
+    },
+    "adriatic_sea": {
+      "units": {}
+    },
+    "somali_basin": {
+      "units": {
+        "United Kingdom": {
+          "transport": 1,
+          "infantry": 1,
+          "tank": 1,
+          "destroyer": 1
+        }
+      }
+    },
+    "mozambique_channel": {
+      "units": {}
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "cyrenaica",
+        "tripolitania"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 5060,
+    "difficulty": "medium",
+    "theater": "mediterranean",
+    "size": 10,
+    "naval": true,
+    "winRate": 0.65
+  },
+  "difficulty": "medium"
+}

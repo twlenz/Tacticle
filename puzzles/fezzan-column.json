@@ -1,0 +1,161 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "fezzan-column",
+  "title": "The Fezzan Column",
+  "description": "As France, take Tripolitania from Italy within 2 turns.",
+  "author": "Tacticle",
+  "map": "world1942",
+  "ruleset": "1942",
+  "playable": [
+    "french_equatorial_africa",
+    "cyrenaica",
+    "british_west_africa",
+    "belgian_congo",
+    "french_west_africa",
+    "sudan",
+    "tripolitania",
+    "egypt",
+    "palestine",
+    "gulf_of_guinea",
+    "guinea_coast",
+    "angola_basin",
+    "central_mediterranean",
+    "eastern_mediterranean",
+    "red_sea"
+  ],
+  "maxTurns": 2,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": true,
+  "powers": {
+    "France": {
+      "team": "Allies",
+      "controller": "human",
+      "money": 4
+    },
+    "Italy": {
+      "team": "Axis",
+      "controller": "ai",
+      "money": 4
+    }
+  },
+  "turnOrder": [
+    "France",
+    "Italy"
+  ],
+  "setup": {
+    "french_equatorial_africa": {
+      "owner": "France",
+      "units": {
+        "France": {
+          "artillery": 1,
+          "infantry": 1
+        }
+      }
+    },
+    "cyrenaica": {
+      "owner": "Italy",
+      "units": {
+        "Italy": {
+          "infantry": 2
+        }
+      }
+    },
+    "british_west_africa": {
+      "owner": "France",
+      "units": {
+        "France": {
+          "tank": 1,
+          "infantry": 2
+        }
+      }
+    },
+    "belgian_congo": {
+      "owner": "France",
+      "units": {
+        "France": {
+          "infantry": 1
+        }
+      }
+    },
+    "french_west_africa": {
+      "owner": "Italy",
+      "units": {
+        "Italy": {
+          "infantry": 2,
+          "artillery": 1
+        }
+      }
+    },
+    "sudan": {
+      "owner": "France",
+      "units": {
+        "France": {
+          "bomber": 1
+        }
+      }
+    },
+    "tripolitania": {
+      "owner": "Italy",
+      "units": {
+        "Italy": {
+          "infantry": 3,
+          "fighter": 1
+        }
+      }
+    },
+    "egypt": {
+      "owner": "France",
+      "units": {
+        "France": {
+          "factory": 1,
+          "infantry": 3
+        }
+      }
+    },
+    "palestine": {
+      "owner": "France",
+      "units": {
+        "France": {
+          "artillery": 1
+        }
+      }
+    },
+    "gulf_of_guinea": {
+      "units": {}
+    },
+    "guinea_coast": {
+      "units": {}
+    },
+    "angola_basin": {
+      "units": {}
+    },
+    "central_mediterranean": {
+      "units": {}
+    },
+    "eastern_mediterranean": {
+      "units": {}
+    },
+    "red_sea": {
+      "units": {}
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "tripolitania"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 5010,
+    "difficulty": "medium",
+    "theater": "mediterranean",
+    "size": 9,
+    "naval": false,
+    "winRate": 0.75
+  },
+  "difficulty": "medium"
+}

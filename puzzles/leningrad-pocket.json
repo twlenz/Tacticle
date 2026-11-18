@@ -1,21 +1,21 @@
 {
   "format": "tacticle-scenario",
   "version": 1,
-  "id": "eastern-sample",
-  "title": "Eastern Front: Finland & Belorussia",
-  "description": "Take Finland and Belorussia from Germany within 3 turns.",
-  "author": "generator",
+  "id": "leningrad-pocket",
+  "title": "Leningrad Pocket",
+  "description": "As Germany, take Leningrad from Soviet Union within 3 turns.",
+  "author": "Tacticle",
   "map": "world1942",
   "ruleset": "1942",
   "playable": [
-    "leningrad",
     "finland",
-    "arkhangelsk",
-    "belorussia",
-    "moscow",
-    "north_norway",
     "karelia",
+    "arkhangelsk",
     "murmansk",
+    "north_norway",
+    "leningrad",
+    "baltic_states",
+    "gorky",
     "barents_sea",
     "gulf_of_bothnia"
   ],
@@ -24,75 +24,27 @@
   "income": true,
   "purchase": true,
   "powers": {
-    "Soviet Union": {
-      "team": "Allies",
-      "controller": "human",
-      "money": 6
-    },
     "Germany": {
       "team": "Axis",
+      "controller": "human",
+      "money": 4
+    },
+    "Soviet Union": {
+      "team": "Allies",
       "controller": "ai",
-      "money": 6
+      "money": 4
     }
   },
   "turnOrder": [
-    "Soviet Union",
-    "Germany"
+    "Germany",
+    "Soviet Union"
   ],
   "setup": {
-    "leningrad": {
-      "owner": "Soviet Union",
-      "units": {
-        "Soviet Union": {
-          "factory": 1,
-          "artillery": 1,
-          "infantry": 1,
-          "tank": 1
-        }
-      }
-    },
     "finland": {
       "owner": "Germany",
       "units": {
         "Germany": {
-          "infantry": 1,
-          "tank": 3
-        }
-      }
-    },
-    "arkhangelsk": {
-      "owner": "Soviet Union",
-      "units": {
-        "Soviet Union": {
-          "infantry": 1,
-          "artillery": 1
-        }
-      }
-    },
-    "belorussia": {
-      "owner": "Germany",
-      "units": {
-        "Germany": {
-          "artillery": 3,
-          "infantry": 4
-        }
-      }
-    },
-    "moscow": {
-      "owner": "Soviet Union",
-      "units": {
-        "Soviet Union": {
-          "factory": 1,
-          "artillery": 1,
-          "infantry": 1
-        }
-      }
-    },
-    "north_norway": {
-      "owner": "Germany",
-      "units": {
-        "Germany": {
-          "artillery": 1,
+          "infantry": 2,
           "tank": 1
         }
       }
@@ -101,8 +53,15 @@
       "owner": "Soviet Union",
       "units": {
         "Soviet Union": {
-          "infantry": 3,
           "tank": 1
+        }
+      }
+    },
+    "arkhangelsk": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "infantry": 1
         }
       }
     },
@@ -110,8 +69,42 @@
       "owner": "Soviet Union",
       "units": {
         "Soviet Union": {
-          "artillery": 1,
-          "infantry": 4
+          "infantry": 1,
+          "artillery": 1
+        }
+      }
+    },
+    "north_norway": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "tank": 1,
+          "infantry": 2
+        }
+      }
+    },
+    "leningrad": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "factory": 1,
+          "infantry": 5
+        }
+      }
+    },
+    "baltic_states": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "tank": 2
+        }
+      }
+    },
+    "gorky": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "artillery": 1
         }
       }
     },
@@ -126,17 +119,17 @@
     {
       "type": "capture",
       "territories": [
-        "finland",
-        "belorussia"
+        "leningrad"
       ]
     }
   ],
   "generator": {
-    "seed": 1942,
-    "difficulty": "medium",
+    "seed": 5000,
+    "difficulty": "easy",
     "theater": "eastern",
     "size": 8,
     "naval": false,
-    "winRate": 0.6666666666666666
-  }
+    "winRate": 0.9
+  },
+  "difficulty": "easy"
 }

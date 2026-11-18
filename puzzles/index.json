@@ -1,18 +1,90 @@
 {
   "puzzles": [
     {
-      "id": "auto-test-1",
-      "file": "puzzles/auto-test-1.json",
-      "title": "Mediterranean & Africa: French Equatorial Africa",
+      "id": "channel-crossing",
+      "file": "puzzles/channel-crossing.json",
+      "title": "Channel Crossing",
+      "map": "world1942",
+      "ruleset": "1942",
+      "maxTurns": 3,
+      "difficulty": "hard"
+    },
+    {
+      "id": "desert-sweep",
+      "file": "puzzles/desert-sweep.json",
+      "title": "Desert Sweep",
+      "map": "world1942",
+      "ruleset": "1942",
+      "maxTurns": 3,
+      "difficulty": "medium"
+    },
+    {
+      "id": "east-china-landings",
+      "file": "puzzles/east-china-landings.json",
+      "title": "East China Landings",
+      "map": "world1942",
+      "ruleset": "1942",
+      "maxTurns": 4,
+      "difficulty": "medium"
+    },
+    {
+      "id": "fezzan-column",
+      "file": "puzzles/fezzan-column.json",
+      "title": "The Fezzan Column",
       "map": "world1942",
       "ruleset": "1942",
       "maxTurns": 2,
       "difficulty": "medium"
     },
     {
-      "id": "eastern-sample",
-      "file": "puzzles/eastern-sample.json",
-      "title": "Eastern Front: Finland & Belorussia",
+      "id": "home-islands",
+      "file": "puzzles/home-islands.json",
+      "title": "Home Islands",
+      "map": "world1942",
+      "ruleset": "1942",
+      "maxTurns": 4,
+      "difficulty": "easy"
+    },
+    {
+      "id": "leningrad-pocket",
+      "file": "puzzles/leningrad-pocket.json",
+      "title": "Leningrad Pocket",
+      "map": "world1942",
+      "ruleset": "1942",
+      "maxTurns": 3,
+      "difficulty": "easy"
+    },
+    {
+      "id": "moscow-gambit",
+      "file": "puzzles/moscow-gambit.json",
+      "title": "Moscow Gambit",
+      "map": "world1942",
+      "ruleset": "1942",
+      "maxTurns": 3,
+      "difficulty": "medium"
+    },
+    {
+      "id": "red-river",
+      "file": "puzzles/red-river.json",
+      "title": "Red River",
+      "map": "world1942",
+      "ruleset": "1942",
+      "maxTurns": 2,
+      "difficulty": "hard"
+    },
+    {
+      "id": "ukraine-counterstroke",
+      "file": "puzzles/ukraine-counterstroke.json",
+      "title": "Ukraine Counterstroke",
+      "map": "world1942",
+      "ruleset": "1942",
+      "maxTurns": 2,
+      "difficulty": "hard"
+    },
+    {
+      "id": "yellow-river",
+      "file": "puzzles/yellow-river.json",
+      "title": "Yellow River",
       "map": "world1942",
       "ruleset": "1942",
       "maxTurns": 3,

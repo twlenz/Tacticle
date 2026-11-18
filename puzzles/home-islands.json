@@ -1,0 +1,194 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "home-islands",
+  "title": "Home Islands",
+  "description": "As the United States, cross the sea and take the Japanese home islands within 4 turns.",
+  "author": "Tacticle",
+  "map": "world1942",
+  "ruleset": "1942",
+  "playable": [
+    "luzon",
+    "japan",
+    "mindanao",
+    "kyushu",
+    "shanghai",
+    "fujian",
+    "guangdong",
+    "karafuto",
+    "vladivostok",
+    "east_china_sea",
+    "celebes_sea",
+    "philippine_sea",
+    "south_china_sea",
+    "kuroshio",
+    "sea_of_japan",
+    "yellow_sea",
+    "kuril_basin",
+    "sea_of_okhotsk"
+  ],
+  "maxTurns": 4,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": true,
+  "powers": {
+    "United States": {
+      "team": "Allies",
+      "controller": "human",
+      "money": 6
+    },
+    "Japan": {
+      "team": "Axis",
+      "controller": "ai",
+      "money": 6
+    }
+  },
+  "turnOrder": [
+    "United States",
+    "Japan"
+  ],
+  "setup": {
+    "luzon": {
+      "owner": "United States",
+      "units": {
+        "United States": {
+          "infantry": 4,
+          "artillery": 3
+        }
+      }
+    },
+    "japan": {
+      "owner": "Japan",
+      "units": {
+        "Japan": {
+          "factory": 1,
+          "infantry": 3,
+          "artillery": 1,
+          "fighter": 1
+        }
+      }
+    },
+    "mindanao": {
+      "owner": "United States",
+      "units": {
+        "United States": {
+          "infantry": 4,
+          "artillery": 1,
+          "tank": 1
+        }
+      }
+    },
+    "kyushu": {
+      "owner": "Japan",
+      "units": {
+        "Japan": {
+          "infantry": 1
+        }
+      }
+    },
+    "shanghai": {
+      "owner": "Japan",
+      "units": {
+        "Japan": {
+          "infantry": 4
+        }
+      }
+    },
+    "fujian": {
+      "owner": "United States",
+      "units": {
+        "United States": {
+          "artillery": 6,
+          "infantry": 10,
+          "tank": 4,
+          "bomber": 1
+        }
+      }
+    },
+    "guangdong": {
+      "owner": "Japan",
+      "units": {
+        "Japan": {
+          "infantry": 4
+        }
+      }
+    },
+    "karafuto": {
+      "owner": "Japan",
+      "units": {
+        "Japan": {
+          "infantry": 1
+        }
+      }
+    },
+    "vladivostok": {
+      "owner": "United States",
+      "units": {
+        "United States": {
+          "fighter": 1,
+          "infantry": 3,
+          "tank": 1
+        }
+      }
+    },
+    "east_china_sea": {
+      "units": {}
+    },
+    "celebes_sea": {
+      "units": {
+        "United States": {
+          "transport": 4,
+          "infantry": 5,
+          "tank": 3,
+          "battleship": 1,
+          "cruiser": 1,
+          "carrier": 1,
+          "fighter": 1
+        }
+      }
+    },
+    "philippine_sea": {
+      "units": {}
+    },
+    "south_china_sea": {
+      "units": {}
+    },
+    "kuroshio": {
+      "units": {
+        "Japan": {
+          "destroyer": 1,
+          "submarine": 1
+        }
+      }
+    },
+    "sea_of_japan": {
+      "units": {}
+    },
+    "yellow_sea": {
+      "units": {}
+    },
+    "kuril_basin": {
+      "units": {}
+    },
+    "sea_of_okhotsk": {
+      "units": {}
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "japan"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 5080,
+    "difficulty": "easy",
+    "theater": "pacific",
+    "size": 9,
+    "naval": true,
+    "winRate": 0.75
+  },
+  "difficulty": "easy"
+}

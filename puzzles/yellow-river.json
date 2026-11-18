@@ -1,0 +1,153 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "yellow-river",
+  "title": "Yellow River",
+  "description": "As China, take North China and Shanghai from Japan within 3 turns.",
+  "author": "Tacticle",
+  "map": "world1942",
+  "ruleset": "1942",
+  "playable": [
+    "central_china",
+    "guangdong",
+    "shanghai",
+    "sichuan",
+    "north_china",
+    "indochina",
+    "yunnan",
+    "fujian",
+    "shaanxi",
+    "south_china_sea",
+    "east_china_sea",
+    "yellow_sea"
+  ],
+  "maxTurns": 3,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": false,
+  "powers": {
+    "China": {
+      "team": "Allies",
+      "controller": "human",
+      "money": 0
+    },
+    "Japan": {
+      "team": "Axis",
+      "controller": "ai",
+      "money": 0
+    }
+  },
+  "turnOrder": [
+    "China",
+    "Japan"
+  ],
+  "setup": {
+    "central_china": {
+      "owner": "China",
+      "units": {
+        "China": {
+          "artillery": 3
+        }
+      }
+    },
+    "guangdong": {
+      "owner": "Japan",
+      "units": {
+        "Japan": {
+          "infantry": 2
+        }
+      }
+    },
+    "shanghai": {
+      "owner": "Japan",
+      "units": {
+        "Japan": {
+          "infantry": 3,
+          "fighter": 1
+        }
+      }
+    },
+    "sichuan": {
+      "owner": "China",
+      "units": {
+        "China": {
+          "infantry": 1,
+          "artillery": 1
+        }
+      }
+    },
+    "north_china": {
+      "owner": "Japan",
+      "units": {
+        "Japan": {
+          "infantry": 2,
+          "artillery": 1,
+          "tank": 1
+        }
+      }
+    },
+    "indochina": {
+      "owner": "Japan",
+      "units": {
+        "Japan": {
+          "infantry": 3
+        }
+      }
+    },
+    "yunnan": {
+      "owner": "China",
+      "units": {
+        "China": {
+          "fighter": 1,
+          "artillery": 1
+        }
+      }
+    },
+    "fujian": {
+      "owner": "China",
+      "units": {
+        "China": {
+          "infantry": 1,
+          "artillery": 1,
+          "tank": 1
+        }
+      }
+    },
+    "shaanxi": {
+      "owner": "China",
+      "units": {
+        "China": {
+          "infantry": 1,
+          "fighter": 1
+        }
+      }
+    },
+    "south_china_sea": {
+      "units": {}
+    },
+    "east_china_sea": {
+      "units": {}
+    },
+    "yellow_sea": {
+      "units": {}
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "north_china",
+        "shanghai"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 5030,
+    "difficulty": "medium",
+    "theater": "china",
+    "size": 9,
+    "naval": false,
+    "winRate": 0.7
+  },
+  "difficulty": "medium"
+}

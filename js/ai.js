@@ -45,6 +45,12 @@
         if (r) return r;
       }
       // phase done
+      if (g.phase === 'combat' && g.s.battles.length) {
+        const ready = g.readyBattles();
+        if (ready.length) { g.startBattle(ready[0]); return { type: 'battleStart', id: ready[0] }; }
+        g.log(`Battles that could not be fought were skipped: ${g.s.battles.join(', ')}`);
+        g.s.battles = [];
+      }
       if (g.phase === 'purchase') g.commitPurchase();
       if (g.phase === 'place') g.clearBorn();
       const ph = g.phase;

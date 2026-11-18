@@ -1,0 +1,168 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "ukraine-counterstroke",
+  "title": "Ukraine Counterstroke",
+  "description": "As Soviet Union, take Ukraine from Germany within 2 turns.",
+  "author": "Tacticle",
+  "map": "world1942",
+  "ruleset": "1942",
+  "playable": [
+    "moscow",
+    "smolensk",
+    "ukraine",
+    "kursk",
+    "volga",
+    "arkhangelsk",
+    "voronezh",
+    "belorussia",
+    "gorky",
+    "west_ukraine",
+    "leningrad",
+    "black_sea"
+  ],
+  "maxTurns": 2,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": true,
+  "powers": {
+    "Soviet Union": {
+      "team": "Allies",
+      "controller": "human",
+      "money": 9
+    },
+    "Germany": {
+      "team": "Axis",
+      "controller": "ai",
+      "money": 9
+    }
+  },
+  "turnOrder": [
+    "Soviet Union",
+    "Germany"
+  ],
+  "setup": {
+    "moscow": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "factory": 1,
+          "infantry": 4,
+          "tank": 1,
+          "artillery": 1
+        }
+      }
+    },
+    "smolensk": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "infantry": 4
+        }
+      }
+    },
+    "ukraine": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "factory": 1,
+          "infantry": 7,
+          "tank": 1
+        }
+      }
+    },
+    "kursk": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "tank": 1,
+          "infantry": 2
+        }
+      }
+    },
+    "volga": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "factory": 1,
+          "fighter": 1
+        }
+      }
+    },
+    "arkhangelsk": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "artillery": 1,
+          "infantry": 2
+        }
+      }
+    },
+    "voronezh": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "tank": 2,
+          "infantry": 4
+        }
+      }
+    },
+    "belorussia": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "infantry": 3,
+          "artillery": 1
+        }
+      }
+    },
+    "gorky": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "tank": 1,
+          "artillery": 1
+        }
+      }
+    },
+    "west_ukraine": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "tank": 1
+        }
+      }
+    },
+    "leningrad": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "factory": 1,
+          "infantry": 3,
+          "fighter": 1,
+          "artillery": 1
+        }
+      }
+    },
+    "black_sea": {
+      "units": {}
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "ukraine"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 5050,
+    "difficulty": "hard",
+    "theater": "eastern",
+    "size": 11,
+    "naval": false,
+    "winRate": 0.45
+  },
+  "difficulty": "hard"
+}

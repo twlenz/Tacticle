@@ -1,0 +1,210 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "channel-crossing",
+  "title": "Channel Crossing",
+  "description": "As United Kingdom, take Germany and Western Germany from Germany within 3 turns.",
+  "author": "Tacticle",
+  "map": "world1942",
+  "ruleset": "1942",
+  "playable": [
+    "united_kingdom",
+    "netherlands",
+    "belgium",
+    "germany_west",
+    "denmark",
+    "norway",
+    "germany",
+    "greenland",
+    "iceland",
+    "poland",
+    "north_sea",
+    "english_channel",
+    "western_approaches",
+    "baltic_sea",
+    "norwegian_sea",
+    "denmark_strait",
+    "greenland_sea",
+    "labrador_sea",
+    "baffin_bay"
+  ],
+  "maxTurns": 3,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": true,
+  "powers": {
+    "United Kingdom": {
+      "team": "Allies",
+      "controller": "human",
+      "money": 10
+    },
+    "Germany": {
+      "team": "Axis",
+      "controller": "ai",
+      "money": 10
+    }
+  },
+  "turnOrder": [
+    "United Kingdom",
+    "Germany"
+  ],
+  "setup": {
+    "united_kingdom": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "factory": 1,
+          "fighter": 2,
+          "tank": 6,
+          "infantry": 3,
+          "bomber": 1,
+          "artillery": 1
+        }
+      }
+    },
+    "netherlands": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "tank": 1
+        }
+      }
+    },
+    "belgium": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "infantry": 2
+        }
+      }
+    },
+    "germany_west": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "factory": 1,
+          "artillery": 1,
+          "fighter": 2
+        }
+      }
+    },
+    "denmark": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "tank": 1
+        }
+      }
+    },
+    "norway": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "artillery": 1,
+          "infantry": 1
+        }
+      }
+    },
+    "germany": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "factory": 1,
+          "artillery": 1,
+          "tank": 1,
+          "infantry": 5
+        }
+      }
+    },
+    "greenland": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "tank": 3,
+          "artillery": 5,
+          "infantry": 8,
+          "bomber": 1,
+          "fighter": 1
+        }
+      }
+    },
+    "iceland": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 10,
+          "tank": 5,
+          "artillery": 6
+        }
+      }
+    },
+    "poland": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "infantry": 3
+        }
+      }
+    },
+    "north_sea": {
+      "units": {}
+    },
+    "english_channel": {
+      "units": {}
+    },
+    "western_approaches": {
+      "units": {}
+    },
+    "baltic_sea": {
+      "units": {}
+    },
+    "norwegian_sea": {
+      "units": {
+        "Germany": {
+          "destroyer": 1,
+          "submarine": 1
+        }
+      }
+    },
+    "denmark_strait": {
+      "units": {}
+    },
+    "greenland_sea": {
+      "units": {
+        "United Kingdom": {
+          "transport": 4,
+          "infantry": 4,
+          "tank": 4,
+          "destroyer": 3,
+          "battleship": 3,
+          "carrier": 1,
+          "fighter": 1
+        }
+      }
+    },
+    "labrador_sea": {
+      "units": {}
+    },
+    "baffin_bay": {
+      "units": {}
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "germany",
+        "germany_west"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 5040,
+    "difficulty": "hard",
+    "theater": "western",
+    "size": 10,
+    "naval": true,
+    "winRate": 0.2
+  },
+  "difficulty": "hard"
+}

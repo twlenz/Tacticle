@@ -498,7 +498,9 @@
     if (g.phase === 'gameOver') { render(); showResult(); return; }
     if (g.s.battle) { openBattle(); if (!g.s.powers[g.s.battle.att].ai) return; }
     if (humanTurn()) {
-      if (g.phase === 'purchase' && (S.sc.purchase === false || (g.s.powers[g.current()].money < 3 && !Object.keys(g.s.powers[g.current()].unplaced || {}).length))) {
+      const pw = g.s.powers[g.current()];
+      const noRoom = !Object.keys(g.factories()).length;
+      if (g.phase === 'purchase' && (S.sc.purchase === false || noRoom || (pw.money < 3 && !Object.keys(pw.unplaced || {}).length))) {
         g.commitPurchase(); g.nextPhase(); save(); render();
       }
       if (g.phase === 'combat' && g.s.battles.length === 1 && !g.s.battle) fight(g.s.battles[0]);

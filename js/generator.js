@@ -157,7 +157,9 @@
     // objectives: valuable enemy territories near the front
     const enemyLand = [...region].filter((id) => ownerOf(id) === foe);
     const playerLand = [...region].filter((id) => ownerOf(id) === human);
-    const val = (id) => (T[id].ipc || 0) + (T[id].factory ? 3 : 0) + (T[id].capital ? 4 : 0) + rng() * 2;
+    // prefer valuable targets close to the front line
+    const val = (id) => Math.min(T[id].ipc || 0, 4) + (T[id].factory ? 1.5 : 0) + (T[id].capital ? 1.5 : 0) + rng() * 2 -
+      1.6 * Math.max(0, (dPlayer[id] === Infinity ? 2 : dPlayer[id]) - 1);
     const reachable = enemyLand.filter((id) => dPlayer[id] <= 3 || (opts.naval && T[id].adj.some((z) => sea.has(z))));
     const pool = (reachable.length ? reachable : enemyLand).sort((a, b) => val(b) - val(a));
     const nObj = Math.min(pool.length, opts.difficulty === 'easy' ? 1 : rng() < 0.5 ? 1 : 2);
@@ -241,9 +243,30 @@
       }
       return left;
     });
-    // attacker: near the front
+    // attacker: near the front; a naval puzzle puts part of the budget into the fleet
+    let landBudget = atkBudget;
+    const seas = [...ctx.sea];
+    const hz = seas.filter((z) => T[z].adj.some((y) => sc.setup[y] && sc.setup[y].owner === ctx.human));
+    if (ctx.naval && hz.length) {
+      const z = rng.pick(hz);
+      let fleet = atkBudget * 0.4;
+      landBudget -= fleet;
+      const nTr = Math.max(1, Math.min(4, Math.round(fleet / 30)));
+      add(z, ctx.human, 'transport', nTr); fleet -= nTr * U.transport.cost;
+      for (let k = 0; k < nTr; k++) { add(z, ctx.human, 'infantry', 1); add(z, ctx.human, U.tank && rng() < 0.6 ? 'tank' : 'infantry', 1); fleet -= 9; }
+      const escorts = ['destroyer', 'cruiser', 'battleship', 'carrier'].filter((t) => U[t]);
+      while (fleet > 8 && escorts.length) {
+        const t = rng.pick(escorts);
+        if (U[t].cost > fleet + 4) { escorts.splice(escorts.indexOf(t), 1); continue; }
+        add(z, ctx.human, t, 1); fleet -= U[t].cost;
+        if (t === 'carrier' && U.fighter) { add(z, ctx.human, 'fighter', 1); fleet -= U.fighter.cost; }
+      }
+    }
+    // no single territory takes more than ~40% of the army (unless it is the only one)
     const aWeights = ctx.playerLand.map((id) => ({ id, w: ctx.dEnemy[id] <= 1 ? 3 : ctx.dEnemy[id] === 2 ? 1.5 : 0.5 }));
-    spend(atkBudget, aWeights, (id, budget) => {
+    const wsum = aWeights.reduce((a, b) => a + b.w, 0);
+    if (aWeights.length > 1) for (const w of aWeights) w.w = Math.min(w.w, wsum * 0.4);
+    spend(landBudget, aWeights, (id, budget) => {
       let left = budget;
       const mix = [['infantry', 0.4], ['artillery', 0.25], ['tank', 0.25], ['fighter', 0.07], ['bomber', 0.03]];
       while (left >= U.infantry.cost) {
@@ -253,17 +276,9 @@
       }
       return left;
     });
-    // navies for naval puzzles: a transport group and an escort per side
+    // the defender gets a small squadron in naval puzzles
     if (ctx.naval && ctx.sea.size) {
-      const seas = [...ctx.sea];
-      const coastOf = (p) => seas.filter((z) => T[z].adj.some((y) => sc.setup[y] && sc.setup[y].owner === p));
-      const hz = coastOf(ctx.human), fz = coastOf(ctx.foe);
-      if (hz.length) {
-        const z = rng.pick(hz);
-        add(z, ctx.human, 'transport', 2); add(z, ctx.human, 'infantry', 2); add(z, ctx.human, U.tank ? 'tank' : 'infantry', 2);
-        add(z, ctx.human, U.destroyer ? 'destroyer' : 'battleship', 1);
-        if (U.cruiser) add(z, ctx.human, 'cruiser', 1);
-      }
+      const fz = seas.filter((z) => T[z].adj.some((y) => sc.setup[y] && sc.setup[y].owner === ctx.foe));
       if (fz.length) {
         const z = rng.pick(fz);
         add(z, ctx.foe, U.destroyer ? 'destroyer' : 'submarine', 1);
