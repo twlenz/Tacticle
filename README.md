@@ -200,7 +200,11 @@ Also implemented: combat and noncombat movement with automatic routing, blitzing
 loading, amphibious assaults (resolved after any sea battle in the launch zone; a lost
 sea battle sinks or re-embarks the landing force), shore bombardment limited to the
 number of landing units, retreats to a territory an attacker came from, aircraft
-landing checks (no landing in territory captured this turn; stranded aircraft are lost),
+range (an aircraft may only move, in combat or noncombat, to a territory or sea zone
+from which its remaining movement still reaches a landing spot: friendly land held since
+the start of the turn, a friendly carrier, or a zone one of your carriers can still sail
+to; anything it cannot reach is not offered), landing checks (no landing in territory
+captured this turn; aircraft left without a landing spot are lost),
 capital capture taking the treasury, liberation of allied territory, income, production
 limits, and neutral territories that block movement.
 

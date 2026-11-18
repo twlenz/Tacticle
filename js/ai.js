@@ -258,7 +258,11 @@
           if (g.B.isLand(to) && d.domain === 'sea') continue;
           const r = g.checkMove(from, [u.id], to);
           if (!r.ok) continue;
-          if (d.domain === 'air' && r.warn) continue; // would not be able to land
+          if (d.domain === 'air') {
+            // the AI does not plan carrier moves, so it only counts landing spots that exist now
+            const left = u.ml - (r.plan[0].path.length - 1);
+            if (!g.canLandFrom(u, to, left, true)) continue;
+          }
           out.push({ u, from });
         }
       }
@@ -449,14 +453,33 @@
         for (const u of g.units(from).filter((x) => x.o === p && g.def(x).domain === 'air' && x.ml > 0)) {
           const N = need();
           let best = null;
+          const reach = g.airDist(from, u.ml);
           for (const id of Object.keys(N)) {
             if (!g.s.startOwned[id] || g.team(g.s.startOwned[id]) !== g.team(p)) continue;
-            const d = D.any[from][id];
-            if (d === undefined || d > u.ml) continue;
+            const d = reach[id];
+            if (d === undefined || (id !== from && !g.checkMove(from, [u.id], id).ok)) continue;
             const sc = (N[id].deficit > 0 ? 5 + N[id].value : 0) + (N[id].front ? 2 : 0) - (N[id].th > this._defense(id, p) * 2 + 8 ? 6 : 0) - d * 0.1;
             if (!best || sc > best.sc) best = { id, sc };
           }
-          const stay = g.B.isLand(from) && g.friendlyOwner(from, p) && !g.s.terr[from].conq;
+          // fighters may also land on a friendly carrier with room
+          if (!g.def(u).bomber) {
+            for (const id of Object.keys(reach)) {
+              if (!g.B.isSea(id) || id === from) continue;
+              let cap = 0, used = 0;
+              for (const x of g.units(id)) {
+                if (g.team(x.o) !== g.team(p)) continue;
+                cap += g.def(x).carrierCapacity || 0;
+                if (g.def(x).domain === 'air') used++;
+              }
+              if (cap > used && g.checkMove(from, [u.id], id).ok) {
+                const sc = -1 - reach[id] * 0.1;
+                if (!best || sc > best.sc) best = { id, sc };
+              }
+            }
+          }
+          const atSeaOk = g.B.isSea(from) && g.units(from).filter((x) => g.team(x.o) === g.team(p) && g.def(x).domain === 'air').length <=
+            g.units(from).reduce((a, x) => a + (g.team(x.o) === g.team(p) ? g.def(x).carrierCapacity || 0 : 0), 0);
+          const stay = (g.B.isLand(from) && g.friendlyOwner(from, p) && !g.s.terr[from].conq && !g.enemies(from, p).length) || (atSeaOk && !g.def(u).bomber);
           if (best && best.id !== from && !(stay && best.sc < 1)) doMove(from, [u.id], best.id);
           else if (!stay && best) doMove(from, [u.id], best.id);
         }

@@ -712,6 +712,8 @@
           return { error: 'Cannot move into enemy units now' };
         } else if (!toSea && !this.friendlyOwner(to, p)) return { error: 'Must stay in friendly territory' };
         if (d.bomber && toSea && !hostile) return { error: 'Bombers cannot land at sea' };
+        // aircraft may only go where they can still get back to a friendly landing spot
+        if (!this.canLandFrom(u, to, u.ml - dist[to])) return { error: 'Could not return to friendly territory from there' };
         return { path: this._pathFromDist(from, to, dist), cost: dist[to] };
       }
       if (d.domain === 'sea') {
@@ -855,31 +857,62 @@
       if (this.enemies(to, p).length && this.enemies(to, p).some((e) => !this.def(e).infrastructure)) kind = 'attack';
       else if (this.B.isLand(to) && !this.friendlyOwner(to, p)) kind = 'capture';
       if (plan.some((x) => x.blitz.length)) kind = kind === 'move' ? 'blitz' : kind;
-      // air landing warning
-      let warn = null;
-      const air = us.filter((u) => this.def(u).domain === 'air');
-      if (air.length && combat) {
-        for (const u of air) {
-          const left = u.ml - (plan.find((x) => x.uid === u.id).path.length - 1);
-          if (!this.canLandFrom(u, to, left)) { warn = 'Some aircraft may not be able to land afterwards'; break; }
-        }
-      }
-      return { ok: true, kind, plan, warn };
+      // (aircraft that could not get back were already refused in route())
+      return { ok: true, kind, plan, warn: null };
     }
     _attackingHere(sea) {
       return this.units(sea).some((u) => u.o === this.current() && u.cm && this.def(u).domain === 'sea' && !this.def(u).transport) &&
         this.enemies(sea, this.current()).length > 0;
     }
-    canLandFrom(u, at, left) {
+    /**
+     * Can aircraft `u`, once at `at` with `left` movement, still reach a landing spot this turn?
+     * Landing spots: friendly land held since the start of the turn (not captured this turn, no
+     * enemies), or for fighters a sea zone with a friendly carrier, including zones the
+     * current power's own carriers can still sail to this turn.
+     */
+    canLandFrom(u, at, left, strict) {
       const p = u.o;
       const d = this.def(u);
+      if (left < 0) return false;
       const dist = this.airDist(at, Math.max(0, left));
+      const carriers = d.bomber ? null : this._carrierZones(p, strict);
       for (const id of Object.keys(dist)) {
         if (this.B.isLand(id)) {
           if (this.friendlyOwner(id, p) && this.s.startOwned[id] && this.team(this.s.startOwned[id]) === this.team(p) && !this.enemies(id, p).length) return true;
-        } else if (!d.bomber && this.units(id).some((x) => this.team(x.o) === this.team(p) && this.def(x).carrierCapacity)) return true;
+        } else if (carriers && carriers.has(id)) return true;
       }
       return false;
+    }
+    /** Sea zones where a friendly carrier is, or that one of the mover's carriers can still reach. */
+    _carrierZones(p, strict) {
+      const out = new Set();
+      const me = this.current();
+      for (const id of Object.keys(this.s.terr)) {
+        if (!this.B.isSea(id)) continue;
+        for (const c of this.s.terr[id].u) {
+          if (this.team(c.o) !== this.team(p) || !this.def(c).carrierCapacity) continue;
+          out.add(id);
+          // the moving power's own carriers that can still sail this turn
+          const canSail = !strict && c.o === me && c.ml > 0 && !c.f && (this.s.phase === 'combatMove' || !c.cm);
+          if (!canSail) continue;
+          const dist = { [id]: 0 };
+          const q = [id];
+          while (q.length) {
+            const x = q.shift();
+            if (dist[x] >= c.ml) continue;
+            if (x !== id && this.enemies(x, c.o).some((e) => this.blocksShips(e, c))) continue;
+            for (const y of this.B.adj[x]) {
+              if (!this.B.isSea(y) || dist[y] !== undefined) continue;
+              const canals = this.B.canalKey[x + '|' + y];
+              if (canals && !canals.some((k) => k.requires.every((r) => this._canalFriendly(r, c.o)))) continue;
+              dist[y] = dist[x] + 1;
+              q.push(y);
+            }
+          }
+          for (const z of Object.keys(dist)) if (!this.enemies(z, c.o).some((e) => this.blocksShips(e, c))) out.add(z);
+        }
+      }
+      return out;
     }
 
     /** Destinations for highlight: {tid: kind} */

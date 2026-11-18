@@ -151,15 +151,62 @@ test('transport: load, sail, amphibious landing captures empty island', () => {
 test('aircraft that cannot land are lost at the end of noncombat', () => {
   const g = newGame();
   g.nextPhase();
-  const f = ids(g, 'A1', 'fighter');
-  // fly out to sea and stay there with no carrier
-  g.s.phase = 'noncombatMove';
-  const r = g.move('A1', f, 'S3');
-  assert.ok(r.ok, r.error);
+  g.nextPhase(); // straight to noncombat (no battles)
+  // a fighter stranded at sea with no moves left (e.g. after a sea battle)
+  const f = g.units('A1').find((u) => u.t === 'fighter');
+  g._moveUnit(f, 'A1', 'S3');
+  f.ml = 0;
   assert.equal(g.strandedAir().length, 1);
   const res = g.nextPhase();
   assert.equal(res.lost.length, 1);
   assert.equal(ids(g, 'S3', 'fighter').length, 0);
+  assert.equal(g.s.losses.Axis, 10, 'counted in the IPC losses');
+});
+
+test('aircraft may only move where they can still return to friendly territory', () => {
+  // I (enemy island) is 3 spaces from A1; a fighter (move 4) would have 1 left and no landing spot
+  let g = newGame();
+  g.nextPhase();
+  const f = ids(g, 'A1', 'fighter');
+  let r = g.checkMove('A1', f, 'I');
+  assert.equal(r.ok, false);
+  assert.match(r.error, /return/);
+  assert.ok(!('I' in g.destinations('A1', f)), 'not highlighted');
+  // attacking B2 leaves 2 moves and A3 (held all turn) in reach
+  assert.ok(g.checkMove('A1', f, 'B2').ok);
+  // a friendly carrier next to the island makes the attack legal
+  g = newGame({ setup: Object.assign(scenario().setup, { S2: { units: { Germany: { carrier: 1 } } } }) });
+  g.nextPhase();
+  assert.ok(g.checkMove('A1', ids(g, 'A1', 'fighter'), 'I').ok, 'carrier in S2');
+  // so does one of your own carriers that can still sail there this turn
+  g = newGame({ setup: Object.assign(scenario().setup, { S1: { units: { Germany: { carrier: 1, destroyer: 1 } } } }) });
+  g.nextPhase();
+  assert.ok(g.checkMove('A1', ids(g, 'A1', 'fighter'), 'I').ok, 'carrier in S1 can reach S2');
+  // ...but not once it has moved and used its movement
+  const carrier = g.units('S1').find((u) => u.t === 'carrier');
+  carrier.ml = 0;
+  assert.equal(g.checkMove('A1', ids(g, 'A1', 'fighter'), 'I').ok, false);
+  // noncombat: no flying off to empty sea
+  g = newGame();
+  g.nextPhase(); g.nextPhase();
+  assert.equal(g.phase, 'noncombatMove');
+  assert.equal(g.checkMove('A1', ids(g, 'A1', 'fighter'), 'S3').ok, false);
+  assert.ok(g.checkMove('A1', ids(g, 'A1', 'fighter'), 'A3').ok);
+});
+
+test('aircraft cannot land in territory captured this turn', () => {
+  const g = newGame();
+  g.nextPhase();
+  g.move('A1', ids(g, 'A1', 'infantry').slice(0, 1), 'B1'); // capture empty B1
+  assert.equal(g.s.terr.B1.o, 'Germany');
+  g.nextPhase(); // no battles -> noncombat
+  const f = g.units('A1').find((u) => u.t === 'fighter');
+  // with moves to spare it may pass through, but it cannot end its move there
+  assert.ok(g.checkMove('A1', [f.id], 'B1').ok);
+  f.ml = 1;
+  const r = g.checkMove('A1', [f.id], 'B1');
+  assert.equal(r.ok, false, 'B1 was captured this turn, so it is not a landing spot');
+  assert.match(r.error, /return/);
 });
 
 test('purchase, placement at factory with capacity, income', () => {
