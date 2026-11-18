@@ -231,12 +231,10 @@
           if (!this.adj[c.b].includes(c.a)) this.adj[c.b].push(c.a);
         }
       }
+      // a canal (or controlled strait) restricts ships between its two sea zones
       this.canalKey = {};
-      for (const c of this.canals) { this.canalKey[c.a + '|' + c.b] = c; this.canalKey[c.b + '|' + c.a] = c; }
-      // map-level sea<->sea adjacency that is a canal only
       for (const c of this.canals) {
-        const natural = (this.T[c.a].adj || []).includes(c.b);
-        if (natural) { delete this.canalKey[c.a + '|' + c.b]; delete this.canalKey[c.b + '|' + c.a]; }
+        for (const k of [c.a + '|' + c.b, c.b + '|' + c.a]) (this.canalKey[k] = this.canalKey[k] || []).push(c);
       }
       this.powers = {};
       for (const p of map.powers || []) this.powers[p.id] = p;
@@ -295,10 +293,12 @@
           }
         }
       }
-      // capitals: scenario override, else map capital for that power if playable
+      // capitals: scenario override, else the map's (most valuable) capital for that power if playable
       for (const id of g.B.playable) {
         const t = g.B.T[id];
-        if (t.capital && powers[t.capital]) powers[t.capital].capital = id;
+        if (!t.capital || !powers[t.capital]) continue;
+        const cur = powers[t.capital].capital;
+        if (!cur || g.B.ipc(id) > g.B.ipc(cur)) powers[t.capital].capital = id;
       }
       for (const p of Object.keys(scenario.powers)) {
         const c = scenario.powers[p].capital;
@@ -703,8 +703,8 @@
           if (x !== from && !passable(x)) continue; // must stop in hostile zones
           for (const y of this.B.adj[x]) {
             if (!this.B.isSea(y) || dist[y] !== undefined) continue;
-            const canal = this.B.canalKey[x + '|' + y];
-            if (canal && !canal.requires.every((r) => this.s.terr[r] && this.friendlyOwner(r, p))) continue;
+            const canals = this.B.canalKey[x + '|' + y];
+            if (canals && !canals.some((c) => c.requires.every((r) => this._canalFriendly(r, p)))) continue;
             dist[y] = dist[x] + 1; prev[y] = x; q.push(y);
           }
         }
@@ -754,6 +754,12 @@
       best = tryBfs(false) || tryBfs(true);
       if (!best) return { error: 'Out of range' };
       return best;
+    }
+    /** Canal land: its current owner if in play, else its starting owner on the map. */
+    _canalFriendly(r, p) {
+      if (this.s.terr[r]) return this.friendlyOwner(r, p);
+      const o = this.B.T[r] && this.B.T[r].owner;
+      return !!o && this.B.powers[o] && this.B.powers[o].team === this.team(p);
     }
     _pathFromDist(from, to, dist) {
       const path = [to];

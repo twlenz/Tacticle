@@ -1,0 +1,200 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "ponape-landing",
+  "title": "Ponape Landing",
+  "description": "As Japan (Yamamoto), take Ponape from Dutch within 3 turns.",
+  "author": "Tacticle",
+  "map": "world_at_war",
+  "ruleset": "1942",
+  "playable": [
+    "peleliu",
+    "hollandia",
+    "yap",
+    "woleai",
+    "nauru",
+    "ponape",
+    "tarawa",
+    "panay",
+    "samar",
+    "108_sea_zone",
+    "101_sea_zone",
+    "107_sea_zone",
+    "93_sea_zone",
+    "112_sea_zone",
+    "102_sea_zone",
+    "109_sea_zone",
+    "103_sea_zone",
+    "104_sea_zone",
+    "116_sea_zone",
+    "111_sea_zone"
+  ],
+  "maxTurns": 3,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": false,
+  "powers": {
+    "Yamamoto": {
+      "team": "Axis",
+      "controller": "human",
+      "money": 0
+    },
+    "Dutch": {
+      "team": "Allies",
+      "controller": "ai",
+      "money": 0
+    }
+  },
+  "turnOrder": [
+    "Yamamoto",
+    "Dutch"
+  ],
+  "setup": {
+    "peleliu": {
+      "owner": "Yamamoto",
+      "units": {
+        "Yamamoto": {
+          "tank": 8,
+          "artillery": 10,
+          "infantry": 13,
+          "fighter": 1
+        }
+      }
+    },
+    "hollandia": {
+      "owner": "Dutch",
+      "units": {
+        "Dutch": {
+          "infantry": 1
+        }
+      }
+    },
+    "yap": {
+      "owner": "Yamamoto",
+      "units": {
+        "Yamamoto": {
+          "tank": 5,
+          "infantry": 10,
+          "artillery": 9,
+          "fighter": 3,
+          "bomber": 1
+        }
+      }
+    },
+    "woleai": {
+      "owner": "Dutch",
+      "units": {
+        "Dutch": {
+          "infantry": 2
+        }
+      }
+    },
+    "nauru": {
+      "owner": "Dutch",
+      "units": {
+        "Dutch": {
+          "infantry": 1
+        }
+      }
+    },
+    "ponape": {
+      "owner": "Dutch",
+      "units": {
+        "Dutch": {
+          "infantry": 2,
+          "tank": 2
+        }
+      }
+    },
+    "tarawa": {
+      "owner": "Dutch",
+      "units": {
+        "Dutch": {
+          "infantry": 1
+        }
+      }
+    },
+    "panay": {
+      "owner": "Dutch",
+      "units": {
+        "Dutch": {
+          "tank": 1
+        }
+      }
+    },
+    "samar": {
+      "owner": "Dutch",
+      "units": {
+        "Dutch": {
+          "artillery": 1
+        }
+      }
+    },
+    "108_sea_zone": {
+      "units": {}
+    },
+    "101_sea_zone": {
+      "units": {
+        "Yamamoto": {
+          "transport": 4,
+          "infantry": 5,
+          "tank": 3,
+          "destroyer": 4,
+          "cruiser": 2,
+          "carrier": 1,
+          "fighter": 1,
+          "battleship": 2
+        }
+      }
+    },
+    "107_sea_zone": {
+      "units": {}
+    },
+    "93_sea_zone": {
+      "units": {
+        "Dutch": {
+          "destroyer": 1,
+          "submarine": 1
+        }
+      }
+    },
+    "112_sea_zone": {
+      "units": {}
+    },
+    "102_sea_zone": {
+      "units": {}
+    },
+    "109_sea_zone": {
+      "units": {}
+    },
+    "103_sea_zone": {
+      "units": {}
+    },
+    "104_sea_zone": {
+      "units": {}
+    },
+    "116_sea_zone": {
+      "units": {}
+    },
+    "111_sea_zone": {
+      "units": {}
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "ponape"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 8092,
+    "difficulty": "medium",
+    "theater": "pacific",
+    "size": 9,
+    "naval": true,
+    "winRate": 0.4375
+  },
+  "difficulty": "medium"
+}

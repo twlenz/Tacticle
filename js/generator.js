@@ -11,14 +11,19 @@
 })(typeof self !== 'undefined' ? self : this, function (E, AI, Rules) {
   'use strict';
 
+  // Theatres are defined by which powers face each other, so they work on any map whose
+  // powers use the usual names (Tacticle's own map and imported TripleA maps alike).
+  const JAPAN = ['Japan', 'Yamamoto', 'Hisaichi'];
   const THEATERS = {
-    any: { name: 'Anywhere', centers: null },
-    western: { name: 'Western Europe', centers: ['northern_france', 'belgium', 'netherlands', 'germany_west', 'denmark', 'norway', 'united_kingdom'] },
-    eastern: { name: 'Eastern Front', centers: ['smolensk', 'kursk', 'ukraine', 'belorussia', 'leningrad', 'rostov', 'crimea', 'karelia', 'moscow', 'voronezh'] },
-    mediterranean: { name: 'Mediterranean & Africa', centers: ['egypt', 'cyrenaica', 'tunisia', 'greece', 'crete', 'sicily', 'malta', 'syria', 'algeria'] },
-    china: { name: 'China & Burma', centers: ['central_china', 'fujian', 'yunnan', 'burma', 'guangdong', 'shaanxi', 'sichuan'] },
-    pacific: { name: 'Pacific Islands', centers: ['solomons', 'new_guinea', 'luzon', 'marshall_islands', 'midway', 'wake_island', 'hawaii', 'borneo', 'java'] },
+    any: { name: 'Anywhere', pairs: null },
+    eastern: { name: 'Eastern Front', pairs: [['Germany', 'Finland', 'Finns', 'DanubeAxis', 'Romanians', 'Hungarians', 'Italy'], ['Soviet Union']] },
+    western: { name: 'Western Europe', pairs: [['Germany'], ['United Kingdom', 'United States', 'France', 'Canada', 'ExiledAllies', 'Dutch']], naval: true },
+    mediterranean: { name: 'Mediterranean & Africa', pairs: [['Italy', 'Germany'], ['United Kingdom', 'France', 'Egypt', 'SouthAfrica', 'ExiledAllies', 'United States', 'Anzac']] },
+    china: { name: 'China & Burma', pairs: [JAPAN.concat(['Manchuria', 'Thailand', 'Thai']), ['China', 'India']] },
+    pacific: { name: 'Pacific', pairs: [JAPAN, ['United States', 'United Kingdom', 'Australia', 'India', 'Anzac', 'Dutch']], naval: true },
   };
+  const MAIN = (tm) => tm === 'Axis' || tm === 'Allies';
+
 
   const DIFFICULTY = {
     easy: { ratio: 1.7, band: [0.7, 0.92], slack: 2 },
@@ -60,28 +65,34 @@
     const owned = (id) => isLand(id) && T[id].owner && team[T[id].owner];
     // candidate front edges
     const th = THEATERS[opts.theater] || THEATERS.any;
-    let centers = opts.center ? [opts.center] : th.centers;
+    const near = opts.center ? new Set([opts.center].concat(T[opts.center] ? T[opts.center].adj : [])) : null;
+    const fits = (a, b) => {
+      const oa = T[a].owner, ob = T[b].owner;
+      if (team[oa] === team[ob]) return false;
+      if (!opts.center && (!MAIN(team[oa]) || !MAIN(team[ob]))) return false; // neutrals only when asked for
+      if (near && !near.has(a) && !near.has(b)) return false;
+      if (th.pairs) {
+        const [x, y] = th.pairs;
+        if (!((x.includes(oa) && y.includes(ob)) || (y.includes(oa) && x.includes(ob)))) return false;
+      }
+      return true;
+    };
     const edges = [];
     for (const t of map.territories) {
       if (!owned(t.id)) continue;
-      for (const n of t.adj) {
-        if (!owned(n)) continue;
-        if (centers && !centers.includes(t.id) && !centers.includes(n)) continue;
-        if (team[T[n].owner] !== team[t.owner]) edges.push([t.id, n]);
-      }
+      for (const n of t.adj) if (owned(n) && fits(t.id, n)) edges.push([t.id, n]);
     }
-    // island fronts across one sea zone for naval puzzles
-    if (opts.naval || !edges.length) {
+    // fronts across one sea zone (naval puzzles, or when there is no land front)
+    if (opts.naval || th.naval || !edges.length) {
+      const seaEdges = [];
       for (const t of map.territories) {
         if (!owned(t.id)) continue;
         for (const z of t.adj) {
           if (T[z].type !== 'sea') continue;
-          for (const n of T[z].adj) {
-            if (centers && !centers.includes(t.id) && !centers.includes(n)) continue;
-            if (owned(n) && team[T[n].owner] !== team[t.owner]) edges.push([t.id, n, z]);
-          }
+          for (const n of T[z].adj) if (n !== t.id && owned(n) && fits(t.id, n)) seaEdges.push([t.id, n, z]);
         }
       }
+      if (opts.naval || !edges.length) edges.push(...seaEdges);
     }
     if (!edges.length) throw new Error('No front line between the two teams in that area');
     let edge = rng.pick(edges);
@@ -106,6 +117,7 @@
         const viaSea = T[y].type === 'sea';
         if (viaSea && !opts.naval) continue;
         if (!viaSea && !owned(y)) continue;
+        if (!viaSea && !opts.center && !MAIN(team[T[y].owner])) continue; // keep neutrals out
         dist[y] = dist[x] + (viaSea ? 0.6 : 1);
         q.push(y);
         if (!viaSea) order.push(y);
@@ -202,6 +214,41 @@
     const ctx = { map, T, R, rng, region, sea, human, foe, dEnemy, dPlayer, objIds, playerLand, enemyLand, naval: !!opts.naval };
     let ratio = diff.ratio;
     const defBudget = Math.max(12, regionIpc * 3 + objIds.length * 6);
+    if (opts.mapUnits && map.defaultSetup) {
+      // the map's own starting armies (TripleA setups); tune the turn limit instead of the armies
+      let sc = mapArmies(base, ctx, map, team, playerTeam);
+      sc.generator.mapUnits = true;
+      if (opts.tune) {
+        let best = null;
+        const baseTurns = sc.maxTurns;
+        const U = R.units;
+        const front = (side) => (side === ctx.human ? ctx.playerLand : ctx.objIds).slice().sort((a, b) =>
+          (side === ctx.human ? ctx.dEnemy[a] - ctx.dEnemy[b] : 0));
+        const reinforce = (side, n) => {
+          const ids = front(side);
+          for (let k = 0; k < n && ids.length; k++) {
+            const id = ids[k % Math.min(ids.length, 2)];
+            const u = sc.setup[id].units[side] = sc.setup[id].units[side] || {};
+            const t = k % 3 === 2 && U.artillery ? 'artillery' : k % 4 === 3 && U.tank ? 'tank' : 'infantry';
+            u[t] = (u[t] || 0) + 1;
+          }
+        };
+        for (let iter = 0; iter < 8; iter++) {
+          const rate = winRate(map, sc, opts.tune, (opts.seed | 0) + iter * 977);
+          if (!best || Math.abs(rate - mid(diff.band)) < Math.abs(best.rate - mid(diff.band))) best = { sc: JSON.parse(JSON.stringify(sc)), rate };
+          if (rate >= diff.band[0] && rate <= diff.band[1]) break;
+          if (rate < diff.band[0]) {
+            if (sc.maxTurns < Math.min(6, baseTurns + 1)) sc.maxTurns++;
+            else reinforce(ctx.human, rate === 0 ? 6 : 3);
+          } else if (sc.maxTurns > Math.max(2, baseTurns - 1)) sc.maxTurns--;
+          else reinforce(ctx.foe, rate === 1 ? 5 : 2);
+          sc.description = sc.description.replace(/within \d+ turns?/, `within ${sc.maxTurns} turn${sc.maxTurns === 1 ? '' : 's'}`);
+        }
+        sc = best.sc;
+        sc.generator.winRate = best.rate;
+      }
+      return sc;
+    }
     let sc = placeArmies(base, ctx, ratio * defBudget, defBudget);
     if (opts.tune) {
       let best = null;
@@ -219,6 +266,30 @@
     return sc;
   }
   function mid(b) { return (b[0] + b[1]) / 2; }
+
+  /** Copy the map's starting units into the region; each team's units go to its puzzle power. */
+  function mapArmies(base, ctx, map, team, playerTeam) {
+    const sc = JSON.parse(JSON.stringify(base));
+    const R = ctx.R;
+    for (const id of Object.keys(sc.setup)) {
+      const src = (map.defaultSetup[id] && map.defaultSetup[id].units) || {};
+      sc.setup[id].units = {};
+      for (const p of Object.keys(src)) {
+        const tm = team[p];
+        const to = tm === playerTeam ? ctx.human : (tm === 'Axis' || tm === 'Allies') ? ctx.foe : null;
+        if (!to) continue;
+        for (const k of Object.keys(src[p])) {
+          if (!R.units[k]) continue;
+          if (k === 'factory' && sc.setup[id].owner !== to) continue;
+          const u = sc.setup[id].units[to] = sc.setup[id].units[to] || {};
+          u[k] = (u[k] || 0) + src[p][k];
+        }
+      }
+    }
+    // starting money from the map, scaled to the region's share of income
+    for (const p of [ctx.human, ctx.foe]) if (map.defaultMoney && map.defaultMoney[p] != null && sc.purchase) sc.powers[p].money = Math.min(sc.powers[p].money * 2, map.defaultMoney[p]);
+    return sc;
+  }
 
   /** Spend IPC budgets on armies: defenders weighted to objectives and the front. */
   function placeArmies(base, ctx, atkBudget, defBudget) {

@@ -63,9 +63,9 @@ function refreshMapIndex() {
   const maps = fs.readdirSync(dir).filter((f) => f.endsWith('.json') && f !== 'index.json').map((f) => {
     try {
       const j = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
-      return { id: j.id, name: j.name, file: 'maps/' + f, territories: (j.territories || []).length, source: j.source || '' };
+      return { id: j.id, name: j.name, file: 'maps/' + f, territories: (j.territories || []).length, source: j.source || '', credit: j.credit || '', origin: j.origin || null };
     } catch (e) { return null; }
-  }).filter(Boolean);
+  }).filter(Boolean).sort((a, b) => ((b.source === 'TripleA') - (a.source === 'TripleA')) || a.name.localeCompare(b.name));
   writeJSON(path.join(dir, 'index.json'), { maps });
   return maps;
 }

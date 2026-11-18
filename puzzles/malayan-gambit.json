@@ -1,0 +1,222 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "malayan-gambit",
+  "title": "Malayan Gambit",
+  "description": "As Japan, take Malay from United Kingdom within 2 turns.",
+  "author": "Tacticle",
+  "map": "total_world_war",
+  "ruleset": "1942",
+  "playable": [
+    "saigon",
+    "brunei",
+    "french_indochina",
+    "thailand",
+    "borneo",
+    "hong_kong",
+    "malay",
+    "southern_thailand",
+    "phillippines",
+    "luzon",
+    "94_sea_zone",
+    "91_sea_zone",
+    "128_sea_zone",
+    "93_sea_zone",
+    "95_sea_zone",
+    "96_sea_zone",
+    "87_sea_zone",
+    "92_sea_zone",
+    "127_sea_zone",
+    "129_sea_zone"
+  ],
+  "maxTurns": 2,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": true,
+  "powers": {
+    "Japan": {
+      "team": "Axis",
+      "controller": "human",
+      "money": 18
+    },
+    "United Kingdom": {
+      "team": "Allies",
+      "controller": "ai",
+      "money": 18
+    }
+  },
+  "turnOrder": [
+    "Japan",
+    "United Kingdom"
+  ],
+  "setup": {
+    "saigon": {
+      "owner": "Japan",
+      "units": {
+        "Japan": {
+          "fighter": 1,
+          "infantry": 2
+        }
+      }
+    },
+    "brunei": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 1
+        }
+      }
+    },
+    "french_indochina": {
+      "owner": "Japan",
+      "units": {
+        "Japan": {
+          "aaa": 1,
+          "infantry": 8,
+          "tank": 1,
+          "artillery": 3,
+          "fighter": 1
+        }
+      }
+    },
+    "thailand": {
+      "owner": "Japan",
+      "units": {
+        "Japan": {
+          "infantry": 3,
+          "artillery": 1,
+          "factory": 1,
+          "aaa": 1
+        }
+      }
+    },
+    "borneo": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 1,
+          "aaa": 1
+        }
+      }
+    },
+    "hong_kong": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 1,
+          "aaa": 1,
+          "artillery": 1
+        }
+      }
+    },
+    "malay": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 8,
+          "aaa": 1
+        }
+      }
+    },
+    "southern_thailand": {
+      "owner": "Japan",
+      "units": {
+        "Japan": {
+          "infantry": 2
+        }
+      }
+    },
+    "phillippines": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "artillery": 1,
+          "infantry": 1
+        }
+      }
+    },
+    "luzon": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "fighter": 1,
+          "infantry": 1
+        }
+      }
+    },
+    "94_sea_zone": {
+      "units": {}
+    },
+    "91_sea_zone": {
+      "units": {
+        "Japan": {
+          "fighter": 2,
+          "transport": 1,
+          "carrier": 1,
+          "battleship": 1,
+          "destroyer": 1
+        }
+      }
+    },
+    "128_sea_zone": {
+      "units": {
+        "Japan": {
+          "destroyer": 1
+        }
+      }
+    },
+    "93_sea_zone": {
+      "units": {}
+    },
+    "95_sea_zone": {
+      "units": {
+        "Japan": {
+          "transport": 1,
+          "cruiser": 1
+        }
+      }
+    },
+    "96_sea_zone": {
+      "units": {
+        "Japan": {
+          "transport": 1
+        }
+      }
+    },
+    "87_sea_zone": {
+      "units": {}
+    },
+    "92_sea_zone": {
+      "units": {}
+    },
+    "127_sea_zone": {
+      "units": {
+        "United Kingdom": {
+          "transport": 1,
+          "cruiser": 1
+        }
+      }
+    },
+    "129_sea_zone": {
+      "units": {}
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "malay"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 7041,
+    "difficulty": "medium",
+    "theater": "pacific",
+    "size": 10,
+    "naval": true,
+    "mapUnits": true,
+    "winRate": 0.5
+  },
+  "difficulty": "medium"
+}

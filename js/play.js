@@ -58,6 +58,14 @@
     S.ai = new TAI(S.g);
     S.mv = new window.TacticleMapView($('map'), S.map, { onClick, onContext: () => clearSel(), onHover, onDblClick });
     S.mv.setFocus(S.sc.playable);
+    S.fullFocus = true;
+    if ($('map').clientWidth < 600) {
+      // phones: start on the objectives and what borders them
+      const objs = (S.sc.objectives || []).flatMap((o) => o.territories || []);
+      const near = new Set(objs);
+      for (const id of objs) for (const n of (S.mv.T[id] ? S.mv.T[id].adj : [])) if (S.sc.playable.includes(n) && S.mv.T[n].type === 'land') near.add(n);
+      if (near.size) { S.mv.setFocus([...near], 0.04); S.fullFocus = false; }
+    }
     wire();
     render();
     if (!saved && S.g.phase !== 'gameOver') showBriefing();
@@ -106,7 +114,7 @@
   function wire() {
     $('zin').onclick = () => S.mv.zoom(0.7);
     $('zout').onclick = () => S.mv.zoom(1.4);
-    $('zfit').onclick = () => S.mv.fit();
+    $('zfit').onclick = () => { if (S.fullFocus) S.mv.fit(); else { S.mv.setFocus(S.sc.playable); S.fullFocus = true; } };
     $('btnHelp').onclick = showHelp;
     $('btnStats').onclick = showStats;
     $('btnTheme').onclick = () => {
@@ -733,8 +741,14 @@
       ${sidesText()}
       <h3>Objectives</h3><ul>${objs}</ul>
       <p class="hint">${winCheckText()} Rules: ${esc(R.name)}. Your moves are saved as you play, so you get one attempt per day.</p>
+      ${mapCredit() ? `<p class="hint">Map: ${esc(mapCredit())}</p>` : ''}
       <div class="actions"><button data-close="help" id="brHelp">How to play</button><button class="primary" data-close="go">Start</button></div>`, false);
     $('brHelp').onclick = showHelp;
+  }
+  function mapCredit() {
+    const m = S.map || {};
+    if (m.source === 'TripleA') return `${m.origin && m.origin.map ? m.origin.map : m.name} from TripleA (triplea-game.org)${m.credit ? ', ' + m.credit : ''}`;
+    return m.credit || '';
   }
   function showHelp() {
     const R = G() ? G().R : Rules.get();
@@ -757,6 +771,7 @@
       <h3>Units (${esc(R.name)})</h3>
       <table class="hint" style="width:100%;border-collapse:collapse"><tr><th></th><th align="left">Unit</th><th>Cost</th><th>Att</th><th>Def</th><th>Move</th></tr>${rows}</table>
       <p class="hint">${esc(R.summary)}</p>
+      ${S.map && mapCredit() ? `<p class="hint">Map: ${esc(mapCredit())}</p>` : ''}
       <div class="actions"><button class="primary" data-close="1">Close</button></div>`);
   }
   function stats() { return store.get('tacticle:stats') || { played: 0, won: 0, streak: 0, best: 0, last: null, dist: {}, seen: {} }; }

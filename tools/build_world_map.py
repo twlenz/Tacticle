@@ -497,7 +497,8 @@ def main():
             warn.append(f"{t['id']}: no neighbours")
 
     data = dict(
-        format='tacticle-map', version=1, id='world1942', name='World 1942',
+        format='tacticle-map', version=1, id='world1942', name='World 1942 (Tacticle original)', source='Tacticle',
+        credit='Tacticle original map; geography from Natural Earth (public domain)',
         description='Tacticle original world map for spring 1942. Geometry from Natural Earth (public domain).',
         width=W, height=H, wrapX=True,
         powers=[dict(id=i, name=n, team=tm, color=col) for i, n, tm, col in C.POWERS],

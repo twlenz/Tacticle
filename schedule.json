@@ -1,12 +1,12 @@
 {
   "epoch": "2026-11-18",
   "days": {
-    "2026-11-18": "puzzles/leningrad-pocket.json",
-    "2026-11-19": "puzzles/desert-sweep.json",
-    "2026-11-20": "puzzles/yellow-river.json",
-    "2026-11-21": "puzzles/ukraine-counterstroke.json",
-    "2026-11-22": "puzzles/fezzan-column.json",
-    "2026-11-23": "puzzles/moscow-gambit.json",
-    "2026-11-24": "puzzles/red-river.json"
+    "2026-11-18": "puzzles/karelian-front.json",
+    "2026-11-19": "puzzles/road-to-cairo.json",
+    "2026-11-20": "puzzles/vyborg-thrust.json",
+    "2026-11-21": "puzzles/smolensk-counteroffensive.json",
+    "2026-11-22": "puzzles/malayan-gambit.json",
+    "2026-11-23": "puzzles/east-african-sweep.json",
+    "2026-11-24": "puzzles/over-the-salween.json"
   }
 }

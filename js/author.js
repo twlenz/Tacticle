@@ -24,7 +24,7 @@
     try { A.schedule = await getJSON('schedule.json'); } catch (e) { A.schedule = { epoch: D.today(), days: {} }; }
     A.schedule.days = A.schedule.days || {};
     const draft = store.get('tacticle:authorDraft');
-    A.sc = draft && draft.sc ? draft.sc : newScenario();
+    A.sc = draft && draft.sc ? draft.sc : newScenario((A.maps[0] || {}).id);
     A.savedJSON = draft ? draft.savedJSON : null;
     await useMap(A.sc.map, true);
     wire();
@@ -77,10 +77,12 @@
     const info = powerInfo(p);
     const money = A.map.defaultMoney && A.map.defaultMoney[p];
     A.sc.powers[p] = { team: info.team || 'Allies', controller: Object.keys(A.sc.powers).length ? 'ai' : 'human', money: money || 0 };
-    const order = R().turnOrder;
+    const order = mapOrder();
     A.sc.turnOrder = (A.sc.turnOrder || []).concat([p]).sort((a, b) => idxOr(order, a) - idxOr(order, b));
   }
   function idxOr(a, x) { const i = a.indexOf(x); return i < 0 ? 99 : i; }
+  /** Turn order: the map's own (TripleA maps carry one), else the rule set's. */
+  function mapOrder() { return (A.map && A.map.turnOrder && A.map.turnOrder.length) ? A.map.turnOrder : R().turnOrder; }
   function setupOf(id) { return (A.sc.setup[id] = A.sc.setup[id] || { units: {} }); }
   function setOwner(id, p) {
     if (A.T[id].type === 'sea') return;
@@ -431,8 +433,9 @@
         field('Win check', `<select id="sWin"><option value="turnEnd" ${sc.winCheck !== 'roundEnd' ? 'selected' : ''}>End of player's turn</option><option value="roundEnd" ${sc.winCheck === 'roundEnd' ? 'selected' : ''}>End of round (after counter-attack)</option></select>`) + '</div>',
       `<label class="chk"><input type="checkbox" id="sIncome" ${sc.income !== false ? 'checked' : ''}> Collect income at the end of each turn</label>`,
       `<label class="chk"><input type="checkbox" id="sBuy" ${sc.purchase !== false ? 'checked' : ''}> Allow purchasing units</label>`,
-      '<details style="margin-top:12px"><summary class="hint">Import a TripleA map…</summary><p class="hint">Pick the game XML (from the map\'s <code>games/</code> folder), <code>polygons.txt</code> and <code>centers.txt</code>. Geometry, connections, values, owners and starting units are imported; images are not.</p>' +
-        field('Game XML', '<input type="file" id="taXml" accept=".xml">') + field('polygons.txt', '<input type="file" id="taPoly" accept=".txt">') + field('centers.txt (optional)', '<input type="file" id="taCent" accept=".txt">') +
+      `<div class="actions"><button id="taBrowse">Browse TripleA maps…</button></div>${A.map.source === 'TripleA' ? `<p class="hint">${esc(A.map.description || '')}</p>` : ''}`,
+      '<details style="margin-top:8px"><summary class="hint">Import a TripleA map from files…</summary><p class="hint">For maps you have locally. Pick the game XML (from the map\'s <code>games/</code> folder), <code>polygons.txt</code>, and optionally <code>centers.txt</code> and <code>map.properties</code>.</p>' +
+        field('Game XML', '<input type="file" id="taXml" accept=".xml">') + field('polygons.txt', '<input type="file" id="taPoly" accept=".txt">') + field('centers.txt (optional)', '<input type="file" id="taCent" accept=".txt">') + field('map.properties (optional)', '<input type="file" id="taProps" accept=".properties,.txt">') +
         field('Map id', '<input type="text" id="taId" placeholder="e.g. my-triplea-map">') + '<label class="chk"><input type="checkbox" id="taWrap"> Map wraps left-right</label><button id="taGo">Import map</button></details>',
     ].join('');
     const upd = (fn) => edit(fn);
@@ -455,6 +458,7 @@
     bindInput(el, '#sBuy', (e) => upd(() => { sc.purchase = e.checked; }));
     $('sAutoDesc').onclick = () => upd(() => { sc.description = autoDescription(); });
     $('taGo').onclick = importTripleA;
+    $('taBrowse').onclick = browseTripleA;
   }
   function autoDescription() {
     const sc = A.sc;
@@ -485,7 +489,7 @@
     el.innerHTML = `<p class="hint">Cards are in turn order. The player controls every “Player” power (they must share a team). Losing the capital stops income; capturing one takes its treasury.</p>
       ${cards}
       ${field('Add a power', `<select id="pwAdd"><option value="">—</option>${A.map.powers.filter((p) => !sc.powers[p.id]).map((p) => `<option>${esc(p.id)}</option>`).join('')}</select>`)}
-      <div class="actions"><button id="pwDefault">Sort by rule-set turn order</button></div>`;
+      <div class="actions"><button id="pwDefault">Sort by the map's turn order</button></div>`;
     el.querySelectorAll('[data-pw]').forEach((c) => c.onchange = () => edit(() => {
       const p = c.dataset.pw, k = c.dataset.k;
       if (k === 'money') sc.powers[p].money = Math.max(0, +c.value || 0);
@@ -503,7 +507,7 @@
       for (const id of Object.keys(sc.setup)) { if (sc.setup[id].owner === p) sc.setup[id].owner = null; if (sc.setup[id].units) delete sc.setup[id].units[p]; }
     }));
     $('pwAdd').onchange = (e) => { if (e.target.value) edit(() => ensurePower(e.target.value)); };
-    $('pwDefault').onclick = () => edit(() => { const o = R().turnOrder; sc.turnOrder.sort((a, b) => idxOr(o, a) - idxOr(o, b)); });
+    $('pwDefault').onclick = () => edit(() => { const o = mapOrder(); sc.turnOrder.sort((a, b) => idxOr(o, a) - idxOr(o, b)); });
   }
 
   function tabObjectives(el) {
@@ -531,11 +535,13 @@
       '<div class="two">' + field('Player side', `<select id="gTeam"><option value="any">Either</option><option ${g.playerTeam === 'Axis' ? 'selected' : ''}>Axis</option><option ${g.playerTeam === 'Allies' ? 'selected' : ''}>Allies</option></select>`) +
       field('Balance games', `<input type="number" id="gTune" min="0" max="60" value="${g.tune}" title="AI self-play games per tuning step (0 = skip)">`) + '</div>' +
       `<label class="chk"><input type="checkbox" id="gNaval" ${g.naval ? 'checked' : ''}> Include sea zones, fleets and transports</label>
+      ${A.map.defaultSetup ? `<label class="chk"><input type="checkbox" id="gMapUnits" ${g.mapUnits !== false ? 'checked' : ''}> Use this map's starting armies (tune the turn limit and reinforcements)</label>` : ''}
       <div class="actions"><button class="primary" id="gNew">Generate new</button><button id="gVar">Variant of current</button></div>
       <div class="bar"><div id="gBar"></div></div><div id="gOut" class="hint"></div>`;
     const read = () => {
       g.theater = $('gTh').value; g.size = +$('gSize').value || 9; g.difficulty = $('gDiff').value; g.playerTeam = $('gTeam').value;
       g.tune = Math.max(0, +$('gTune').value || 0); g.naval = $('gNaval').checked; g.ruleset = A.sc.ruleset;
+      g.mapUnits = $('gMapUnits') ? $('gMapUnits').checked : false;
     };
     $('gNew').onclick = async () => {
       read();
@@ -544,7 +550,6 @@
         if (!A.selected) { toast('Select a territory first (Select tool)'); return; }
         opts.theater = 'any'; opts.center = A.selected;
       }
-      if (A.map.id !== 'world1942' && opts.theater !== 'any') opts.theater = 'any';
       $('gOut').textContent = 'Generating…';
       $('gBar').style.width = '30%';
       const r = await job({ cmd: 'generate', opts });
@@ -782,26 +787,89 @@
   }
 
   async function importTripleA() {
-    const xml = $('taXml').files[0], poly = $('taPoly').files[0], cent = $('taCent').files[0];
+    const xml = $('taXml').files[0], poly = $('taPoly').files[0], cent = $('taCent').files[0], props = $('taProps').files[0];
     if (!xml || !poly) { toast('Choose the game XML and polygons.txt'); return; }
     const id = slug($('taId').value || xml.name.replace(/\.xml$/i, ''));
     try {
-      const map = TA.convert({ xml: await xml.text(), polygons: await poly.text(), centers: cent ? await cent.text() : '', id, wrapX: $('taWrap').checked });
-      if (!map.territories.length) throw new Error('No territories with polygons found');
-      const text = JSON.stringify(map);
-      if (A.server) {
-        const r = await fetch('api/maps/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: text });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j.error);
-        A.maps = j.maps;
-      } else {
-        download(id + '.json', text);
-        A.maps.push({ id, name: map.name, file: 'maps/' + id + '.json' });
-        toast('Downloaded; copy it into maps/ and add it to maps/index.json', 4000);
-      }
-      dialog(`<h2>Imported “${esc(map.name)}”</h2><p>${map.territories.length} territories, ${map.powers.length} powers.</p>${map.warnings.length ? '<p class="warn">' + map.warnings.slice(0, 8).map(esc).join('<br>') + '</p>' : ''}<div class="actions"><button data-close>Close</button><button class="primary" id="taUse">Start a puzzle on it</button></div>`);
-      $('taUse').onclick = () => { closeDialog(); commit(); A.maps = A.maps.map((m) => (m.id === id ? m : m)); A.sc = newScenario(id); if (A.server) useMap(id); else { A.map = map; useMapObject(map); } };
+      const map = TA.convert({ xml: await xml.text(), polygons: await poly.text(), centers: cent ? await cent.text() : '', properties: props ? await props.text() : '', id, wrapX: $('taWrap').checked || undefined });
+      await installMap(map);
     } catch (e) { toast('Import failed: ' + e.message, 4000); }
+  }
+
+  // TripleA's published catalogue, fetched live from GitHub (text files only)
+  async function fetchText(url) {
+    const r = await fetch(url, { cache: 'no-cache' });
+    if (!r.ok) throw new Error(`${url.replace(/^https:\/\/raw\.githubusercontent\.com\//, '')}: HTTP ${r.status}`);
+    return r.text();
+  }
+  async function browseTripleA() {
+    dialog('<h2>TripleA maps</h2><p class="hint">Loading the catalogue from GitHub…</p>');
+    try { A.taIndex = A.taIndex || await TA.listMaps(fetchText); } catch (e) { dialog(`<h2>TripleA maps</h2><p class="err">Could not load the catalogue: ${esc(e.message)}</p><div class="actions"><button data-close>Close</button></div>`); return; }
+    const st = A.taState || (A.taState = { q: '', cat: 'BEST' });
+    const draw = () => {
+      const q = st.q.toLowerCase();
+      const list = A.taIndex.filter((m) => (st.cat === 'all' || m.category === st.cat) && (!q || (m.name + ' ' + m.text).toLowerCase().includes(q)));
+      const have = new Set(A.maps.map((m) => m.origin && m.origin.repo).filter(Boolean));
+      $('taList').innerHTML = list.slice(0, 80).map((m) => `<div class="urow" style="align-items:flex-start"><span class="nm">${esc(m.name)} <small>${esc(m.category || 'uncategorised')}${have.has(m.repo) ? ' · imported' : ''} — ${esc(m.text.slice(0, 160))}${m.text.length > 160 ? '…' : ''}</small></span><button class="small" data-ta="${esc(m.repo)}">Games…</button></div>`).join('') || '<p class="hint">No maps match.</p>';
+      $('taCount').textContent = `${list.length} of ${A.taIndex.length} maps`;
+      $('taList').querySelectorAll('[data-ta]').forEach((b) => b.onclick = () => chooseTripleA(A.taIndex.find((m) => m.repo === b.dataset.ta)));
+    };
+    dialog(`<h2>TripleA maps</h2><p class="hint">The catalogue TripleA's “Download maps” screen uses. Importing reads the map's text files (borders, connections, values, owners, starting units); no images. Credit the map's authors when you publish puzzles on it.</p>
+      <div class="row"><input type="text" id="taQ" placeholder="Search, e.g. 1942, pacific, europe" value="${esc(st.q)}"><select id="taCat" style="width:auto">${['BEST', 'GOOD', 'EXPERIMENTAL', 'all'].map((c) => `<option ${st.cat === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+      <p class="hint" id="taCount"></p><div class="list" id="taList" style="max-height:52vh;overflow:auto"></div>
+      <div class="actions"><button data-close>Close</button></div>`);
+    $('taQ').oninput = () => { st.q = $('taQ').value; draw(); };
+    $('taCat').onchange = () => { st.cat = $('taCat').value; draw(); };
+    draw();
+    $('taQ').focus();
+  }
+  async function chooseTripleA(entry) {
+    dialog(`<h2>${esc(entry.name)}</h2><p class="hint">Reading the map's game list…</p>`);
+    let games;
+    try { games = await TA.listGames(entry.repo, entry.branch, fetchText); } catch (e) {
+      dialog(`<h2>${esc(entry.name)}</h2><p class="err">${esc(e.message)}</p><div class="actions"><button id="taBack">Back</button></div>`);
+      $('taBack').onclick = browseTripleA;
+      return;
+    }
+    dialog(`<h2>${esc(entry.name)}</h2><p class="hint">${esc(entry.text.slice(0, 400))}</p><p>Each game is a starting setup on this map. Pick one to import:</p>
+      <div class="list">${games.map((g, i) => `<div class="urow"><span class="nm">${esc(g.name)}<small>${esc(g.file)}</small></span><button class="small primary" data-g="${i}">Import</button></div>`).join('')}</div>
+      <div class="hint" id="taMsg"></div><div class="actions"><button id="taBack">Back</button></div>`);
+    $('taBack').onclick = browseTripleA;
+    $('dialog').querySelectorAll('[data-g]').forEach((b) => b.onclick = async () => {
+      const g = games[+b.dataset.g];
+      $('taMsg').textContent = `Downloading and converting ${g.name}…`;
+      $('dialog').querySelectorAll('button').forEach((x) => { x.disabled = true; });
+      try {
+        const id = slug(games.length === 1 ? entry.repo : g.name).replace(/-/g, '_');
+        const map = await TA.importGame(entry, g, fetchText, { id });
+        await installMap(map);
+      } catch (e) {
+        $('taMsg').innerHTML = `<span class="err">Import failed: ${esc(e.message)}</span>`;
+        $('dialog').querySelectorAll('button').forEach((x) => { x.disabled = false; });
+      }
+    });
+  }
+  /** Save an imported map (server, connected folder, or download) and offer to use it. */
+  async function installMap(map) {
+    const id = map.id;
+    if (!map.territories.length) throw new Error('No territories with polygons found');
+    const text = JSON.stringify(map);
+    if (A.server) {
+      const r = await fetch('api/maps/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: text });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      A.maps = j.maps;
+    } else {
+      download(id + '.json', text);
+      A.maps.push({ id, name: map.name, file: 'maps/' + id + '.json' });
+      toast('Downloaded; copy it into maps/ and add it to maps/index.json', 4000);
+    }
+    dialog(`<h2>Imported “${esc(map.name)}”</h2><p>${map.territories.length} territories, ${map.powers.length} powers${A.server ? `, saved as <code>maps/${esc(id)}.json</code>` : ''}.</p>${map.warnings.length ? '<p class="hint">' + map.warnings.slice(0, 6).map(esc).join('<br>') + '</p>' : ''}<div class="actions"><button data-close>Close</button><button class="primary" id="taUse">Start a puzzle on it</button></div>`);
+    $('taUse').onclick = () => {
+      if (dirty() && !confirm('Start a new puzzle on this map? Unsaved changes to the current one will be lost.')) return;
+      closeDialog(); commit(); A.sc = newScenario(id);
+      if (A.server) useMap(id); else useMapObject(map);
+    };
   }
   function useMapObject(map) {
     A.map = map;

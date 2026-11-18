@@ -1,11 +1,41 @@
 {
   "maps": [
     {
+      "id": "total_world_war",
+      "name": "Total World War: December 1941 3.0",
+      "file": "maps/total_world_war.json",
+      "territories": 485,
+      "source": "TripleA",
+      "credit": "map by Rolf Larsson and Hepster",
+      "origin": {
+        "repo": "total_world_war",
+        "branch": "master",
+        "game": "Total_World_War_Dec1941_3.0.xml",
+        "map": "Total World War"
+      }
+    },
+    {
+      "id": "world_at_war",
+      "name": "World At War",
+      "file": "maps/world_at_war.json",
+      "territories": 538,
+      "source": "TripleA",
+      "credit": "map by Sieg",
+      "origin": {
+        "repo": "world_at_war",
+        "branch": "master",
+        "game": "World_At_War.xml",
+        "map": "World At War"
+      }
+    },
+    {
       "id": "world1942",
-      "name": "World 1942",
+      "name": "World 1942 (Tacticle original)",
       "file": "maps/world1942.json",
       "territories": 292,
-      "source": ""
+      "source": "Tacticle",
+      "credit": "Tacticle original map; geography from Natural Earth (public domain)",
+      "origin": null
     }
   ]
 }

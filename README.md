@@ -10,6 +10,11 @@ Wordle-style result. The repository holds three parts:
 | Authoring tool | `author.html` | Builds, generates, balance-tests, saves and schedules puzzles. |
 | Puzzle files | `puzzles/*.json`, `schedule.json` | One JSON file per puzzle, plus a date → puzzle schedule. |
 
+Puzzles are played on **TripleA maps**: the same map files the open-source
+[TripleA](https://triplea-game.org) game downloads. Two community WW2 maps are bundled,
+and the authoring tool can import any other map from TripleA's catalogue in a few
+clicks (see [Maps](#maps)). Tacticle's own world map is kept as an extra option.
+
 Everything is static HTML/JS with no build step and no dependencies. The authoring tool
 saves files through a small local Node server (`tools/serve.js`).
 
@@ -91,13 +96,14 @@ you use them. Undo and redo: <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd
 
 - **Scenario**: id, title, briefing ("Write from objectives" drafts one), map, rule set,
   max turns, win check (end of player's turn, or end of the round after the enemy's
-  counter-attack), income and purchasing switches, and the TripleA map importer.
+  counter-attack), income and purchasing switches, and **Browse TripleA maps…**.
 - **Powers**: player or computer, team, starting IPCs, capital, and turn order.
 - **Objectives**: *Capture* (control at the check), *Hold* (lose immediately if lost at
   the end of any turn; the game runs to the last turn), *Clear* (no enemy units left).
   The player wins when every objective is met at the check.
 - **Generate**: a **new** puzzle (theatre or "around the selected territory", size,
-  difficulty, player side, optional fleets and transports), or a **variant** of the
+  difficulty, player side, optional fleets and transports, and on TripleA maps the option
+  to **use the map's own starting armies**), or a **variant** of the
   current one (armies nudged, an objective moved to a neighbour, turn limit ±1). Both run
   AI-vs-AI games in a Web Worker and adjust the armies toward a target win rate (easy
   70–92 %, medium 45–72 %, hard 22–48 % for the computer playing your side).
@@ -116,27 +122,28 @@ you use them. Undo and redo: <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd
 `schedule.json`:
 
 ```json
-{ "epoch": "2026-11-18", "days": { "2026-11-18": "puzzles/leningrad-pocket.json" } }
+{ "epoch": "2026-11-18", "days": { "2026-11-18": "puzzles/karelian-front.json" } }
 ```
 
 `puzzles/<id>.json` (abridged):
 
 ```json
 {
-  "id": "yellow-river", "title": "Yellow River", "description": "…",
-  "map": "world1942", "ruleset": "1942", "maxTurns": 3, "winCheck": "turnEnd",
-  "income": true, "purchase": true,
-  "playable": ["north_china", "shanghai", "yellow_sea", "…"],
+  "id": "karelian-front", "title": "Karelian Front", "description": "…",
+  "map": "total_world_war", "ruleset": "1942", "maxTurns": 4, "winCheck": "turnEnd",
+  "income": true, "purchase": false,
+  "playable": ["eastern_finland", "leningrad", "29_sea_zone", "…"],
   "powers": {
-    "China": { "team": "Allies", "controller": "human", "money": 4 },
-    "Japan": { "team": "Axis", "controller": "ai", "money": 4 }
+    "Finland": { "team": "Axis", "controller": "human", "money": 0 },
+    "Soviet Union": { "team": "Allies", "controller": "ai", "money": 0 }
   },
-  "turnOrder": ["China", "Japan"],
+  "turnOrder": ["Finland", "Soviet Union"],
   "setup": {
-    "shanghai": { "owner": "Japan", "units": { "Japan": { "infantry": 4, "tank": 1 } } },
-    "yellow_sea": { "units": { "Japan": { "transport": 1, "infantry": 2 } } }
+    "eastern_finland": { "owner": "Finland", "units": { "Finland": { "infantry": 2 } } },
+    "leningrad": { "owner": "Soviet Union", "units": { "Soviet Union": { "infantry": 4, "artillery": 1, "aaa": 3 } } },
+    "29_sea_zone": { "units": { "Soviet Union": { "transport": 1, "infantry": 2 } } }
   },
-  "objectives": [{ "type": "capture", "territories": ["north_china", "shanghai"] }]
+  "objectives": [{ "type": "capture", "territories": ["leningrad"] }]
 }
 ```
 
@@ -192,34 +199,68 @@ territories, and buys infantry when threatened. It is a fair opponent for small 
 not a strong general one: it doesn't coordinate fleets beyond attacking adjacent zones,
 and it makes no multi-turn plans.
 
-## The map
+## Maps
+
+### TripleA maps (default)
+
+| Bundled map | File | Credit |
+|---|---|---|
+| Total World War: December 1941 | `maps/total_world_war.json` | map by Rolf Larsson and Hepster |
+| World At War | `maps/world_at_war.json` | map by Sieg |
+
+**Importing more:** in the authoring tool, **Scenario → Browse TripleA maps…** loads
+`triplea_maps.yaml`, the catalogue TripleA's "Download maps" screen uses (about 300 maps).
+Search it, open a map, pick one of its games (starting setups), and **Import**. The tool
+reads the map's text files straight from `raw.githubusercontent.com/triplea-maps/…`:
+`map.yml`, the game XML, `polygons.txt`, `centers.txt` and `map.properties`. It writes
+`maps/<id>.json` and adds it to `maps/index.json`. From a terminal:
+
+```sh
+node tools/triplea_fetch.js list "1942"                       # search the catalogue
+node tools/triplea_fetch.js games world_war_ii_v5_1942        # the games a map offers
+node tools/triplea_fetch.js import total_world_war --game "3.0" --credit "map by …"
+```
+
+What is converted:
+- territory borders (simplified to about one pixel)
+- connections and production values
+- starting owners, capitals and impassable territories
+- canals and controlled straits
+- the map's turn order and colours
+- starting units and money
+
+TripleA's many custom unit types are folded into Tacticle's set: for example
+`germanInfantry`, marines and paratroopers become infantry, anti-tank guns become
+artillery, and tactical bombers become fighters. Map dressing such as airfields,
+railways, flags and fortifications is skipped. Images (relief, tiles) are not used;
+Tacticle draws the borders itself in each power's TripleA colour. On an imported map,
+making a territory playable fills in its TripleA starting units.
+
+Rules always come from the Tacticle rule set chosen for the puzzle (1942 Second Edition
+by default), not from the map's XML.
+
+**Credit and licences:** the bundled maps' repositories carry no licence file. The
+player page names the map and its authors in the briefing and help. Check you are happy
+with the terms before publishing puzzles on any TripleA map. The catalogue also lists
+TripleA's recreations of the published Axis & Allies boards (World War II Classic,
+Revised, v3–v6, Pacific, Europe and Global). Those are not bundled; import them yourself
+if you want them.
+
+### Tacticle's world map (optional)
 
 `maps/world1942.json` is an original board made for Tacticle: 191 land territories and
 101 sea zones in a Miller projection, with the seam in the Bering Strait so the Pacific
-wraps left–right. Puzzles near the seam are drawn across it as one area. It is built
-by `tools/build_world_map.py` from **Natural Earth** 1:50m countries and provinces
-(public domain), downloaded to `tools/cache/` on first run. Territory groupings, names,
-IPC values and spring-1942 owners are defined in `tools/world_config.py`. Sea zones are
-Voronoi cells around hand-placed points, clipped to open water. Adjacency is measured on
-full-detail shapes, and the board is then simplified as one coverage so shared borders
-stay shared. `tools/data/world1942_report.txt` lists every territory's neighbours.
+wraps left–right. It is built by `tools/build_world_map.py` from **Natural Earth**
+1:50m countries and provinces (public domain), downloaded to `tools/cache/` on first run.
+Territory groupings, names, IPC values and spring-1942 owners are defined in
+`tools/world_config.py`. Sea zones are Voronoi cells around hand-placed points, clipped
+to open water. Adjacency is measured on full-detail shapes, and the board is simplified
+as one coverage so shared borders stay shared.
 
 ```sh
 pip install shapely
 python3 tools/build_world_map.py --preview /tmp/preview.svg   # ~2 minutes
 ```
-
-### Using an edition's board (TripleA import)
-
-The published Axis & Allies edition boards are not included. Tacticle can import a
-TripleA map you have, such as one of the community recreations of the 1942 board. In the
-authoring tool: **Scenario → Import a TripleA map…**, then choose the game XML from the
-map's `games/` folder, `polygons.txt` and (optionally) `centers.txt`. Territories,
-connections, production values, owners, capitals, starting units and money are converted;
-images are not used. The result is saved to `maps/<id>.json` and listed in
-`maps/index.json`. Making a territory playable on an imported map fills in its starting
-units. The converter also works from Node:
-`require('./js/triplea.js').convert({ xml, polygons, centers, id })`.
 
 ## Code layout
 
@@ -232,7 +273,8 @@ js/ai.js                      computer opponent + AI self-play
 js/generator.js               procedural puzzles and variants
 js/mapview.js, js/icons.js    SVG map (pan/zoom/pinch/wrap) and unit icons
 js/daily.js                   dates, puzzle numbers, share text
-js/triplea.js                 TripleA map importer
+js/triplea.js                 TripleA catalogue reader and map converter
+tools/triplea_fetch.js        TripleA import from the command line
 js/worker.js                  Web Worker for generation and balance checks
 tools/serve.js                static server + save API for the authoring tool
 tools/build_world_map.py      world map builder (+ tools/world_config.py)

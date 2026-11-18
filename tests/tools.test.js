@@ -119,3 +119,73 @@ test('authoring server: save a puzzle, index it, save the schedule', async () =>
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('TripleA unit names map onto Tacticle units', () => {
+  const cases = {
+    infantry: 'infantry', germanInfantry: 'infantry', 'italianMech.Infantry': 'infantry', japaneseMarine: 'infantry', germanParatrooper: 'infantry',
+    armour: 'tank', germanTank: 'tank', artillery: 'artillery', germanAntiTankGun: 'artillery', aaGun: 'aaa', AntiAirGun: 'aaa',
+    factory: 'factory', germanFactory: 'factory', fighter: 'fighter', americanNavalFighter: 'fighter', germanTacticalBomber: 'fighter',
+    bomber: 'bomber', germanStrategicBomber: 'bomber', transport: 'transport', britishTransport: 'transport', submarine: 'submarine',
+    destroyer: 'destroyer', cruiser: 'cruiser', carrier: 'carrier', britishBattleship: 'battleship',
+    Flagpole: null, germanAirfield: null, britishHull: null, Rail: null, americanAirTransport: null, Truck: null, britishDocks: null,
+  };
+  for (const k of Object.keys(cases)) assert.equal(TA.mapUnit(k), cases[k], k);
+});
+
+test('TripleA catalogue, map.yml and map.properties parsing', () => {
+  const idx = TA.parseIndex([
+    '# comment',
+    '- mapName: Total World War',
+    '  mapCategory: BEST',
+    '  url: https://github.com/triplea-maps/total_world_war/archive/refs/heads/master.zip',
+    '  img: https://example.org/p.png',
+    '  version: 7',
+    '  description: |',
+    '    <br>Created by <b>someone</b>',
+    '    December 1941',
+    '- mapName: Odd Branch',
+    '  url: https://github.com/triplea-maps/odd_branch/archive/main.zip',
+  ].join('\n'));
+  assert.equal(idx.length, 2);
+  assert.deepEqual([idx[0].repo, idx[0].branch, idx[0].category], ['total_world_war', 'master', 'BEST']);
+  assert.equal(idx[0].text, 'Created by someone December 1941');
+  assert.deepEqual([idx[1].repo, idx[1].branch], ['odd_branch', 'main']);
+  assert.deepEqual(TA.parseMapYml("map_name: x\ngames:\n- {game_name: 'Total World War: 3.0', file_name: TWW_3.0.xml}\n"), [{ name: 'Total World War: 3.0', file: 'TWW_3.0.xml' }]);
+  assert.deepEqual(TA.parseMapYml('map_name: y\ngames:\n- game_name: World War II v3 1942\n  file_name: WW2v3-1942.xml\n'), [{ name: 'World War II v3 1942', file: 'WW2v3-1942.xml' }]);
+  const m = TA.convert({ xml: data('mini-triplea.xml'), polygons: data('mini-polygons.txt'), properties: 'color.Germans=112233\nmap.scrollWrapX=true\nmap.width=400\n' });
+  assert.equal(m.powers.find((p) => p.id === 'Germany').color, '#112233');
+  assert.equal(m.wrapX, true);
+  assert.equal(m.width, 400);
+  assert.deepEqual(m.turnOrder, []);
+});
+
+test('canals restrict ships between their sea zones', () => {
+  const map = JSON.parse(JSON.stringify(fixtureMap));
+  map.canals = [{ id: 'c', name: 'Test canal', a: 'S1', b: 'S2', requires: ['B1'] }];
+  const g = E.Game.create(map, scenario(), { seed: 2 });
+  g.nextPhase();
+  const dd = g.units('S1').filter((u) => u.t === 'destroyer').map((u) => u.id);
+  assert.equal(g.checkMove('S1', dd, 'S2').ok, false, 'canal held by the enemy');
+  g.move('A1', g.units('A1').filter((u) => u.t === 'infantry').slice(0, 1).map((u) => u.id), 'B1');
+  assert.equal(g.s.terr.B1.o, 'Germany');
+  assert.ok(g.checkMove('S1', dd, 'S2').ok, 'canal open once captured');
+});
+
+test('bundled TripleA maps: symmetric adjacency, geometry, playable generator puzzles', () => {
+  const idx = require('../maps/index.json').maps;
+  const tri = idx.filter((m) => m.source === 'TripleA');
+  assert.ok(tri.length >= 1);
+  for (const entry of tri) {
+    const map = require('../' + entry.file);
+    const T = {};
+    for (const t of map.territories) T[t.id] = t;
+    for (const t of map.territories) {
+      assert.ok(t.path && t.center && t.bbox, t.id);
+      for (const a of t.adj) assert.ok(T[a] && T[a].adj.includes(t.id), `${entry.id}: ${t.id} <-> ${a}`);
+    }
+    for (const c of map.canals) assert.ok(T[c.a] && T[c.b], c.name);
+    const sc = G.generate(map, { seed: 4, theater: 'eastern', tune: 0, mapUnits: true });
+    assert.deepEqual(E.Game.validate(map, sc).filter((m) => m.level === 'error'), [], entry.id);
+    assert.ok(AI.selfPlay(map, sc, { seed: 1 }).result, entry.id + ' self-play finishes');
+  }
+});

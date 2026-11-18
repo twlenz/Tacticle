@@ -1,0 +1,191 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "tobruk",
+  "title": "Tobruk",
+  "description": "As Germany, take Tobruk from United Kingdom within 2 turns without losing Al Kufrah.",
+  "author": "Tacticle",
+  "map": "total_world_war",
+  "ruleset": "1942",
+  "playable": [
+    "crete",
+    "tobruk",
+    "cyrenaica",
+    "al_kufrah",
+    "tunisia",
+    "western_egypt",
+    "greece",
+    "syria",
+    "malta",
+    "trans_jordan",
+    "51_sea_zone",
+    "52_sea_zone",
+    "53_sea_zone",
+    "48_sea_zone",
+    "45_sea_zone",
+    "49_sea_zone",
+    "50_sea_zone",
+    "54_sea_zone"
+  ],
+  "maxTurns": 2,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": false,
+  "powers": {
+    "Germany": {
+      "team": "Axis",
+      "controller": "human",
+      "money": 0
+    },
+    "United Kingdom": {
+      "team": "Allies",
+      "controller": "ai",
+      "money": 0
+    }
+  },
+  "turnOrder": [
+    "Germany",
+    "United Kingdom"
+  ],
+  "setup": {
+    "crete": {
+      "owner": "Germany",
+      "units": {}
+    },
+    "tobruk": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "artillery": 2,
+          "infantry": 3
+        }
+      }
+    },
+    "cyrenaica": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "infantry": 2,
+          "bomber": 1
+        }
+      }
+    },
+    "al_kufrah": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "artillery": 1,
+          "infantry": 5
+        }
+      }
+    },
+    "tunisia": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "infantry": 1
+        }
+      }
+    },
+    "western_egypt": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 1,
+          "tank": 1
+        }
+      }
+    },
+    "greece": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "infantry": 1
+        }
+      }
+    },
+    "syria": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 2
+        }
+      }
+    },
+    "malta": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 1
+        }
+      }
+    },
+    "trans_jordan": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 2
+        }
+      }
+    },
+    "51_sea_zone": {
+      "units": {}
+    },
+    "52_sea_zone": {
+      "units": {}
+    },
+    "53_sea_zone": {
+      "units": {}
+    },
+    "48_sea_zone": {
+      "units": {
+        "United Kingdom": {
+          "destroyer": 1,
+          "submarine": 1
+        }
+      }
+    },
+    "45_sea_zone": {
+      "units": {
+        "Germany": {
+          "transport": 1,
+          "infantry": 2,
+          "carrier": 1,
+          "fighter": 1
+        }
+      }
+    },
+    "49_sea_zone": {
+      "units": {}
+    },
+    "50_sea_zone": {
+      "units": {}
+    },
+    "54_sea_zone": {
+      "units": {}
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "tobruk"
+      ]
+    },
+    {
+      "type": "hold",
+      "territories": [
+        "al_kufrah"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 7082,
+    "difficulty": "hard",
+    "theater": "western",
+    "size": 10,
+    "naval": true,
+    "winRate": 0.5
+  },
+  "difficulty": "hard"
+}

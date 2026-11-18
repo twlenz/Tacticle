@@ -1,0 +1,151 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "vyborg-thrust",
+  "title": "Vyborg Thrust",
+  "description": "As Soviet Union, take Vyborg from Germany within 2 turns.",
+  "author": "Tacticle",
+  "map": "world_at_war",
+  "ruleset": "1942",
+  "playable": [
+    "latvia",
+    "east_prussia",
+    "novgorod",
+    "estonia",
+    "leningrad",
+    "lithuania",
+    "minsk",
+    "vyborg",
+    "smolensk",
+    "24_sea_zone"
+  ],
+  "maxTurns": 2,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": true,
+  "powers": {
+    "Soviet Union": {
+      "team": "Allies",
+      "controller": "human",
+      "money": 12
+    },
+    "Germany": {
+      "team": "Axis",
+      "controller": "ai",
+      "money": 12
+    }
+  },
+  "turnOrder": [
+    "Soviet Union",
+    "Germany"
+  ],
+  "setup": {
+    "latvia": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "infantry": 1
+        }
+      }
+    },
+    "east_prussia": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "infantry": 2,
+          "tank": 1
+        }
+      }
+    },
+    "novgorod": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "infantry": 1
+        }
+      }
+    },
+    "estonia": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "infantry": 2
+        }
+      }
+    },
+    "leningrad": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "infantry": 4,
+          "tank": 1,
+          "fighter": 1,
+          "factory": 1,
+          "aaa": 1
+        }
+      }
+    },
+    "lithuania": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "infantry": 1,
+          "artillery": 1
+        }
+      }
+    },
+    "minsk": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "infantry": 1
+        }
+      }
+    },
+    "vyborg": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "infantry": 4,
+          "artillery": 1,
+          "tank": 1
+        }
+      }
+    },
+    "smolensk": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "infantry": 1
+        }
+      }
+    },
+    "24_sea_zone": {
+      "units": {
+        "Soviet Union": {
+          "transport": 1,
+          "destroyer": 1,
+          "submarine": 2
+        }
+      }
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "vyborg"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 7050,
+    "difficulty": "medium",
+    "theater": "eastern",
+    "size": 9,
+    "naval": false,
+    "mapUnits": true,
+    "winRate": 0.5625
+  },
+  "difficulty": "medium"
+}

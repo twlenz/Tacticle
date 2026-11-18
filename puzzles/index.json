@@ -1,15 +1,6 @@
 {
   "puzzles": [
     {
-      "id": "channel-crossing",
-      "file": "puzzles/channel-crossing.json",
-      "title": "Channel Crossing",
-      "map": "world1942",
-      "ruleset": "1942",
-      "maxTurns": 3,
-      "difficulty": "hard"
-    },
-    {
       "id": "desert-sweep",
       "file": "puzzles/desert-sweep.json",
       "title": "Desert Sweep",
@@ -19,40 +10,40 @@
       "difficulty": "medium"
     },
     {
-      "id": "east-china-landings",
-      "file": "puzzles/east-china-landings.json",
-      "title": "East China Landings",
-      "map": "world1942",
-      "ruleset": "1942",
-      "maxTurns": 4,
-      "difficulty": "medium"
-    },
-    {
-      "id": "fezzan-column",
-      "file": "puzzles/fezzan-column.json",
-      "title": "The Fezzan Column",
-      "map": "world1942",
-      "ruleset": "1942",
-      "maxTurns": 2,
-      "difficulty": "medium"
-    },
-    {
-      "id": "home-islands",
-      "file": "puzzles/home-islands.json",
-      "title": "Home Islands",
-      "map": "world1942",
-      "ruleset": "1942",
-      "maxTurns": 4,
-      "difficulty": "easy"
-    },
-    {
-      "id": "leningrad-pocket",
-      "file": "puzzles/leningrad-pocket.json",
-      "title": "Leningrad Pocket",
-      "map": "world1942",
+      "id": "east-african-sweep",
+      "file": "puzzles/east-african-sweep.json",
+      "title": "East African Sweep",
+      "map": "world_at_war",
       "ruleset": "1942",
       "maxTurns": 3,
       "difficulty": "easy"
+    },
+    {
+      "id": "hong-kong",
+      "file": "puzzles/hong-kong.json",
+      "title": "Hong Kong",
+      "map": "world_at_war",
+      "ruleset": "1942",
+      "maxTurns": 3,
+      "difficulty": "medium"
+    },
+    {
+      "id": "karelian-front",
+      "file": "puzzles/karelian-front.json",
+      "title": "Karelian Front",
+      "map": "total_world_war",
+      "ruleset": "1942",
+      "maxTurns": 4,
+      "difficulty": "easy"
+    },
+    {
+      "id": "malayan-gambit",
+      "file": "puzzles/malayan-gambit.json",
+      "title": "Malayan Gambit",
+      "map": "total_world_war",
+      "ruleset": "1942",
+      "maxTurns": 2,
+      "difficulty": "medium"
     },
     {
       "id": "moscow-gambit",
@@ -64,30 +55,57 @@
       "difficulty": "medium"
     },
     {
-      "id": "red-river",
-      "file": "puzzles/red-river.json",
-      "title": "Red River",
-      "map": "world1942",
-      "ruleset": "1942",
-      "maxTurns": 2,
-      "difficulty": "hard"
-    },
-    {
-      "id": "ukraine-counterstroke",
-      "file": "puzzles/ukraine-counterstroke.json",
-      "title": "Ukraine Counterstroke",
-      "map": "world1942",
-      "ruleset": "1942",
-      "maxTurns": 2,
-      "difficulty": "hard"
-    },
-    {
-      "id": "yellow-river",
-      "file": "puzzles/yellow-river.json",
-      "title": "Yellow River",
-      "map": "world1942",
+      "id": "over-the-salween",
+      "file": "puzzles/over-the-salween.json",
+      "title": "Over the Salween",
+      "map": "total_world_war",
       "ruleset": "1942",
       "maxTurns": 3,
+      "difficulty": "hard"
+    },
+    {
+      "id": "ponape-landing",
+      "file": "puzzles/ponape-landing.json",
+      "title": "Ponape Landing",
+      "map": "world_at_war",
+      "ruleset": "1942",
+      "maxTurns": 3,
+      "difficulty": "medium"
+    },
+    {
+      "id": "road-to-cairo",
+      "file": "puzzles/road-to-cairo.json",
+      "title": "Road to Cairo",
+      "map": "total_world_war",
+      "ruleset": "1942",
+      "maxTurns": 4,
+      "difficulty": "medium"
+    },
+    {
+      "id": "smolensk-counteroffensive",
+      "file": "puzzles/smolensk-counteroffensive.json",
+      "title": "Smolensk Counteroffensive",
+      "map": "total_world_war",
+      "ruleset": "1942",
+      "maxTurns": 2,
+      "difficulty": "hard"
+    },
+    {
+      "id": "tobruk",
+      "file": "puzzles/tobruk.json",
+      "title": "Tobruk",
+      "map": "total_world_war",
+      "ruleset": "1942",
+      "maxTurns": 2,
+      "difficulty": "hard"
+    },
+    {
+      "id": "vyborg-thrust",
+      "file": "puzzles/vyborg-thrust.json",
+      "title": "Vyborg Thrust",
+      "map": "world_at_war",
+      "ruleset": "1942",
+      "maxTurns": 2,
       "difficulty": "medium"
     }
   ]
