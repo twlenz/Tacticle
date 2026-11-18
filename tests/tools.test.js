@@ -79,12 +79,37 @@ test('daily: schedule lookup, numbering and share text', () => {
   const sch = { epoch: '2026-11-18', days: { '2026-11-18': 'puzzles/a.json', '2026-11-20': 'puzzles/b.json' } };
   assert.equal(D.number(sch, '2026-11-18'), 1);
   assert.equal(D.number(sch, '2026-12-01'), 14);
-  assert.deepEqual(D.entryFor(sch, '2026-11-19'), { date: '2026-11-18', file: 'puzzles/a.json' });
+  // an empty day replays an earlier puzzle, keeps its own date (fresh save, own number) and is the same for everyone
+  assert.deepEqual(D.entryFor(sch, '2026-11-19'), { date: '2026-11-19', file: 'puzzles/a.json', replay: true, from: '2026-11-18' });
   assert.equal(D.entryFor(sch, '2026-11-19', true), null);
+  assert.deepEqual(D.entryFor(Object.assign({ fallback: 'latest' }, sch), '2026-11-19'), { date: '2026-11-18', file: 'puzzles/a.json' });
+  assert.equal(D.entryFor(sch, '2026-11-17'), null, 'nothing before the first puzzle');
+  const many = { epoch: '2026-01-01', days: {} };
+  for (let i = 0; i < 20; i++) many.days[D.addDays('2026-01-01', i)] = `puzzles/p${i}.json`;
+  const picks = [];
+  for (let i = 30; i < 60; i++) {
+    const d = D.addDays('2026-01-01', i);
+    const e = D.entryFor(many, d);
+    assert.deepEqual(e, D.entryFor(JSON.parse(JSON.stringify(many)), d), 'deterministic');
+    assert.ok(e.replay && many.days[e.from] === e.file);
+    picks.push(e.file);
+  }
+  assert.ok(new Set(picks).size > 8, 'replays vary from day to day');
+  for (let i = 1; i < picks.length; i++) assert.notEqual(picks[i], picks[i - 1], 'no back-to-back repeat');
+  // a week after the last scheduled day, recent puzzles are avoided while older ones exist
+  const e = D.entryFor(many, '2026-01-21');
+  assert.ok(+e.file.match(/p(\d+)/)[1] < 13, e.file);
   assert.equal(D.addDays('2026-12-31', 1), '2027-01-01');
-  const txt = D.shareText({ number: 3, title: 'Kursk', won: true, turns: 2, maxTurns: 4, history: [{ progress: 0.5 }, { progress: 1 }],
-    luckYou: { dice: 20, diff: 1.24 }, luckFoe: { dice: 15, diff: -0.8 }, url: 'https://example.org/' });
-  assert.equal(txt, 'Tacticle #3 · Kursk\n🏆 Won in 2/4 turns\n🟨🟩\n🎲 I rolled above the odds (+1.2 hits)\n🎲 Foe rolled below the odds (−0.8 hits)\nhttps://example.org/');
+  // a loss: one square per objective territory, yellow = taken, red = not
+  let txt = D.shareText({ number: 1, title: 'Karelian Front', won: false, turns: 1, maxTurns: 4, objectivesDone: 2, objectivesTotal: 3,
+    targets: [{ met: true }, { met: true }, { met: false }], luckYou: { dice: 20, diff: -3 }, luckFoe: { dice: 15, diff: 3.24 },
+    lossYou: 15, lossFoe: 25, url: 'https://twlenz.github.io/Tacticle/index.html' });
+  assert.equal(txt, 'Tacticle #1 · Karelian Front\n💀 Lost · 2/3 objectives · 1/4 turns\n🟨🟨🟥\n🎲 I rolled below odds (-3 hits)\n🎲 Opponent rolled above odds (+3.2 hits)\nMe -15 IPC / Them -25 IPC\ntwlenz.github.io/Tacticle');
+  // a win where 2 of 3 was enough: green = taken, orange = not needed
+  txt = D.shareText({ number: 3, title: 'Kursk', won: true, turns: 2, maxTurns: 4, targets: [{ met: true }, { met: false }, { met: true }],
+    luckYou: { dice: 20, diff: 0.1 }, luckFoe: { dice: 0 }, lossYou: 0, lossFoe: 12, url: 'https://twlenz.github.io/Tacticle/' });
+  assert.equal(txt, 'Tacticle #3 · Kursk\n🏆 Won in 2/4 turns\n🟩🟧🟩\n🎲 I rolled at odds (+0.1 hits)\n🎲 Opponent rolled no dice\nMe 0 IPC / Them -12 IPC\ntwlenz.github.io/Tacticle');
+  assert.equal(D.shortUrl('http://localhost:8080/'), 'http://localhost:8080/');
 });
 
 test('authoring server: save a puzzle, index it, save the schedule', async () => {
@@ -94,8 +119,8 @@ test('authoring server: save a puzzle, index it, save the schedule', async () =>
   const { server } = require(path.join(tmp, 'tools', 'serve.js'));
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;
-  const call = (method, p, body) => new Promise((resolve, reject) => {
-    const req = http.request({ host: '127.0.0.1', port, path: p, method, headers: { 'Content-Type': 'application/json' } }, (res) => {
+  const call = (method, p, body, headers) => new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, path: p, method, headers: Object.assign({ 'Content-Type': 'application/json' }, headers || {}) }, (res) => {
       let s = ''; res.on('data', (c) => { s += c; }); res.on('end', () => resolve({ code: res.statusCode, body: s }));
     });
     req.on('error', reject);
@@ -114,9 +139,47 @@ test('authoring server: save a puzzle, index it, save the schedule', async () =>
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(tmp, 'schedule.json'))).days, { '2026-11-19': 'puzzles/my-puzzle.json' });
     r = await call('GET', '/../../etc/passwd');
     assert.notEqual(r.code, 200);
+    // a sibling folder whose name starts like the repository's must stay unreachable
+    fs.mkdirSync(tmp + '-secret');
+    fs.writeFileSync(tmp + '-secret/secret.txt', 'secret');
+    r = await call('GET', '/..%2f' + path.basename(tmp) + '-secret%2fsecret.txt');
+    assert.notEqual(r.code, 200, 'sibling folder with the same prefix');
+    assert.ok(!r.body.includes('secret'));
+    // nor through a symlink inside the repository
+    fs.symlinkSync(tmp + '-secret', path.join(tmp, 'link'));
+    r = await call('GET', '/link/secret.txt');
+    assert.equal(r.code, 403, 'symlink out of the repository');
+    // hidden files
+    fs.writeFileSync(path.join(tmp, '.env'), 'TOKEN=x');
+    r = await call('GET', '/.env');
+    assert.equal(r.code, 403);
+    r = await call('GET', '/puzzles/my-puzzle.json');
+    assert.equal(r.code, 200);
+    assert.equal(r.code === 200 && JSON.parse(r.body).id, 'my-puzzle');
+    // DNS rebinding: a foreign Host header is refused, for files and API alike
+    r = await call('GET', '/puzzles/my-puzzle.json', null, { Host: 'evil.example:' + port });
+    assert.equal(r.code, 421);
+    r = await call('PUT', '/api/schedule', { days: {} }, { Host: 'evil.example' });
+    assert.equal(r.code, 421);
+    // cross-site API calls (CSRF) are refused; same-origin ones work
+    r = await call('PUT', '/api/puzzles/x1', { title: 'x' }, { Origin: 'https://evil.example' });
+    assert.equal(r.code, 403);
+    r = await call('DELETE', '/api/puzzles/my-puzzle', null, { 'Sec-Fetch-Site': 'cross-site' });
+    assert.equal(r.code, 403);
+    assert.ok(fs.existsSync(path.join(tmp, 'puzzles', 'my-puzzle.json')));
+    r = await call('OPTIONS', '/api/puzzles/x1', null, { Origin: 'https://evil.example' });
+    assert.equal(r.code, 403);
+    r = await call('PUT', '/api/puzzles/x2', { title: 'ok' }, { Origin: 'http://localhost:' + port, 'Sec-Fetch-Site': 'same-origin' });
+    assert.equal(r.code, 200);
+    // only JSON bodies; schedule entries must be puzzle files
+    r = await call('PUT', '/api/puzzles/x3', { title: 'x' }, { 'Content-Type': 'text/plain' });
+    assert.equal(r.code, 415);
+    r = await call('PUT', '/api/schedule', { epoch: '2026-11-18', days: { '2026-11-20': 'https://evil.example/p.json' } });
+    assert.equal(r.code, 400);
   } finally {
     server.close();
     fs.rmSync(tmp, { recursive: true, force: true });
+    fs.rmSync(tmp + '-secret', { recursive: true, force: true });
   }
 });
 

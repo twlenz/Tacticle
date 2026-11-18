@@ -247,3 +247,33 @@ test('rule sets load with their unit lists', () => {
   assert.equal(Rules.get('revised').units.tank.cost, 5);
   assert.equal(Rules.get('classic').units.battleship.hp, 1);
 });
+
+test('losses: IPC value of destroyed units is tallied per team', () => {
+  const g = newGame({ setup: Object.assign(scenario().setup, { B1: { owner: 'Soviet Union', units: { 'Soviet Union': { infantry: 2 } } } }) }, 5);
+  g.nextPhase();
+  g.move('A1', ids(g, 'A1', 'infantry').concat(ids(g, 'A1', 'tank')), 'B1');
+  g.nextPhase();
+  g.startBattle('B1');
+  g.autoResolve();
+  const lost = g.s.battle.lost || { A: {}, D: {} };
+  const R = require('../js/rulesets.js').get('1942');
+  const value = (m) => Object.keys(m).reduce((a, k) => a + m[k] * R.units[k].cost, 0);
+  assert.equal(g.s.losses.Axis || 0, value(lost.A));
+  assert.equal(g.s.losses.Allies || 0, value(lost.D));
+  assert.ok((g.s.losses.Axis || 0) + (g.s.losses.Allies || 0) > 0);
+});
+
+test('objectives needed: any N of M capture targets wins; targets report each territory', () => {
+  const sc = { objectives: [{ type: 'capture', territories: ['B1', 'B2', 'I'] }], objectivesNeeded: 1 };
+  const g = newGame(sc);
+  g.nextPhase();
+  g.move('A1', ids(g, 'A1', 'infantry').slice(0, 1), 'B1');
+  assert.deepEqual(g.objectiveTargets().map((t) => t.met), [true, false, false]);
+  assert.equal(g.objectivesNeeded(), 1);
+  g.nextPhase(); g.nextPhase(); g.nextPhase();
+  assert.equal(g.phase, 'gameOver');
+  assert.equal(g.s.result.won, true);
+  // without the setting every target is needed
+  const h = newGame({ objectives: [{ type: 'capture', territories: ['B1', 'B2'] }] });
+  assert.equal(h.objectivesNeeded(), 2);
+});

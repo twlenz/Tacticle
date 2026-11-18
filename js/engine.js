@@ -309,7 +309,7 @@
         round: 1, turn: 0, order, phase: 'purchase', maxTurns: scenario.maxTurns || 5,
         powers, terr, nextId, rng: opts.seed != null ? opts.seed | 0 : randomSeed(),
         buy: {}, battles: [], battle: null, startOwned: {},
-        stats: {}, history: [], log: [], result: null, origOwner: {},
+        stats: {}, losses: {}, history: [], log: [], result: null, origOwner: {},
       };
       for (const id of Object.keys(terr)) if (terr[id].o) s.origOwner[id] = terr[id].o;
       for (const p of Object.keys(powers)) if (!s.stats[powers[p].team]) s.stats[powers[p].team] = { exp: 0, act: 0, v: 0, n: 0 };
@@ -345,6 +345,8 @@
       if (!sc.playable || !sc.playable.length) err('No playable territories');
       if (!sc.objectives || !sc.objectives.length) err('Add at least one objective');
       if (!(sc.maxTurns >= 1)) err('Max turns must be at least 1');
+      const capTotal = (sc.objectives || []).filter((o) => o.type !== 'hold').reduce((a, o) => a + (o.territories || []).length, 0);
+      if (sc.objectivesNeeded && sc.objectivesNeeded > capTotal) warn(`Objectives needed (${sc.objectivesNeeded}) is more than the ${capTotal} capture/clear territories; all are required`);
       const R = Rules.get(sc.ruleset);
       const play = new Set(sc.playable || []);
       for (const o of sc.objectives || []) {
@@ -537,6 +539,26 @@
         return { type: o.type || 'capture', territories: ids, done, total: ids.length, met: done === ids.length };
       });
     }
+    /** One entry per objective territory: {id, type, met}. */
+    objectiveTargets() {
+      const ht = this.humanTeam();
+      const out = [];
+      for (const o of this.sc.objectives || []) {
+        for (const id of o.territories || []) {
+          let met;
+          if (o.type === 'destroy') met = !this.units(id).some((u) => this.team(u.o) !== ht && !this.def(u).infrastructure);
+          else met = !!(this.s.terr[id] && this.s.terr[id].o && this.team(this.s.terr[id].o) === ht);
+          out.push({ id, type: o.type || 'capture', met });
+        }
+      }
+      return out;
+    }
+    /** How many capture/clear targets must be met to win (all unless the puzzle says fewer). */
+    objectivesNeeded() {
+      const total = (this.sc.objectives || []).filter((o) => o.type !== 'hold').reduce((a, o) => a + (o.territories || []).length, 0);
+      const n = this.sc.objectivesNeeded | 0;
+      return n > 0 ? Math.min(n, total) : total;
+    }
     progress() {
       const st = this.objectiveStatus();
       let d = 0, t = 0;
@@ -570,7 +592,7 @@
       const alive = Object.keys(s.terr).some((id) => s.terr[id].o && this.team(s.terr[id].o) === ht) ||
         Object.keys(s.terr).some((id) => s.terr[id].u.some((u) => this.team(u.o) === ht));
       if (!alive) return finish(false, 'Your forces were wiped out');
-      const allOthers = others.every((o) => o.met);
+      const allOthers = others.reduce((a, o) => a + o.done, 0) >= this.objectivesNeeded();
       const humanTurnEnd = moment === 'turn' && this.isHuman(p) && this._lastHumanInRound(p);
       const check = this.sc.winCheck === 'roundEnd' ? moment === 'round' : (holds.length ? moment === 'round' : humanTurnEnd);
       if (check && allOthers && (!holds.length || s.round >= s.maxTurns) && (others.length || s.round >= s.maxTurns)) {
@@ -978,6 +1000,7 @@
         }
       }
       for (const { u, id } of lost) {
+        this._recordLoss(u);
         T[id].u.splice(T[id].u.indexOf(u), 1);
         this.log(`${this.def(u).name} could not land and was lost (${this.B.name(id)})`);
       }
@@ -1364,15 +1387,23 @@
       b.need = 'roll';
       this._runSteps();
     }
+    /** IPC value of destroyed units, per team (for the result text). */
+    _recordLoss(u) {
+      const team = this.team(u.o);
+      if (!team) return;
+      const L = this.s.losses || (this.s.losses = {});
+      L[team] = (L[team] || 0) + (this.def(u).cost || 0);
+    }
     _kill(u) {
       const at = this.whereIs(u.id);
       if (!at) return;
       const list = this.s.terr[at].u;
       // cargo sinks with its transport
       if (this.def(u).transport) {
-        for (const c of list.filter((x) => x.tr === u.id)) list.splice(list.indexOf(c), 1);
+        for (const c of list.filter((x) => x.tr === u.id)) { this._recordLoss(c); list.splice(list.indexOf(c), 1); }
         // units that already landed from this transport stay ashore
       }
+      this._recordLoss(u);
       list.splice(list.indexOf(u), 1);
       const b = this.s.battle;
       if (b) {
@@ -1523,6 +1554,7 @@
             u.tr = tr.id; delete u.amph;
           } else {
             const list = this.s.terr[id].u;
+            this._recordLoss(u);
             list.splice(list.indexOf(u), 1);
           }
         }
