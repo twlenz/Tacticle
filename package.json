@@ -1,0 +1,12 @@
+{
+  "name": "tacticle",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tacticle: a daily wargame puzzle with an authoring tool and scheduler",
+  "scripts": {
+    "start": "node tools/serve.js 8080",
+    "test": "node --test tests/engine.test.js tests/tools.test.js",
+    "build:map": "python3 tools/build_world_map.py"
+  },
+  "license": "MIT"
+}

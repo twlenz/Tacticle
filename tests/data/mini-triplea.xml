@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE game SYSTEM "game.dtd">
+<game>
+  <info name="Mini Test Map" version="1.0"/>
+  <map>
+    <territory name="Alpha Land"/>
+    <territory name="Beta Land"/>
+    <territory name="1 Sea Zone" water="true"/>
+    <connection t1="Alpha Land" t2="Beta Land"/>
+    <connection t1="Alpha Land" t2="1 Sea Zone"/>
+    <connection t1="Beta Land" t2="1 Sea Zone"/>
+  </map>
+  <playerList>
+    <player name="Germans" optional="false"/>
+    <player name="Russians" optional="false"/>
+    <alliance player="Germans" alliance="Axis"/>
+    <alliance player="Russians" alliance="Allies"/>
+  </playerList>
+  <attachmentList>
+    <attachment name="territoryAttachment" attachTo="Alpha Land" javaClass="games.strategy.triplea.attachments.TerritoryAttachment" type="territory">
+      <option name="production" value="5"/>
+      <option name="capital" value="Germans"/>
+    </attachment>
+    <attachment name="territoryAttachment" attachTo="Beta Land" javaClass="games.strategy.triplea.attachments.TerritoryAttachment" type="territory">
+      <option name="production" value="2"/>
+    </attachment>
+  </attachmentList>
+  <initialize>
+    <ownerInitialize>
+      <territoryOwner territory="Alpha Land" owner="Germans"/>
+      <territoryOwner territory="Beta Land" owner="Russians"/>
+    </ownerInitialize>
+    <unitInitialize>
+      <unitPlacement unitType="infantry" territory="Alpha Land" quantity="3" owner="Germans"/>
+      <unitPlacement unitType="armour" territory="Alpha Land" quantity="1" owner="Germans"/>
+      <unitPlacement unitType="factory" territory="Alpha Land" quantity="1" owner="Germans"/>
+      <unitPlacement unitType="infantry" territory="Beta Land" quantity="2" owner="Russians"/>
+      <unitPlacement unitType="mystery_unit" territory="Beta Land" quantity="1" owner="Russians"/>
+      <unitPlacement unitType="submarine" territory="1 Sea Zone" quantity="1" owner="Germans"/>
+    </unitInitialize>
+    <resourceInitialize>
+      <resourceGiven player="Germans" resource="PUs" quantity="30"/>
+      <resourceGiven player="Russians" resource="PUs" quantity="24"/>
+    </resourceInitialize>
+  </initialize>
+</game>

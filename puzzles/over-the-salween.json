@@ -1,0 +1,181 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "over-the-salween",
+  "title": "Over the Salween",
+  "description": "As United Kingdom, take Thailand and French Indochina from Thailand within 3 turns.",
+  "author": "Tacticle",
+  "map": "total_world_war",
+  "ruleset": "1942",
+  "playable": [
+    "burma",
+    "southern_thailand",
+    "rangoon",
+    "french_indochina",
+    "eastern_szechwan",
+    "bengal",
+    "malay",
+    "thailand",
+    "yunnan",
+    "kweichow",
+    "85_sea_zone",
+    "87_sea_zone",
+    "91_sea_zone"
+  ],
+  "maxTurns": 3,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": true,
+  "powers": {
+    "United Kingdom": {
+      "team": "Allies",
+      "controller": "human",
+      "money": 14
+    },
+    "Thailand": {
+      "team": "Axis",
+      "controller": "ai",
+      "money": 8
+    }
+  },
+  "turnOrder": [
+    "United Kingdom",
+    "Thailand"
+  ],
+  "setup": {
+    "burma": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 8,
+          "artillery": 4
+        }
+      }
+    },
+    "southern_thailand": {
+      "owner": "Thailand",
+      "units": {
+        "Thailand": {
+          "infantry": 2
+        }
+      }
+    },
+    "rangoon": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 1,
+          "artillery": 1
+        }
+      }
+    },
+    "french_indochina": {
+      "owner": "Thailand",
+      "units": {
+        "Thailand": {
+          "aaa": 1,
+          "infantry": 8,
+          "tank": 1,
+          "artillery": 3,
+          "fighter": 1
+        }
+      }
+    },
+    "eastern_szechwan": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "artillery": 1
+        }
+      }
+    },
+    "bengal": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 1
+        }
+      }
+    },
+    "malay": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 6,
+          "aaa": 1,
+          "tank": 2,
+          "artillery": 2
+        }
+      }
+    },
+    "thailand": {
+      "owner": "Thailand",
+      "units": {
+        "Thailand": {
+          "infantry": 3,
+          "artillery": 1,
+          "factory": 1,
+          "aaa": 1
+        }
+      }
+    },
+    "yunnan": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 1
+        }
+      }
+    },
+    "kweichow": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 2,
+          "aaa": 1
+        }
+      }
+    },
+    "85_sea_zone": {
+      "units": {
+        "United Kingdom": {
+          "transport": 1,
+          "destroyer": 1
+        }
+      }
+    },
+    "87_sea_zone": {
+      "units": {}
+    },
+    "91_sea_zone": {
+      "units": {
+        "Thailand": {
+          "fighter": 2,
+          "transport": 1,
+          "carrier": 1,
+          "battleship": 1,
+          "destroyer": 1
+        }
+      }
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "thailand",
+        "french_indochina"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 7060,
+    "difficulty": "hard",
+    "theater": "china",
+    "size": 10,
+    "naval": false,
+    "mapUnits": true,
+    "winRate": 0.4375
+  },
+  "difficulty": "hard"
+}

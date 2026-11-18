@@ -1,0 +1,147 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "hong-kong",
+  "title": "Hong Kong",
+  "description": "As Japan (Yamamoto), take Hong Kong from China within 3 turns.",
+  "author": "Tacticle",
+  "map": "world_at_war",
+  "ruleset": "1942",
+  "playable": [
+    "kwangsi",
+    "kwangtung",
+    "kiangsi",
+    "hunan",
+    "hong_kong",
+    "n_french_indochina",
+    "fukien",
+    "s_french_indochina",
+    "yunnan",
+    "92_sea_zone"
+  ],
+  "maxTurns": 3,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": true,
+  "powers": {
+    "Yamamoto": {
+      "team": "Axis",
+      "controller": "human",
+      "money": 8
+    },
+    "China": {
+      "team": "Allies",
+      "controller": "ai",
+      "money": 8
+    }
+  },
+  "turnOrder": [
+    "Yamamoto",
+    "China"
+  ],
+  "setup": {
+    "kwangsi": {
+      "owner": "Yamamoto",
+      "units": {
+        "Yamamoto": {
+          "artillery": 3,
+          "tank": 2,
+          "fighter": 1,
+          "infantry": 1
+        }
+      }
+    },
+    "kwangtung": {
+      "owner": "China",
+      "units": {
+        "China": {
+          "infantry": 2
+        }
+      }
+    },
+    "kiangsi": {
+      "owner": "China",
+      "units": {
+        "China": {
+          "infantry": 2,
+          "artillery": 1
+        }
+      }
+    },
+    "hunan": {
+      "owner": "China",
+      "units": {
+        "China": {
+          "infantry": 2,
+          "artillery": 1
+        }
+      }
+    },
+    "hong_kong": {
+      "owner": "China",
+      "units": {
+        "China": {
+          "factory": 1,
+          "infantry": 2,
+          "artillery": 1,
+          "fighter": 1
+        }
+      }
+    },
+    "n_french_indochina": {
+      "owner": "China",
+      "units": {
+        "China": {
+          "tank": 1,
+          "infantry": 1
+        }
+      }
+    },
+    "fukien": {
+      "owner": "Yamamoto",
+      "units": {
+        "Yamamoto": {
+          "tank": 2,
+          "infantry": 5,
+          "artillery": 3
+        }
+      }
+    },
+    "s_french_indochina": {
+      "owner": "China",
+      "units": {
+        "China": {
+          "infantry": 1
+        }
+      }
+    },
+    "yunnan": {
+      "owner": "China",
+      "units": {
+        "China": {
+          "infantry": 2
+        }
+      }
+    },
+    "92_sea_zone": {
+      "units": {}
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "hong_kong"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 8020,
+    "difficulty": "medium",
+    "theater": "china",
+    "size": 9,
+    "naval": false,
+    "winRate": 0.6875
+  },
+  "difficulty": "medium"
+}

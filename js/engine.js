@@ -1,0 +1,1641 @@
+/*
+ * Tacticle rules engine.
+ *
+ * Pure game logic with no DOM. Runs in the browser (window.TacticleEngine) and in Node.
+ * All mutable state is one plain JSON object (game.s), so it can be saved to
+ * localStorage, restored after a refresh, and snapshotted for undo.
+ *
+ * Turn: purchase -> combatMove -> combat -> noncombatMove -> place -> (income, next power)
+ */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./rulesets.js'));
+  else root.TacticleEngine = factory(root.TacticleRules);
+})(typeof self !== 'undefined' ? self : this, function (Rules) {
+  'use strict';
+
+  const PHASES = ['purchase', 'combatMove', 'combat', 'noncombatMove', 'place'];
+  const PHASE_NAMES = {
+    purchase: 'Purchase', combatMove: 'Combat Move', combat: 'Battles',
+    noncombatMove: 'Noncombat Move', place: 'Place Units', gameOver: 'Game Over',
+  };
+
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function randomSeed() {
+    const c = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+    if (c && c.getRandomValues) return c.getRandomValues(new Uint32Array(1))[0] | 0;
+    return Math.floor(Math.random() * 2147483647);
+  }
+  /** mulberry32 step: returns [nextState, float in [0,1)] */
+  function rngNext(state) {
+    state = (state + 0x6D2B79F5) | 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return [state, ((t ^ (t >>> 14)) >>> 0) / 4294967296];
+  }
+  /** Small standalone RNG (for simulations and the generator). */
+  function makeRng(seed) {
+    let s = seed | 0;
+    const f = () => { const r = rngNext(s); s = r[0]; return r[1]; };
+    f.int = (n) => Math.floor(f() * n);
+    f.pick = (a) => a[Math.floor(f() * a.length)];
+    f.die = () => 1 + Math.floor(f() * 6);
+    return f;
+  }
+
+  // ------------------------------------------------------------------
+  // Battle core: pure helpers shared by real battles and the simulator.
+  // A "unit" here only needs {id, t, h}; defs come from the rule set.
+  // Hit spec: {any, notAir, notSub, airOnly} = how many hits of each kind.
+  // ------------------------------------------------------------------
+  function hp(def) { return def.hp || 1; }
+
+  function groupOf(def) { return def.domain === 'air' ? 'air' : def.sub ? 'sub' : 'oth'; }
+
+  /** Largest number of hit points a side can absorb from these hits. */
+  function maxAssignable(R, units, hits, opts) {
+    const cap = { air: 0, sub: 0, oth: 0 };
+    let trn = 0;
+    for (const u of units) {
+      const d = R.units[u.t];
+      if (d.infrastructure) continue;
+      const left = hp(d) - (u.h || 0);
+      if (opts && opts.defenseless && d.transport) { trn += left; continue; }
+      cap[groupOf(d)] += left;
+    }
+    const best = flowMax(cap, hits);
+    // Transports are chosen last: they soak up whatever general hits remain
+    let extra = 0;
+    if (trn && best.used.oth >= cap.oth) {
+      const left = (hits.any + hits.notAir + hits.notSub) - best.surfaceUsed;
+      extra = Math.max(0, Math.min(trn, left));
+    }
+    return best.n + extra;
+  }
+
+  /** Brute-force the 3-group assignment (sizes are tiny). */
+  function flowMax(cap, hits) {
+    const A = hits.any || 0, NA = hits.notAir || 0, NS = hits.notSub || 0, AO = hits.airOnly || 0;
+    let best = { n: 0, used: { air: 0, sub: 0, oth: 0 }, surfaceUsed: 0 };
+    const airMax = Math.min(cap.air, A + NS + AO);
+    for (let a = 0; a <= airMax; a++) {
+      const subMax = Math.min(cap.sub, A + NA);
+      for (let s = 0; s <= subMax; s++) {
+        // hits left after serving air (prefer AO, NS first) and subs (prefer NA first)
+        let ao = AO, ns = NS, na = NA, an = A;
+        let need = a;
+        let t = Math.min(ao, need); ao -= t; need -= t;
+        t = Math.min(ns, need); ns -= t; need -= t;
+        t = Math.min(an, need); an -= t; need -= t;
+        if (need > 0) continue;
+        need = s;
+        t = Math.min(na, need); na -= t; need -= t;
+        t = Math.min(an, need); an -= t; need -= t;
+        if (need > 0) continue;
+        const o = Math.min(cap.oth, an + na + ns);
+        const n = a + s + o;
+        if (n > best.n) best = { n, used: { air: a, sub: s, oth: o }, surfaceUsed: (A + NA + NS) - (an + na + ns) + o };
+      }
+    }
+    return best;
+  }
+
+  /** Check a casualty pick list (unit ids, repeated for multi-hit units). */
+  function validatePicks(R, units, hits, picks, opts) {
+    const byId = {};
+    for (const u of units) byId[u.id] = u;
+    const need = maxAssignable(R, units, hits, opts);
+    if (picks.length !== need) return `Choose ${need} casualt${need === 1 ? 'y' : 'ies'}`;
+    const cnt = {};
+    const g = { air: 0, sub: 0, oth: 0 };
+    let trn = 0;
+    for (const id of picks) {
+      const u = byId[id];
+      if (!u) return 'Unknown unit';
+      const d = R.units[u.t];
+      if (d.infrastructure) return `${d.name} cannot be a casualty`;
+      cnt[id] = (cnt[id] || 0) + 1;
+      if (cnt[id] > hp(d) - (u.h || 0)) return `${d.name} picked too many times`;
+      if (opts && opts.defenseless && d.transport) trn++;
+      else g[groupOf(d)]++;
+    }
+    const cap = { air: g.air, sub: g.sub, oth: g.oth };
+    const f = flowMax(cap, hits);
+    if (f.n !== g.air + g.sub + g.oth) {
+      if (g.air && !(hits.any + hits.notSub + (hits.airOnly || 0))) return 'These hits cannot be taken by aircraft';
+      if (g.sub && !(hits.any + hits.notAir)) return 'These hits cannot be taken by submarines';
+      return 'Those casualties do not match the kinds of hits';
+    }
+    if (trn) {
+      // all other hittable units must be fully used first
+      let otherLeft = 0;
+      for (const u of units) {
+        const d = R.units[u.t];
+        if (d.infrastructure || d.transport) continue;
+        if (groupOf(d) !== 'oth') continue;
+        otherLeft += hp(d) - (u.h || 0) - (cnt[u.id] || 0);
+      }
+      if (otherLeft > 0) return 'Transports are taken last';
+    }
+    return null;
+  }
+
+  function supportCount(R, units, role) {
+    if (role !== 'A') return { inf: 0, art: 0 };
+    let inf = 0, art = 0;
+    for (const u of units) {
+      const d = R.units[u.t];
+      if (d.supportable) inf++;
+      if (d.supports) art += d.supports;
+    }
+    return { inf, art };
+  }
+
+  /** Value used to pick cheap casualties first: low = lose first. */
+  function keepScore(R, u, role, round) {
+    const d = R.units[u.t];
+    if (hp(d) > 1 && (u.h || 0) < hp(d) - 1) return -100; // free hit on a battleship
+    let v = role === 'A' ? d.att : d.def;
+    if (d.aa && round > 1) v = 0;
+    return v * 3 + d.cost / 2 + (d.transport ? 1000 : 0);
+  }
+
+  function autoPicks(R, units, hits, role, opts) {
+    const need = maxAssignable(R, units, hits, opts);
+    const pool = [];
+    for (const u of units) {
+      const d = R.units[u.t];
+      if (d.infrastructure) continue;
+      for (let k = 0; k < hp(d) - (u.h || 0); k++) pool.push({ u, k });
+    }
+    const round = (opts && opts.round) || 1;
+    pool.sort((a, b) => {
+      const sa = a.k === 0 ? keepScore(R, a.u, role, round) : keepScore(R, a.u, role, round) + 0.01 + (hp(R.units[a.u.t]) > 1 ? 30 : 0);
+      const sb = b.k === 0 ? keepScore(R, b.u, role, round) : keepScore(R, b.u, role, round) + 0.01 + (hp(R.units[b.u.t]) > 1 ? 30 : 0);
+      return sa - sb || a.u.id - b.u.id;
+    });
+    const picks = [];
+    for (const p of pool) {
+      if (picks.length >= need) break;
+      const trial = picks.concat([p.u.id]);
+      // feasible if remaining need can still be met
+      const err = validatePartial(R, units, hits, trial, opts);
+      if (!err) picks.push(p.u.id);
+    }
+    return picks;
+  }
+
+  function validatePartial(R, units, hits, picks, opts) {
+    const g = { air: 0, sub: 0, oth: 0 };
+    const byId = {};
+    for (const u of units) byId[u.id] = u;
+    let trn = 0;
+    for (const id of picks) {
+      const d = R.units[byId[id].t];
+      if (opts && opts.defenseless && d.transport) trn++;
+      else g[groupOf(d)]++;
+    }
+    const f = flowMax(g, hits);
+    if (f.n !== g.air + g.sub + g.oth) return 'bad';
+    if (trn) {
+      let otherLeft = 0;
+      const cnt = {};
+      for (const id of picks) cnt[id] = (cnt[id] || 0) + 1;
+      for (const u of units) {
+        const d = R.units[u.t];
+        if (d.infrastructure || d.transport || groupOf(d) !== 'oth') continue;
+        otherLeft += hp(d) - (u.h || 0) - (cnt[u.id] || 0);
+      }
+      if (otherLeft > 0) return 'bad';
+    }
+    return null;
+  }
+
+  // ------------------------------------------------------------------
+  // Board: static map + playable subset
+  // ------------------------------------------------------------------
+  class Board {
+    constructor(map, scenario) {
+      this.map = map;
+      this.T = {};
+      for (const t of map.territories) this.T[t.id] = t;
+      this.playable = new Set((scenario && scenario.playable && scenario.playable.length)
+        ? scenario.playable.filter((id) => this.T[id]) : map.territories.map((t) => t.id));
+      this.adj = {};
+      for (const id of this.playable) this.adj[id] = (this.T[id].adj || []).filter((a) => this.playable.has(a));
+      this.canals = [];
+      for (const c of map.canals || []) {
+        if (this.playable.has(c.a) && this.playable.has(c.b)) {
+          this.canals.push(c);
+          if (!this.adj[c.a].includes(c.b)) this.adj[c.a].push(c.b);
+          if (!this.adj[c.b].includes(c.a)) this.adj[c.b].push(c.a);
+        }
+      }
+      // a canal (or controlled strait) restricts ships between its two sea zones
+      this.canalKey = {};
+      for (const c of this.canals) {
+        for (const k of [c.a + '|' + c.b, c.b + '|' + c.a]) (this.canalKey[k] = this.canalKey[k] || []).push(c);
+      }
+      this.powers = {};
+      for (const p of map.powers || []) this.powers[p.id] = p;
+    }
+    isSea(id) { return this.T[id].type === 'sea'; }
+    isLand(id) { return this.T[id].type !== 'sea'; }
+    ipc(id) { return this.T[id].ipc || 0; }
+    name(id) { return this.T[id] ? this.T[id].name : id; }
+  }
+
+  // ------------------------------------------------------------------
+  // Game
+  // ------------------------------------------------------------------
+  class Game {
+    constructor(map, scenario, state) {
+      this.map = map;
+      this.sc = scenario;
+      this.B = new Board(map, scenario);
+      this.R = Rules.get(scenario.ruleset);
+      this.s = state;
+    }
+
+    static create(map, scenario, opts) {
+      opts = opts || {};
+      const g = new Game(map, scenario, null);
+      const errs = Game.validate(map, scenario).filter((e) => e.level === 'error');
+      if (errs.length && !opts.force) throw new Error(errs.map((e) => e.msg).join('; '));
+      const R = g.R;
+      const powers = {};
+      const order = (scenario.turnOrder && scenario.turnOrder.length)
+        ? scenario.turnOrder.filter((p) => scenario.powers[p])
+        : R.turnOrder.filter((p) => scenario.powers[p]).concat(Object.keys(scenario.powers).filter((p) => !R.turnOrder.includes(p)));
+      for (const p of Object.keys(scenario.powers)) {
+        const sp = scenario.powers[p];
+        const mp = g.B.powers[p] || {};
+        powers[p] = {
+          team: sp.team || mp.team || 'Allies', ai: sp.controller !== 'human', money: sp.money | 0,
+          capital: null, unplaced: {},
+        };
+      }
+      const terr = {};
+      let nextId = 1;
+      for (const id of g.B.playable) {
+        const t = g.B.T[id];
+        const st = (scenario.setup && scenario.setup[id]) || {};
+        const owner = t.type === 'sea' ? null : (st.owner !== undefined ? st.owner : (t.owner || null));
+        terr[id] = { o: owner && powers[owner] ? owner : (owner ? null : null), u: [], dmg: st.dmg | 0, conq: false };
+        if (t.type !== 'sea' && owner && !powers[owner]) terr[id].o = null;
+        if (t.type !== 'sea' && st.owner === undefined && t.owner && !powers[t.owner]) terr[id].o = null;
+        const us = st.units || {};
+        for (const p of Object.keys(us)) {
+          if (!powers[p]) continue;
+          for (const type of Object.keys(us[p])) {
+            if (!R.units[type]) continue;
+            for (let k = 0; k < (us[p][type] | 0); k++) terr[id].u.push(g._mkUnit(nextId++, type, p));
+          }
+        }
+      }
+      // capitals: scenario override, else the map's (most valuable) capital for that power if playable
+      for (const id of g.B.playable) {
+        const t = g.B.T[id];
+        if (!t.capital || !powers[t.capital]) continue;
+        const cur = powers[t.capital].capital;
+        if (!cur || g.B.ipc(id) > g.B.ipc(cur)) powers[t.capital].capital = id;
+      }
+      for (const p of Object.keys(scenario.powers)) {
+        const c = scenario.powers[p].capital;
+        if (c !== undefined) powers[p].capital = c && g.B.playable.has(c) ? c : null;
+      }
+      const s = {
+        v: 1, scenarioId: scenario.id || 'custom', mapId: map.id, rules: R.id,
+        round: 1, turn: 0, order, phase: 'purchase', maxTurns: scenario.maxTurns || 5,
+        powers, terr, nextId, rng: opts.seed != null ? opts.seed | 0 : randomSeed(),
+        buy: {}, battles: [], battle: null, startOwned: {},
+        stats: {}, history: [], log: [], result: null, origOwner: {},
+      };
+      for (const id of Object.keys(terr)) if (terr[id].o) s.origOwner[id] = terr[id].o;
+      for (const p of Object.keys(powers)) if (!s.stats[powers[p].team]) s.stats[powers[p].team] = { exp: 0, act: 0, v: 0, n: 0 };
+      g.s = s;
+      // load setup cargo onto transports
+      for (const id of Object.keys(terr)) {
+        if (!g.B.isSea(id)) continue;
+        const land = terr[id].u.filter((u) => R.units[u.t].domain === 'land');
+        for (const u of land) {
+          const tr = terr[id].u.find((x) => x.o === u.o && R.units[x.t].transport && g._space(x, id) >= R.units[u.t].transportCost);
+          if (tr) u.tr = tr.id;
+          else terr[id].u.splice(terr[id].u.indexOf(u), 1);
+        }
+      }
+      g._startTurn();
+      return g;
+    }
+
+    /** Problems with a scenario: [{level:'error'|'warn', msg}] */
+    static validate(map, sc) {
+      const out = [];
+      const err = (msg) => out.push({ level: 'error', msg });
+      const warn = (msg) => out.push({ level: 'warn', msg });
+      const T = {};
+      for (const t of map.territories) T[t.id] = t;
+      if (!sc.powers || !Object.keys(sc.powers).length) err('No powers in the scenario');
+      const humans = Object.keys(sc.powers || {}).filter((p) => sc.powers[p].controller === 'human');
+      if (!humans.length) err('Choose at least one power for the player');
+      const teams = new Set(humans.map((p) => sc.powers[p].team));
+      if (teams.size > 1) err('All player powers must be on the same team');
+      const ais = Object.keys(sc.powers || {}).filter((p) => sc.powers[p].controller !== 'human');
+      if (!ais.length) warn('There is no computer opponent');
+      if (!sc.playable || !sc.playable.length) err('No playable territories');
+      if (!sc.objectives || !sc.objectives.length) err('Add at least one objective');
+      if (!(sc.maxTurns >= 1)) err('Max turns must be at least 1');
+      const R = Rules.get(sc.ruleset);
+      const play = new Set(sc.playable || []);
+      for (const o of sc.objectives || []) {
+        for (const id of o.territories || []) {
+          if (!T[id]) err(`Objective territory ${id} is not on the map`);
+          else if (!play.has(id)) err(`Objective ${T[id].name} is not playable`);
+        }
+        if (!(o.territories || []).length) err('An objective has no territories');
+      }
+      for (const id of Object.keys(sc.setup || {})) {
+        if (!T[id]) { err(`Setup names unknown territory ${id}`); continue; }
+        if (!play.has(id)) continue;
+        const us = sc.setup[id].units || {};
+        for (const p of Object.keys(us)) {
+          if (!sc.powers[p]) err(`${T[id].name}: units for ${p}, who is not in the scenario`);
+          for (const type of Object.keys(us[p])) {
+            const d = R.units[type];
+            if (!d) { warn(`${T[id].name}: ${type} does not exist in ${R.name} rules`); continue; }
+            if (T[id].type === 'sea' && d.domain === 'land') {
+              // must fit on transports
+            } else if (T[id].type !== 'sea' && d.domain === 'sea') err(`${T[id].name}: ships on land`);
+          }
+        }
+      }
+      return out;
+    }
+
+    // ---------------- basics ----------------
+    _mkUnit(id, t, o) {
+      const d = this.R.units[t];
+      return { id, t, o, ml: d.move, h: 0 };
+    }
+    get phase() { return this.s.phase; }
+    current() { return this.s.order[this.s.turn]; }
+    team(p) { return p && this.s.powers[p] ? this.s.powers[p].team : null; }
+    humanTeam() {
+      for (const p of Object.keys(this.s.powers)) if (!this.s.powers[p].ai) return this.s.powers[p].team;
+      return null;
+    }
+    isHuman(p) { return this.s.powers[p] && !this.s.powers[p].ai; }
+    isEnemy(p, q) { return !!p && !!q && this.team(p) !== this.team(q); }
+    friendlyOwner(id, p) { const o = this.s.terr[id].o; return !!o && this.team(o) === this.team(p); }
+    units(id) { return this.s.terr[id] ? this.s.terr[id].u : []; }
+    unit(uid) {
+      for (const id of Object.keys(this.s.terr)) {
+        const u = this.s.terr[id].u.find((x) => x.id === uid);
+        if (u) return u;
+      }
+      return null;
+    }
+    whereIs(uid) {
+      for (const id of Object.keys(this.s.terr)) if (this.s.terr[id].u.some((x) => x.id === uid)) return id;
+      return null;
+    }
+    def(u) { return this.R.units[typeof u === 'string' ? u : u.t]; }
+    enemies(id, p) { return this.units(id).filter((u) => this.isEnemy(u.o, p)); }
+    log(msg) {
+      this.s.log.push({ r: this.s.round, p: this.current(), m: msg });
+      if (this.s.log.length > 400) this.s.log.splice(0, this.s.log.length - 400);
+    }
+    roll(team, value) {
+      const r = rngNext(this.s.rng);
+      this.s.rng = r[0];
+      const die = 1 + Math.floor(r[1] * 6);
+      const st = this.s.stats[team] || (this.s.stats[team] = { exp: 0, act: 0, v: 0, n: 0 });
+      const p = Math.max(0, Math.min(6, value)) / 6;
+      const hit = die <= value;
+      st.exp += p; st.v += p * (1 - p); st.act += hit ? 1 : 0; st.n += 1;
+      return { die, hit };
+    }
+    _space(tr, at) {
+      const d = this.def(tr);
+      let used = 0;
+      for (const u of this.units(at)) if (u.tr === tr.id) used += this.def(u).transportCost || 3;
+      return d.capacity - used;
+    }
+    cargo(tr, at) { return this.units(at || this.whereIs(tr.id)).filter((u) => u.tr === tr.id); }
+    blocksShips(u, mover) {
+      const d = this.def(u);
+      if (d.domain !== 'sea') return false;
+      if (mover && this.def(mover).sub) return !!d.antiSub;
+      if (d.sub) return !!this.R.subsBlock;
+      if (d.transport) return !!this.R.transportsBlock;
+      return true;
+    }
+    hostileSurface(id, p) {
+      return this.enemies(id, p).some((u) => { const d = this.def(u); return d.domain === 'sea' && !d.sub && !d.transport; });
+    }
+
+    // ---------------- turn flow ----------------
+    _startTurn() {
+      const p = this.current();
+      this.s.phase = 'purchase';
+      this.s.buy = {};
+      this.s.battles = [];
+      this.s.battle = null;
+      this.s.startOwned = {};
+      for (const id of Object.keys(this.s.terr)) {
+        const t = this.s.terr[id];
+        t.conq = false;
+        if (t.o) this.s.startOwned[id] = t.o;
+        for (const u of t.u) {
+          if (u.o !== p) continue;
+          u.ml = this.def(u).move;
+          delete u.cm; delete u.f; delete u.mv; delete u.prev; delete u.amph; delete u.unl; delete u.trWas; delete u.loaded; delete u.sub;
+        }
+      }
+      this.log(`${p}: turn ${this.s.round} begins`);
+    }
+
+    /** Advance to the next phase. Returns {ok, error?, lost?: [...]} */
+    nextPhase() {
+      const s = this.s;
+      if (s.phase === 'gameOver') return { ok: false, error: 'The game is over' };
+      if (s.phase === 'purchase') {
+        s.phase = 'combatMove';
+        return { ok: true };
+      }
+      if (s.phase === 'combatMove') {
+        s.battles = this.findBattles();
+        s.phase = 'combat';
+        if (!s.battles.length) s.phase = 'noncombatMove';
+        return { ok: true };
+      }
+      if (s.phase === 'combat') {
+        if (s.battle) return { ok: false, error: 'Finish the current battle first' };
+        if (s.battles.length) return { ok: false, error: 'Fight every battle first' };
+        s.phase = 'noncombatMove';
+        return { ok: true };
+      }
+      if (s.phase === 'noncombatMove') {
+        const lost = this.crashAir();
+        s.phase = 'place';
+        return { ok: true, lost };
+      }
+      if (s.phase === 'place') {
+        this.endTurn();
+        return { ok: true };
+      }
+      return { ok: false, error: 'Unknown phase' };
+    }
+
+    endTurn() {
+      const s = this.s;
+      const p = this.current();
+      // unplaced units carry over
+      const left = {};
+      for (const k of Object.keys(s.buy)) if (s.buy[k] > 0) left[k] = s.buy[k];
+      s.powers[p].unplaced = left;
+      s.buy = {};
+      // income
+      if (this.sc.income !== false) {
+        const cap = s.powers[p].capital;
+        if (!cap || this.s.terr[cap].o === p) {
+          const inc = this.income(p);
+          s.powers[p].money += inc;
+          if (inc) this.log(`${p} collects ${inc} IPCs`);
+        } else this.log(`${p} has lost its capital and collects nothing`);
+      }
+      // repair multi-hit ships
+      for (const id of Object.keys(s.terr)) for (const u of s.terr[id].u) if (u.o === p && u.h && this.def(u).hp > 1) u.h = 0;
+      this._recordHistory(p);
+      if (this._checkEnd('turn', p)) return;
+      s.turn++;
+      if (s.turn >= s.order.length) {
+        if (this._checkEnd('round', p)) return;
+        s.turn = 0;
+        s.round++;
+      }
+      this._startTurn();
+    }
+
+    income(p) {
+      let n = 0;
+      for (const id of Object.keys(this.s.terr)) if (this.s.terr[id].o === p) n += this.B.ipc(id);
+      return n;
+    }
+
+    // ---------------- objectives ----------------
+    objectiveStatus() {
+      const ht = this.humanTeam();
+      return (this.sc.objectives || []).map((o) => {
+        const ids = o.territories || [];
+        let done = 0;
+        for (const id of ids) {
+          if (o.type === 'destroy') {
+            if (!this.units(id).some((u) => this.team(u.o) !== ht && !this.def(u).infrastructure)) done++;
+          } else if (this.s.terr[id] && this.s.terr[id].o && this.team(this.s.terr[id].o) === ht) done++;
+        }
+        return { type: o.type || 'capture', territories: ids, done, total: ids.length, met: done === ids.length };
+      });
+    }
+    progress() {
+      const st = this.objectiveStatus();
+      let d = 0, t = 0;
+      for (const o of st) { d += o.done; t += o.total; }
+      return t ? d / t : 0;
+    }
+    _recordHistory(p) {
+      const s = this.s;
+      if (!this.isHuman(p)) return;
+      const humans = s.order.filter((q) => this.isHuman(q));
+      if (humans[humans.length - 1] !== p) return;
+      s.history.push({ round: s.round, progress: this.progress(), met: this.objectiveStatus().map((o) => o.met) });
+    }
+    _checkEnd(moment, p) {
+      const s = this.s;
+      const st = this.objectiveStatus();
+      const holds = st.filter((o) => o.type === 'hold');
+      const others = st.filter((o) => o.type !== 'hold');
+      const ht = this.humanTeam();
+      const finish = (won, reason) => {
+        s.result = { won, turns: s.round, maxTurns: s.maxTurns, reason, progress: this.progress() };
+        s.phase = 'gameOver';
+        this.log(won ? `Victory! ${reason}` : `Defeat. ${reason}`);
+        return true;
+      };
+      // Losing a held territory at the end of any turn ends the game
+      for (const o of holds) {
+        if (!o.met) return finish(false, `Lost ${o.territories.filter((id) => !(s.terr[id].o && this.team(s.terr[id].o) === ht)).map((id) => this.B.name(id)).join(', ')}`);
+      }
+      // Player wiped out
+      const alive = Object.keys(s.terr).some((id) => s.terr[id].o && this.team(s.terr[id].o) === ht) ||
+        Object.keys(s.terr).some((id) => s.terr[id].u.some((u) => this.team(u.o) === ht));
+      if (!alive) return finish(false, 'Your forces were wiped out');
+      const allOthers = others.every((o) => o.met);
+      const humanTurnEnd = moment === 'turn' && this.isHuman(p) && this._lastHumanInRound(p);
+      const check = this.sc.winCheck === 'roundEnd' ? moment === 'round' : (holds.length ? moment === 'round' : humanTurnEnd);
+      if (check && allOthers && (!holds.length || s.round >= s.maxTurns) && (others.length || s.round >= s.maxTurns)) {
+        return finish(true, `Objectives complete in ${s.round} turn${s.round === 1 ? '' : 's'}`);
+      }
+      if (s.round >= s.maxTurns) {
+        const noMoreChances = (check && (others.length || holds.length)) ||
+          (moment === 'round');
+        if (noMoreChances) return finish(false, `Out of turns (${s.maxTurns})`);
+      }
+      return false;
+    }
+    _lastHumanInRound(p) {
+      const humans = this.s.order.filter((q) => this.isHuman(q));
+      return humans[humans.length - 1] === p;
+    }
+
+    // ---------------- purchase ----------------
+    buyable() {
+      return Rules.UNIT_ORDER.filter((t) => this.R.units[t]);
+    }
+    spent() {
+      let n = 0;
+      for (const k of Object.keys(this.s.buy)) n += (this.s.buy[k] || 0) * this.R.units[k].cost;
+      return n;
+    }
+    buy(type, delta) {
+      if (this.s.phase !== 'purchase') return { ok: false, error: 'Not the purchase phase' };
+      if (this.sc.purchase === false) return { ok: false, error: 'Purchasing is off in this puzzle' };
+      const d = this.R.units[type];
+      if (!d) return { ok: false, error: 'Unknown unit' };
+      const cur = this.s.buy[type] || 0;
+      const n = Math.max(0, cur + delta);
+      const money = this.s.powers[this.current()].money;
+      const cost = this.spent() + (n - cur) * d.cost;
+      if (cost > money) return { ok: false, error: 'Not enough IPCs' };
+      this.s.buy[type] = n;
+      if (!n) delete this.s.buy[type];
+      return { ok: true };
+    }
+    /** Pay for purchases (called when the purchase phase ends) */
+    commitPurchase() {
+      const p = this.current();
+      const cost = this.spent();
+      this.s.powers[p].money -= cost;
+      const un = this.s.powers[p].unplaced || {};
+      const bought = Object.assign({}, this.s.buy);
+      for (const k of Object.keys(un)) this.s.buy[k] = (this.s.buy[k] || 0) + un[k];
+      this.s.powers[p].unplaced = {};
+      if (cost) this.log(`${p} buys ${Object.keys(bought).map((k) => bought[k] + ' ' + this.R.units[k].name).join(', ')}`);
+    }
+
+    // ---------------- movement ----------------
+    /** Which of the current power's units at `id` may move now. */
+    movable(id) {
+      const p = this.current();
+      const ph = this.s.phase;
+      if (ph !== 'combatMove' && ph !== 'noncombatMove') return [];
+      return this.units(id).filter((u) => u.o === p && this.canUnitMove(u, id));
+    }
+    canUnitMove(u, at) {
+      const d = this.def(u);
+      const ph = this.s.phase;
+      if (d.move === 0 || d.infrastructure && d.move === 0) return false;
+      if (u.tr) {
+        // cargo can unload unless its transport already unloaded
+        const tr = this.units(at).find((x) => x.id === u.tr);
+        return !!tr && !tr.unl && !(ph === 'noncombatMove' && (tr.f));
+      }
+      if (u.ml <= 0) return false;
+      if (ph === 'combatMove' && d.noCombatMove) return false;
+      if (ph === 'noncombatMove' && d.domain !== 'air' && (u.cm || u.f)) return false;
+      if (d.transport && u.unl) return false;
+      return true;
+    }
+
+    /** BFS distance for air units (any playable, non-neutral land or sea). */
+    airDist(from, maxD) {
+      const dist = { [from]: 0 };
+      const q = [from];
+      while (q.length) {
+        const x = q.shift();
+        if (dist[x] >= maxD) continue;
+        for (const y of this.B.adj[x]) {
+          if (dist[y] !== undefined) continue;
+          if (this.B.isLand(y) && !this.s.terr[y].o && this.B.T[y].neutral !== false && !this.s.terr[y].u.length) {
+            // neutral land: impassable
+            if (!this.s.terr[y].o) continue;
+          }
+          dist[y] = dist[x] + 1;
+          q.push(y);
+        }
+      }
+      return dist;
+    }
+
+    /**
+     * Route for one unit from `from` to `to` in the current phase.
+     * Returns {path:[...], blitz:[ids]} or {error}.
+     */
+    route(u, from, to) {
+      const d = this.def(u);
+      const p = u.o;
+      const ph = this.s.phase;
+      const combat = ph === 'combatMove';
+      if (from === to) return { error: 'Already there' };
+      if (!this.B.playable.has(to)) return { error: 'Not in play' };
+      const toSea = this.B.isSea(to);
+      if (d.domain === 'air') {
+        const dist = this.airDist(from, u.ml);
+        if (dist[to] === undefined) return { error: 'Out of range' };
+        if (!toSea && !this.s.terr[to].o) return { error: 'Neutral territory' };
+        const hostile = this.enemies(to, p).length > 0;
+        if (combat) {
+          if (!hostile && !this.friendlyOwner(to, p) && !toSea) return { error: 'Aircraft cannot capture territory' };
+        } else if (hostile && !this.enemies(to, p).every((e) => !this.blocksShips(e) && toSea)) {
+          return { error: 'Cannot move into enemy units now' };
+        } else if (!toSea && !this.friendlyOwner(to, p)) return { error: 'Must stay in friendly territory' };
+        if (d.bomber && toSea && !hostile) return { error: 'Bombers cannot land at sea' };
+        return { path: this._pathFromDist(from, to, dist), cost: dist[to] };
+      }
+      if (d.domain === 'sea') {
+        if (!toSea) return { error: 'Ships stay at sea' };
+        const passable = (x) => !this.enemies(x, p).some((e) => this.blocksShips(e, u));
+        const dist = { [from]: 0 }; const prev = {};
+        const q = [from];
+        while (q.length) {
+          const x = q.shift();
+          if (dist[x] >= u.ml) continue;
+          if (x !== from && !passable(x)) continue; // must stop in hostile zones
+          for (const y of this.B.adj[x]) {
+            if (!this.B.isSea(y) || dist[y] !== undefined) continue;
+            const canals = this.B.canalKey[x + '|' + y];
+            if (canals && !canals.some((c) => c.requires.every((r) => this._canalFriendly(r, p)))) continue;
+            dist[y] = dist[x] + 1; prev[y] = x; q.push(y);
+          }
+        }
+        if (dist[to] === undefined) return { error: 'Out of range or blocked' };
+        if (!combat && this.enemies(to, p).length && !this.enemies(to, p).every((e) => !this.blocksShips(e, u))) {
+          return { error: 'Enemy ships there (combat move only)' };
+        }
+        if (!combat && this.enemies(to, p).length && this.enemies(to, p).some((e) => this.blocksShips(e))) {
+          return { error: 'Enemy ships there' };
+        }
+        const path = [to];
+        while (path[0] !== from) path.unshift(prev[path[0]]);
+        return { path, cost: dist[to] };
+      }
+      // land
+      if (toSea) return { error: 'Load onto a transport instead' };
+      const destHostile = !this.friendlyOwner(to, p);
+      if (!this.s.terr[to].o) return { error: 'Neutral territory' };
+      if (destHostile && !combat) return { error: 'Attacks happen in the combat move' };
+      // BFS preferring friendly paths; blitz through empty enemy land for tanks in combat
+      let best = null;
+      const tryBfs = (allowBlitz) => {
+        const dist = { [from]: 0 }; const prev = {};
+        const q = [from];
+        while (q.length) {
+          const x = q.shift();
+          if (dist[x] >= u.ml) continue;
+          if (x !== from) {
+            const friendly = this.friendlyOwner(x, p);
+            if (!friendly) {
+              if (!(allowBlitz && d.blitz && combat && this.enemies(x, p).every((e) => this.def(e).infrastructure))) continue;
+              if (!this.s.terr[x].o) continue;
+            }
+          }
+          for (const y of this.B.adj[x]) {
+            if (this.B.isSea(y) || dist[y] !== undefined) continue;
+            if (!this.s.terr[y].o) continue;
+            dist[y] = dist[x] + 1; prev[y] = x; q.push(y);
+          }
+        }
+        if (dist[to] === undefined) return null;
+        const path = [to];
+        while (path[0] !== from) path.unshift(prev[path[0]]);
+        const blitz = path.slice(1, -1).filter((x) => !this.friendlyOwner(x, p));
+        return { path, cost: dist[to], blitz };
+      };
+      best = tryBfs(false) || tryBfs(true);
+      if (!best) return { error: 'Out of range' };
+      return best;
+    }
+    /** Canal land: its current owner if in play, else its starting owner on the map. */
+    _canalFriendly(r, p) {
+      if (this.s.terr[r]) return this.friendlyOwner(r, p);
+      const o = this.B.T[r] && this.B.T[r].owner;
+      return !!o && this.B.powers[o] && this.B.powers[o].team === this.team(p);
+    }
+    _pathFromDist(from, to, dist) {
+      const path = [to];
+      let cur = to;
+      while (cur !== from) {
+        const nb = this.B.adj[cur].find((y) => dist[y] === dist[cur] - 1);
+        if (!nb) break;
+        path.unshift(nb);
+        cur = nb;
+      }
+      return path;
+    }
+
+    /**
+     * Check a move of these unit ids (all at `from`) to `to`.
+     * Returns {ok, kind, error, plan:[{uid, path}], warn}
+     */
+    checkMove(from, uids, to, opts) {
+      opts = opts || {};
+      const p = this.current();
+      if (this.s.phase !== 'combatMove' && this.s.phase !== 'noncombatMove') return { ok: false, error: 'Not a movement phase' };
+      if (!uids.length) return { ok: false, error: 'No units selected' };
+      const here = this.units(from);
+      const us = uids.map((id) => here.find((u) => u.id === id));
+      if (us.some((u) => !u)) return { ok: false, error: 'Units are not there' };
+      if (us.some((u) => u.o !== p)) return { ok: false, error: 'Not your units' };
+      for (const u of us) if (!this.canUnitMove(u, from)) return { ok: false, error: `${this.def(u).name} cannot move now` };
+      const combat = this.s.phase === 'combatMove';
+      // unload: all selected are cargo
+      if (us.every((u) => u.tr)) {
+        if (!this.B.isLand(to) || !this.B.adj[from].includes(to)) return { ok: false, error: 'Unload into an adjacent coastal territory' };
+        if (!this.s.terr[to].o) return { ok: false, error: 'Neutral territory' };
+        const hostile = !this.friendlyOwner(to, p);
+        if (hostile && !combat) return { ok: false, error: 'Amphibious assaults happen in the combat move' };
+        if (this.hostileSurface(from, p) && !(combat && this._attackingHere(from))) {
+          return { ok: false, error: 'Clear the enemy warships first' };
+        }
+        return { ok: true, kind: hostile ? 'amphibious' : 'unload', plan: us.map((u) => ({ uid: u.id, path: [from, to] })) };
+      }
+      if (us.some((u) => u.tr)) return { ok: false, error: 'Unload cargo separately from other units' };
+      // load: land units into a sea zone
+      if (this.B.isSea(to) && us.every((u) => this.def(u).domain === 'land')) {
+        if (!this.B.adj[from].includes(to)) return { ok: false, error: 'Load from a territory next to that sea zone' };
+        if (this.hostileSurface(to, p)) return { ok: false, error: 'Enemy warships are there' };
+        const trs = this.units(to).filter((x) => x.o === p && this.def(x).transport && !x.unl);
+        if (!trs.length) return { ok: false, error: 'No transport there' };
+        const space = {};
+        for (const t of trs) space[t.id] = this._space(t, to);
+        const assign = [];
+        // put infantry with others first, greedy by space
+        const sorted = us.slice().sort((a, b) => (this.def(b).transportCost || 3) - (this.def(a).transportCost || 3));
+        for (const u of sorted) {
+          const c = this.def(u).transportCost || 3;
+          const prefer = opts.transport ? trs.filter((t) => t.id === opts.transport) : [];
+          const cand = prefer.concat(trs.filter((t) => !prefer.includes(t)))
+            .filter((t) => space[t.id] >= c)
+            .sort((a, b) => space[a.id] - space[b.id]);
+          if (!cand.length) return { ok: false, error: 'Not enough transport space' };
+          space[cand[0].id] -= c;
+          assign.push({ uid: u.id, path: [from, to], tr: cand[0].id });
+        }
+        return { ok: true, kind: 'load', plan: assign };
+      }
+      const plan = [];
+      let kind = 'move';
+      for (const u of us) {
+        const r = this.route(u, from, to);
+        if (r.error) return { ok: false, error: `${this.def(u).name}: ${r.error}` };
+        plan.push({ uid: u.id, path: r.path, blitz: r.blitz || [] });
+      }
+      if (this.enemies(to, p).length && this.enemies(to, p).some((e) => !this.def(e).infrastructure)) kind = 'attack';
+      else if (this.B.isLand(to) && !this.friendlyOwner(to, p)) kind = 'capture';
+      if (plan.some((x) => x.blitz.length)) kind = kind === 'move' ? 'blitz' : kind;
+      // air landing warning
+      let warn = null;
+      const air = us.filter((u) => this.def(u).domain === 'air');
+      if (air.length && combat) {
+        for (const u of air) {
+          const left = u.ml - (plan.find((x) => x.uid === u.id).path.length - 1);
+          if (!this.canLandFrom(u, to, left)) { warn = 'Some aircraft may not be able to land afterwards'; break; }
+        }
+      }
+      return { ok: true, kind, plan, warn };
+    }
+    _attackingHere(sea) {
+      return this.units(sea).some((u) => u.o === this.current() && u.cm && this.def(u).domain === 'sea' && !this.def(u).transport) &&
+        this.enemies(sea, this.current()).length > 0;
+    }
+    canLandFrom(u, at, left) {
+      const p = u.o;
+      const d = this.def(u);
+      const dist = this.airDist(at, Math.max(0, left));
+      for (const id of Object.keys(dist)) {
+        if (this.B.isLand(id)) {
+          if (this.friendlyOwner(id, p) && this.s.startOwned[id] && this.team(this.s.startOwned[id]) === this.team(p) && !this.enemies(id, p).length) return true;
+        } else if (!d.bomber && this.units(id).some((x) => this.team(x.o) === this.team(p) && this.def(x).carrierCapacity)) return true;
+      }
+      return false;
+    }
+
+    /** Destinations for highlight: {tid: kind} */
+    destinations(from, uids) {
+      const out = {};
+      for (const id of this.B.playable) {
+        if (id === from) continue;
+        const r = this.checkMove(from, uids, id);
+        if (r.ok) out[id] = r.kind;
+      }
+      return out;
+    }
+
+    move(from, uids, to, opts) {
+      const r = this.checkMove(from, uids, to, opts);
+      if (!r.ok) return r;
+      const p = this.current();
+      const combat = this.s.phase === 'combatMove';
+      const src = this.s.terr[from];
+      const moved = [];
+      for (const step of r.plan) {
+        const u = src.u.find((x) => x.id === step.uid);
+        const d = this.def(u);
+        if (r.kind === 'load') {
+          u.ml = 0; u.tr = step.tr; u.loaded = true; u.prev = from;
+          if (combat) u.cm = true;
+          u.mv = true;
+          this._moveUnit(u, from, to);
+          moved.push(u);
+          continue;
+        }
+        if (r.kind === 'unload' || r.kind === 'amphibious') {
+          const tr = src.u.find((x) => x.id === u.tr);
+          if (tr) { tr.unl = true; tr.ml = 0; }
+          u.trWas = u.tr; delete u.tr;
+          u.ml = 0; u.mv = true; u.prev = from;
+          if (combat) u.cm = true;
+          if (r.kind === 'amphibious') u.amph = from;
+          this._moveUnit(u, from, to);
+          moved.push(u);
+          continue;
+        }
+        const cost = step.path.length - 1;
+        // blitzed territories are captured on the way
+        for (const b of step.blitz || []) if (!this.friendlyOwner(b, p)) this.conquer(b, p);
+        u.ml -= cost; u.mv = true; u.prev = step.path[step.path.length - 2];
+        if (combat) u.cm = true;
+        this._moveUnit(u, from, to);
+        // cargo travels with its transport
+        if (d.transport) for (const c of src.u.filter((x) => x.tr === u.id)) { this._moveUnit(c, from, to); c.prev = from; }
+        moved.push(u);
+      }
+      // walking into an empty enemy territory captures it
+      if (this.B.isLand(to) && !this.friendlyOwner(to, p) && combat) {
+        const enemiesLeft = this.enemies(to, p).filter((e) => !this.def(e).infrastructure && !(this.R.aaCaptured && this.def(e).aa));
+        const hasLand = moved.some((u) => this.def(u).domain === 'land');
+        const pendingSea = moved.some((u) => u.amph && this.hostileSurface(u.amph, p));
+        if (!enemiesLeft.length && hasLand && !pendingSea) this.conquer(to, p);
+      }
+      const names = {};
+      for (const u of moved) names[u.t] = (names[u.t] || 0) + 1;
+      this.log(`${p} ${r.kind === 'load' ? 'loads' : r.kind === 'unload' ? 'unloads' : r.kind === 'amphibious' ? 'lands' : 'moves'} ${Object.keys(names).map((k) => names[k] + ' ' + this.R.units[k].short).join(', ')} ${from === to ? '' : this.B.name(from) + ' → '}${this.B.name(to)}`);
+      return { ok: true, kind: r.kind, warn: r.warn };
+    }
+    _moveUnit(u, from, to) {
+      const a = this.s.terr[from].u;
+      a.splice(a.indexOf(u), 1);
+      this.s.terr[to].u.push(u);
+    }
+
+    conquer(id, p) {
+      const t = this.s.terr[id];
+      const prevOwner = t.o;
+      let newOwner = p;
+      const orig = this.s.origOwner[id];
+      if (orig && orig !== p && this.team(orig) === this.team(p) && this.s.powers[orig]) {
+        const cap = this.s.powers[orig].capital;
+        if (!cap || this.s.terr[cap].o === orig) newOwner = orig;
+      }
+      t.o = newOwner;
+      t.conq = true;
+      for (const u of t.u) {
+        const d = this.def(u);
+        if (this.isEnemy(u.o, p) && (d.infrastructure || (this.R.aaCaptured && d.aa))) u.o = newOwner;
+      }
+      if (prevOwner && this.s.powers[prevOwner] && this.s.powers[prevOwner].capital === id) {
+        const loot = this.s.powers[prevOwner].money;
+        this.s.powers[prevOwner].money = 0;
+        this.s.powers[p].money += loot;
+        if (loot) this.log(`${p} captures ${prevOwner}'s capital and seizes ${loot} IPCs`);
+      }
+      this.log(`${newOwner === p ? p + ' captures' : p + ' liberates'} ${this.B.name(id)}${newOwner !== p ? ' for ' + newOwner : ''}`);
+    }
+
+    /** Air units that cannot stay where they are are lost at the end of noncombat. */
+    crashAir() {
+      const p = this.current();
+      const lost = [];
+      const T = this.s.terr;
+      for (const id of Object.keys(T)) {
+        const air = T[id].u.filter((u) => u.o === p && this.def(u).domain === 'air');
+        if (!air.length) continue;
+        let ok;
+        if (this.B.isLand(id)) {
+          ok = this.friendlyOwner(id, p) && !T[id].conq && !this.enemies(id, p).length;
+          if (!ok) lost.push(...air.map((u) => ({ u, id })));
+        } else {
+          let cap = 0;
+          for (const c of T[id].u) if (this.team(c.o) === this.team(p) && this.def(c).carrierCapacity) cap += this.def(c).carrierCapacity;
+          let need = 0;
+          for (const f of T[id].u) if (this.team(f.o) === this.team(p) && this.def(f).domain === 'air') need++;
+          const bombers = air.filter((u) => this.def(u).bomber);
+          lost.push(...bombers.map((u) => ({ u, id })));
+          need -= bombers.length;
+          const fighters = air.filter((u) => !this.def(u).bomber);
+          let over = need - cap;
+          for (const f of fighters) { if (over <= 0) break; lost.push({ u: f, id }); over--; }
+        }
+      }
+      for (const { u, id } of lost) {
+        T[id].u.splice(T[id].u.indexOf(u), 1);
+        this.log(`${this.def(u).name} could not land and was lost (${this.B.name(id)})`);
+      }
+      return lost.map((x) => ({ type: x.u.t, at: x.id }));
+    }
+    /** Air units that would be lost if noncombat ended now. */
+    strandedAir() {
+      const snap = clone(this.s);
+      const lost = this.crashAir();
+      this.s = snap;
+      return lost;
+    }
+
+    // ---------------- placement ----------------
+    toPlace() { return Object.assign({}, this.s.buy); }
+    /** Territory -> remaining production capacity for the current power. */
+    factories() {
+      const p = this.current();
+      const out = {};
+      for (const id of Object.keys(this.s.terr)) {
+        const t = this.s.terr[id];
+        if (t.o !== p || t.conq || this.s.startOwned[id] !== p) continue;
+        if (!t.u.some((u) => this.def(u).infrastructure && u.t === 'factory')) continue;
+        const cap = Math.max(0, this.B.ipc(id) - (this.R.sbr === 'damage' ? t.dmg : 0));
+        const used = t.u.filter((u) => u.born && u.bornAt === id).length +
+          this.B.adj[id].reduce((n, z) => n + (this.B.isSea(z) ? this.s.terr[z].u.filter((u) => u.born && u.bornAt === id).length : 0), 0);
+        out[id] = Math.max(0, cap - used);
+      }
+      return out;
+    }
+    canPlace(type, at) {
+      const p = this.current();
+      if (this.s.phase !== 'place') return { ok: false, error: 'Not the placement phase' };
+      if (!(this.s.buy[type] > 0)) return { ok: false, error: 'None left to place' };
+      const d = this.R.units[type];
+      const fac = this.factories();
+      if (type === 'factory') {
+        const t = this.s.terr[at];
+        if (!t || this.B.isSea(at) || t.o !== p || t.conq || this.s.startOwned[at] !== p) return { ok: false, error: 'Place factories in territory you held all turn' };
+        if (t.u.some((u) => u.t === 'factory')) return { ok: false, error: 'Already has a factory' };
+        if (this.B.ipc(at) < 1) return { ok: false, error: 'Territory has no IPC value' };
+        return { ok: true, factory: at };
+      }
+      if (d.domain === 'sea' || (d.domain === 'air' && this.B.isSea(at))) {
+        if (!this.B.isSea(at)) return { ok: false, error: 'Ships go in a sea zone next to a factory' };
+        if (this.hostileSurface(at, p)) return { ok: false, error: 'Enemy warships are there' };
+        if (d.domain === 'air') {
+          let cap = 0, need = 1;
+          for (const u of this.units(at)) {
+            if (u.o === p && this.def(u).carrierCapacity) cap += this.def(u).carrierCapacity;
+            if (this.team(u.o) === this.team(p) && this.def(u).domain === 'air') need++;
+          }
+          if (d.bomber || need > cap) return { ok: false, error: 'No carrier space there' };
+        }
+        const f = this.B.adj[at].find((x) => fac[x] > 0);
+        if (!f) return { ok: false, error: 'No factory with capacity next to this sea zone' };
+        return { ok: true, factory: f };
+      }
+      if (!(fac[at] > 0)) return { ok: false, error: fac[at] === 0 ? 'Factory is at capacity' : 'Needs a factory you held all turn' };
+      return { ok: true, factory: at };
+    }
+    place(type, at) {
+      const r = this.canPlace(type, at);
+      if (!r.ok) return r;
+      const u = this._mkUnit(this.s.nextId++, type, this.current());
+      u.ml = 0; u.born = true; u.bornAt = r.factory;
+      this.s.terr[at].u.push(u);
+      this.s.buy[type]--;
+      if (!this.s.buy[type]) delete this.s.buy[type];
+      return { ok: true };
+    }
+    placeTargets(type) {
+      const out = [];
+      for (const id of this.B.playable) if (this.canPlace(type, id).ok) out.push(id);
+      return out;
+    }
+    clearBorn() {
+      for (const id of Object.keys(this.s.terr)) for (const u of this.s.terr[id].u) { delete u.born; delete u.bornAt; }
+    }
+
+    // ---------------- battles ----------------
+    findBattles() {
+      const p = this.current();
+      const out = [];
+      for (const id of Object.keys(this.s.terr)) {
+        const mine = this.units(id).filter((u) => u.o === p && u.cm && !u.tr);
+        if (!mine.length) continue;
+        const foes = this.enemies(id, p).filter((e) => !this.def(e).infrastructure || (this.def(e).aa));
+        const realFoes = foes.filter((e) => !(this.R.aaCaptured && this.def(e).aa) || mine.some((m) => this.def(m).domain === 'air'));
+        if (this.B.isSea(id)) {
+          if (foes.length) out.push(id);
+        } else if (realFoes.length || (mine.some((u) => u.amph) && !this.friendlyOwner(id, p))) {
+          out.push(id);
+        }
+      }
+      // sea battles first
+      out.sort((a, b) => (this.B.isSea(b) ? 1 : 0) - (this.B.isSea(a) ? 1 : 0));
+      return out;
+    }
+    /** Battles that can be fought now (sea battles that support a landing come first). */
+    readyBattles() {
+      const p = this.current();
+      return this.s.battles.filter((id) => {
+        if (this.B.isSea(id)) return true;
+        const deps = new Set(this.units(id).filter((u) => u.o === p && u.amph).map((u) => u.amph));
+        return ![...deps].some((z) => this.s.battles.includes(z));
+      });
+    }
+
+    startBattle(id) {
+      if (this.s.phase !== 'combat') return { ok: false, error: 'Not the battle phase' };
+      if (this.s.battle) return { ok: false, error: 'A battle is already in progress' };
+      if (!this.readyBattles().includes(id)) return { ok: false, error: 'Fight the sea battle for this landing first' };
+      const p = this.current();
+      const sea = this.B.isSea(id);
+      const b = {
+        id, sea, att: p, round: 0, step: 'start', over: false, winner: null,
+        pend: { A: null, D: null }, picks: { A: null, D: null }, doomed: [], dice: { A: [], D: [] },
+        need: 'roll', lines: [], bombard: [], fired: {},
+      };
+      // bombardment: ships in the source zones of amphibious units that did not fight this turn
+      if (!sea) {
+        const zones = new Set(this.units(id).filter((u) => u.o === p && u.amph).map((u) => u.amph));
+        const landers = this.units(id).filter((u) => u.o === p && u.amph).length;
+        let ships = [];
+        for (const z of zones) ships = ships.concat(this.units(z).filter((u) => u.o === p && this.def(u).bombard && !u.f));
+        if (this.R.bombardLimitedByLanders) ships = ships.slice(0, landers);
+        b.bombard = ships.map((u) => u.id);
+      }
+      this.s.battle = b;
+      // empty landing (sea battle already won): capture straight away
+      if (!this._side('D').length) {
+        this._endBattle();
+        return { ok: true };
+      }
+      return { ok: true };
+    }
+    _side(side) {
+      const b = this.s.battle;
+      const p = b.att;
+      const sea = b.sea;
+      if (side === 'A') {
+        return this.units(b.id).filter((u) => {
+          if (u.o !== p || u.tr || u.sub) return false;
+          const d = this.def(u);
+          if (d.infrastructure || d.aa) return false;
+          if (sea) return d.domain !== 'land';
+          return d.domain !== 'sea';
+        });
+      }
+      return this.units(b.id).filter((u) => {
+        if (!this.isEnemy(u.o, p) || u.tr || u.sub) return false;
+        const d = this.def(u);
+        if (d.infrastructure && !d.aa) return false;
+        if (sea) return d.domain !== 'land';
+        return d.domain !== 'sea';
+      });
+    }
+    /** Units that can be chosen as casualties on a side (excludes infrastructure AA). */
+    _hittable(side) {
+      return this._side(side).filter((u) => !this.def(u).infrastructure);
+    }
+    _hasDestroyer(units) { return units.some((u) => this.def(u).antiSub); }
+    _canHit(firing, target) {
+      // can any unit of `firing` damage any of `target`?
+      const destroyer = this._hasDestroyer(firing);
+      for (const f of firing) {
+        const fd = this.def(f);
+        const v = this._fireValue(f, firing, firing === this._side('A') ? 'A' : 'D');
+        if (v <= 0) continue;
+        for (const t of target) {
+          const td = this.def(t);
+          if (td.infrastructure) continue;
+          if (fd.sub && td.domain === 'air') continue;
+          if (fd.domain === 'air' && td.sub && this.R.airNeedsDestroyerVsSub && !destroyer) continue;
+          return true;
+        }
+      }
+      return false;
+    }
+    _fireValue(u, side, role) {
+      const d = this.def(u);
+      return role === 'A' ? d.att : d.def;
+    }
+    _teamOf(side) {
+      const b = this.s.battle;
+      if (side === 'A') return this.team(b.att);
+      const d = this._side('D');
+      return d.length ? this.team(d[0].o) : (this.team(b.att) === 'Axis' ? 'Allies' : 'Axis');
+    }
+    /** Roll a group of units; returns hit spec and dice for display. */
+    _fire(units, role, opts) {
+      opts = opts || {};
+      const b = this.s.battle;
+      const team = this._teamOf(role);
+      const enemyUnits = this._side(role === 'A' ? 'D' : 'A');
+      const destroyer = this._hasDestroyer(this._side(role));
+      const hits = { any: 0, notAir: 0, notSub: 0, airOnly: 0 };
+      const dice = [];
+      // artillery support
+      let support = 0;
+      if (role === 'A' && !opts.bombard) {
+        for (const u of units) support += this.def(u).supports || 0;
+      }
+      const enemyHasSub = enemyUnits.some((u) => this.def(u).sub);
+      for (const u of units) {
+        const d = this.def(u);
+        let v = opts.bombard ? d.bombard : (role === 'A' ? d.att : d.def);
+        if (role === 'A' && d.supportable && support > 0 && !opts.bombard) { v += 1; support--; }
+        if (v <= 0) continue;
+        const r = this.roll(team, v);
+        dice.push({ id: u.id, t: u.t, v, die: r.die, hit: r.hit });
+        if (!r.hit) continue;
+        if (d.sub) hits.notAir++;
+        else if (d.domain === 'air' && this.R.airNeedsDestroyerVsSub && !destroyer && enemyHasSub) hits.notSub++;
+        else hits.any++;
+      }
+      return { hits, dice };
+    }
+    _total(h) { return h ? h.any + h.notAir + h.notSub + (h.airOnly || 0) : 0; }
+
+    /**
+     * Roll the next step of the current battle. Steps in a round:
+     *   aa (round 1) -> bombard (round 1) -> subs (first strike) -> fire -> end of round
+     * After a step that needs casualties, b.need = 'casualties' until both sides assign.
+     */
+    battleRoll() {
+      const b = this.s.battle;
+      if (!b) return { ok: false, error: 'No battle' };
+      if (b.need !== 'roll') return { ok: false, error: 'Waiting for ' + b.need };
+      b.dice = { A: [], D: [] };
+      b.lines = [];
+      if (b.step === 'start' || b.step === 'decide') { b.round++; b.step = b.round === 1 ? 'aa' : 'subs'; }
+      this._runSteps();
+      return { ok: true };
+    }
+    _runSteps() {
+      const b = this.s.battle;
+      const R = this.R;
+      while (true) {
+        if (b.step === 'aa') {
+          b.step = 'bombard';
+          if (b.sea) continue;
+          const guns = this._side('D').filter((u) => this.def(u).aa);
+          const air = this._side('A').filter((u) => this.def(u).domain === 'air');
+          if (!guns.length || !air.length) continue;
+          let shots = 0;
+          for (const g of guns) shots += this.def(g).aa.maxShots;
+          shots = Math.min(shots, air.length);
+          const team = this._teamOf('D');
+          let n = 0;
+          const dice = [];
+          for (let i = 0; i < shots; i++) {
+            const r = this.roll(team, this.def(guns[0]).aa.hit);
+            dice.push({ id: guns[i % guns.length].id, t: guns[i % guns.length].t, v: 1, die: r.die, hit: r.hit });
+            if (r.hit) n++;
+          }
+          b.dice.D = b.dice.D.concat(dice);
+          b.lines.push(`AA fire: ${n} hit${n === 1 ? '' : 's'} from ${shots} shot${shots === 1 ? '' : 's'}`);
+          if (n) { b.pend.A = { any: 0, notAir: 0, notSub: 0, airOnly: n }; b.kind = 'aa'; return this._askCasualties(); }
+          continue;
+        }
+        if (b.step === 'bombard') {
+          b.step = 'subs';
+          if (b.sea || !b.bombard.length) continue;
+          const ships = b.bombard.map((id) => this.unit(id)).filter(Boolean);
+          const shot = this._fire(ships, 'A', { bombard: true });
+          b.dice.A = b.dice.A.concat(shot.dice);
+          const n = this._total(shot.hits);
+          b.lines.push(`Shore bombardment: ${n} hit${n === 1 ? '' : 's'}`);
+          if (n) { b.pend.D = shot.hits; b.kind = 'bombard'; return this._askCasualties(); }
+          continue;
+        }
+        if (b.step === 'subs') {
+          b.step = 'fire';
+          const A = this._side('A'), D = this._side('D');
+          const aSubs = A.filter((u) => this.def(u).sub);
+          const dSubs = D.filter((u) => this.def(u).sub);
+          b.fired = {};
+          const aFirst = aSubs.length && !this._hasDestroyer(D);
+          const dFirst = dSubs.length && !this._hasDestroyer(A);
+          if (!aFirst && !dFirst) continue;
+          let any = false;
+          if (aFirst) {
+            const shot = this._fire(aSubs, 'A');
+            b.dice.A = b.dice.A.concat(shot.dice);
+            for (const u of aSubs) b.fired[u.id] = 1;
+            if (this._total(shot.hits)) { b.pend.D = shot.hits; any = true; }
+          }
+          if (dFirst) {
+            const shot = this._fire(dSubs, 'D');
+            b.dice.D = b.dice.D.concat(shot.dice);
+            for (const u of dSubs) b.fired[u.id] = 1;
+            if (this._total(shot.hits)) { b.pend.A = shot.hits; any = true; }
+          }
+          b.lines.push('Submarine surprise strike');
+          if (any) { b.kind = 'subs'; return this._askCasualties(); }
+          continue;
+        }
+        if (b.step === 'fire') {
+          b.step = 'endRound';
+          const A = this._side('A').filter((u) => !b.fired[u.id]);
+          const D = this._side('D').filter((u) => !b.fired[u.id] && !this.def(u).aa);
+          const sa = this._fire(A, 'A');
+          const sd = this._fire(D.concat(this._side('D').filter((u) => b.doomed.includes(u.id) && !b.fired[u.id] && !D.includes(u))), 'D');
+          b.dice.A = b.dice.A.concat(sa.dice);
+          b.dice.D = b.dice.D.concat(sd.dice);
+          const na = this._total(sa.hits), nd = this._total(sd.hits);
+          b.lines.push(`Attacker scores ${na} hit${na === 1 ? '' : 's'}, defender ${nd}`);
+          if (na) b.pend.D = sa.hits;
+          if (nd) b.pend.A = sd.hits;
+          if (na || nd) { b.kind = 'fire'; return this._askCasualties(); }
+          continue;
+        }
+        if (b.step === 'endRound') {
+          this._endRound();
+          return;
+        }
+        return;
+      }
+    }
+    _defenselessOpt() { return { defenseless: this.R.transportsDefenseless, round: this.s.battle.round }; }
+    _askCasualties() {
+      const b = this.s.battle;
+      b.picks = { A: null, D: null };
+      for (const side of ['A', 'D']) {
+        const h = b.pend[side];
+        if (!h) continue;
+        const units = this._hittable(side).filter((u) => !b.doomed.includes(u.id) || this.def(u).hp > 1);
+        const n = maxAssignable(this.R, units, h, this._defenselessOpt());
+        if (n === 0) { b.pend[side] = null; continue; }
+        const owner = side === 'A' ? b.att : (units[0] && units[0].o);
+        if (!owner || this.s.powers[owner].ai || this.s.autoCasualties) {
+          b.picks[side] = autoPicks(this.R, units, h, side, this._defenselessOpt());
+        }
+      }
+      if ((!b.pend.A || b.picks.A) && (!b.pend.D || b.picks.D)) return this._applyCasualties();
+      b.need = 'casualties';
+    }
+    /** For the UI: units the side may choose from and the default picks. */
+    casualtyChoice(side) {
+      const b = this.s.battle;
+      if (!b || !b.pend[side]) return null;
+      const units = this._hittable(side).filter((u) => !b.doomed.includes(u.id) || this.def(u).hp > 1);
+      return {
+        units, hits: b.pend[side], need: maxAssignable(this.R, units, b.pend[side], this._defenselessOpt()),
+        auto: autoPicks(this.R, units, b.pend[side], side, this._defenselessOpt()),
+        kind: b.kind,
+      };
+    }
+    battleAssign(side, picks) {
+      const b = this.s.battle;
+      if (!b || b.need !== 'casualties' || !b.pend[side]) return { ok: false, error: 'No casualties to choose' };
+      const ch = this.casualtyChoice(side);
+      const err = validatePicks(this.R, ch.units, ch.hits, picks, this._defenselessOpt());
+      if (err) return { ok: false, error: err };
+      b.picks[side] = picks.slice();
+      if ((!b.pend.A || b.picks.A) && (!b.pend.D || b.picks.D)) this._applyCasualties();
+      return { ok: true };
+    }
+    _applyCasualties() {
+      const b = this.s.battle;
+      const immediate = b.kind === 'aa' || b.kind === 'subs';
+      for (const side of ['A', 'D']) {
+        const picks = b.picks[side];
+        if (!picks) continue;
+        const cnt = {};
+        for (const id of picks) cnt[id] = (cnt[id] || 0) + 1;
+        for (const id of Object.keys(cnt)) {
+          const u = this.unit(+id);
+          if (!u) continue;
+          u.h = (u.h || 0) + cnt[id];
+          if (u.h >= hp(this.def(u))) {
+            if (immediate) this._kill(u);
+            else if (!b.doomed.includes(u.id)) b.doomed.push(u.id);
+          }
+        }
+        const names = {};
+        for (const id of picks) { const u = this.unit(+id); if (u) names[u.t] = (names[u.t] || 0) + 1; }
+        b.lines.push(`${side === 'A' ? 'Attacker' : 'Defender'} loses ${Object.keys(names).map((k) => names[k] + ' ' + this.R.units[k].short).join(', ')}`);
+      }
+      b.pend = { A: null, D: null };
+      b.picks = { A: null, D: null };
+      b.need = 'roll';
+      this._runSteps();
+    }
+    _kill(u) {
+      const at = this.whereIs(u.id);
+      if (!at) return;
+      const list = this.s.terr[at].u;
+      // cargo sinks with its transport
+      if (this.def(u).transport) {
+        for (const c of list.filter((x) => x.tr === u.id)) list.splice(list.indexOf(c), 1);
+        // units that already landed from this transport stay ashore
+      }
+      list.splice(list.indexOf(u), 1);
+      const b = this.s.battle;
+      if (b) {
+        b.lost = b.lost || { A: {}, D: {} };
+        const side = u.o === b.att ? 'A' : 'D';
+        b.lost[side][u.t] = (b.lost[side][u.t] || 0) + 1;
+      }
+    }
+    _endRound() {
+      const b = this.s.battle;
+      for (const id of b.doomed) { const u = this.unit(id); if (u) this._kill(u); }
+      b.doomed = [];
+      b.fired = {};
+      b.bombard = [];
+      // defenceless transports with nothing else left are sunk
+      for (const side of ['A', 'D']) {
+        const mine = this._side(side);
+        const other = this._side(side === 'A' ? 'D' : 'A');
+        if (this.R.transportsDefenseless && mine.length && mine.every((u) => this.def(u).transport) &&
+            other.some((u) => (side === 'A' ? this.def(u).def : this.def(u).att) > 0 && !this.def(u).sub && this.def(u).domain !== 'land')) {
+          for (const u of mine.slice()) this._kill(u);
+          b.lines.push(`${side === 'A' ? 'Attacking' : 'Defending'} transports are sunk`);
+        }
+      }
+      const A = this._side('A'), D = this._hittable('D');
+      if (!A.length || !D.length) return this._endBattle();
+      const aCan = this._canHit(A, D), dCan = this._canHit(this._side('D'), A);
+      if (!aCan && !dCan) { b.lines.push('Neither side can harm the other'); return this._endBattle(); }
+      if (!aCan) {
+        // attacker can only take losses; it may still retreat
+      }
+      b.step = 'decide';
+      b.need = 'decision';
+      if (this.s.powers[b.att].ai || this.s.autoBattle) b.need = 'decision';
+    }
+    retreatOptions() {
+      const b = this.s.battle;
+      if (!b || b.need !== 'decision') return [];
+      const p = b.att;
+      const A = this._side('A');
+      const set = new Set();
+      for (const u of A) {
+        const d = this.def(u);
+        if (d.domain === 'air' || u.amph) continue;
+        if (u.prev && this.s.terr[u.prev] && this.B.adj[b.id].includes(u.prev)) {
+          if (b.sea ? !this.enemies(u.prev, p).some((e) => this.blocksShips(e)) : this.friendlyOwner(u.prev, p)) set.add(u.prev);
+        }
+      }
+      if (!set.size && A.every((u) => this.def(u).domain === 'air')) set.add(b.id); // air-only: break off
+      return [...set];
+    }
+    battleContinue() {
+      const b = this.s.battle;
+      if (!b || b.need !== 'decision') return { ok: false, error: 'No decision pending' };
+      b.need = 'roll';
+      return this.battleRoll();
+    }
+    battleRetreat(to) {
+      const b = this.s.battle;
+      if (!b || b.need !== 'decision') return { ok: false, error: 'No decision pending' };
+      if (!this.retreatOptions().includes(to)) return { ok: false, error: 'Cannot retreat there' };
+      const A = this._side('A');
+      let left = 0;
+      for (const u of A) {
+        if (u.amph) { left++; continue; }
+        if (to !== b.id) {
+          this._moveUnit(u, b.id, to);
+          if (this.def(u).transport) for (const c of this.units(b.id).filter((x) => x.tr === u.id)) this._moveUnit(c, b.id, to);
+        }
+        u.f = true;
+        if (this.def(u).domain !== 'air') u.ml = 0;
+      }
+      b.lines.push(`Attacker retreats${to !== b.id ? ' to ' + this.B.name(to) : ''}`);
+      this.log(`${b.att} retreats from ${this.B.name(b.id)}`);
+      if (left) { b.need = 'roll'; return this.battleRoll(); }
+      b.retreated = true;
+      return this._endBattle();
+    }
+    /** Submerge subs (side 'A' or 'D') when the enemy has no destroyer. */
+    battleSubmerge(side) {
+      const b = this.s.battle;
+      if (!b || b.need !== 'decision') return { ok: false, error: 'Only between rounds' };
+      const enemy = this._side(side === 'A' ? 'D' : 'A');
+      if (this._hasDestroyer(enemy)) return { ok: false, error: 'An enemy destroyer prevents submerging' };
+      const subs = this._side(side).filter((u) => this.def(u).sub);
+      if (!subs.length) return { ok: false, error: 'No submarines' };
+      for (const u of subs) u.sub = true;
+      b.lines.push(`${side === 'A' ? 'Attacking' : 'Defending'} submarines submerge`);
+      if (!this._side('A').length || !this._hittable('D').length) return this._endBattle();
+      return { ok: true };
+    }
+    _endBattle() {
+      const b = this.s.battle;
+      const p = b.att;
+      const A = this.units(b.id).filter((u) => u.o === p && !u.tr);
+      const D = this._hittable('D');
+      for (const u of A) { u.f = true; if (this.def(u).domain !== 'air') u.ml = 0; }
+      for (const u of this.units(b.id)) delete u.sub;
+      let result;
+      if (!D.length && A.length && !b.retreated) {
+        result = 'attacker';
+        if (!b.sea && A.some((u) => this.def(u).domain === 'land') && !this.friendlyOwner(b.id, p)) this.conquer(b.id, p);
+      } else if (!A.length) result = 'defender';
+      else result = 'draw';
+      // remove leftover enemy AA (1942: AA can be destroyed; Revised: captured in conquer)
+      if (b.sea) this._resolveLandings(b.id, result === 'attacker');
+      // defending fighters without carriers after a sea battle are lost
+      if (b.sea) {
+        const defTeam = this.team(p) === 'Axis' ? 'Allies' : 'Axis';
+        let cap = 0, air = [];
+        for (const u of this.units(b.id)) {
+          if (this.team(u.o) === this.team(p)) continue;
+          if (this.def(u).carrierCapacity) cap += this.def(u).carrierCapacity;
+          if (this.def(u).domain === 'air') air.push(u);
+        }
+        for (const u of air.slice(cap)) this._kill(u);
+        void defTeam;
+      }
+      b.result = result;
+      b.over = true;
+      b.need = 'done';
+      const lostA = b.lost ? b.lost.A : {}, lostD = b.lost ? b.lost.D : {};
+      this.log(`Battle in ${this.B.name(b.id)}: ${result === 'attacker' ? p + ' wins' : result === 'defender' ? 'defender holds' : 'no winner'}`);
+      this.s.lastBattle = { id: b.id, result, lostA, lostD, att: p, round: this.s.round };
+      return { ok: true };
+    }
+    /** After a sea battle: landings from that zone go ahead, go back aboard, or sink. */
+    _resolveLandings(zone, cleared) {
+      const p = this.s.battle.att;
+      if (cleared && !this.hostileSurface(zone, p)) {
+        // landings into empty enemy territory now capture
+        for (const id of this.s.battles) {
+          if (this.B.isSea(id)) continue;
+          const landers = this.units(id).filter((u) => u.o === p && u.amph === zone);
+          if (landers.length && !this.enemies(id, p).some((e) => !this.def(e).infrastructure)) {
+            // handled when that battle is started (it has no defenders)
+          }
+        }
+        return;
+      }
+      for (const id of Object.keys(this.s.terr)) {
+        if (this.B.isSea(id)) continue;
+        for (const u of this.units(id).filter((x) => x.o === p && x.amph === zone)) {
+          const tr = this.unit(u.trWas);
+          if (tr) {
+            const at = this.whereIs(tr.id);
+            this._moveUnit(u, id, at);
+            u.tr = tr.id; delete u.amph;
+          } else {
+            const list = this.s.terr[id].u;
+            list.splice(list.indexOf(u), 1);
+          }
+        }
+        if (this.s.battles.includes(id) && !this.units(id).some((u) => u.o === p && u.cm)) {
+          this.s.battles.splice(this.s.battles.indexOf(id), 1);
+        }
+      }
+    }
+    /** Close the finished battle and drop it from the list. */
+    closeBattle() {
+      const b = this.s.battle;
+      if (!b || !b.over) return { ok: false, error: 'Battle not finished' };
+      const i = this.s.battles.indexOf(b.id);
+      if (i >= 0) this.s.battles.splice(i, 1);
+      this.s.battle = null;
+      return { ok: true };
+    }
+    /** Fight the current battle to the end with default casualties and no retreat. */
+    autoResolve(decide) {
+      let guard = 0;
+      while (this.s.battle && !this.s.battle.over && guard++ < 500) {
+        const b = this.s.battle;
+        if (b.need === 'roll') this.battleRoll();
+        else if (b.need === 'casualties') {
+          for (const side of ['A', 'D']) if (b.pend[side] && !b.picks[side]) this.battleAssign(side, this.casualtyChoice(side).auto);
+        } else if (b.need === 'decision') {
+          const d = decide ? decide(this) : null;
+          if (d && d.retreat) this.battleRetreat(d.retreat);
+          else this.battleContinue();
+        } else break;
+      }
+    }
+
+    luck(team) {
+      const st = this.s.stats[team] || { exp: 0, act: 0, v: 0, n: 0 };
+      const diff = st.act - st.exp;
+      const z = st.v > 0 ? diff / Math.sqrt(st.v) : 0;
+      return { expected: st.exp, actual: st.act, diff, z, pct: normCdf(z), dice: st.n };
+    }
+  }
+
+  function normCdf(z) {
+    // Abramowitz-Stegun approximation
+    const t = 1 / (1 + 0.2316419 * Math.abs(z));
+    const d = 0.3989423 * Math.exp(-z * z / 2);
+    let p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+    if (z > 0) p = 1 - p;
+    return p;
+  }
+
+  /**
+   * Monte-Carlo battle odds without touching a real game.
+   * att/def: {type: count}. opts: {sea, ruleset, trials, seed, bombard:{type:n}, amphibious:bool}
+   */
+  function simulate(att, def, opts) {
+    opts = opts || {};
+    const R = Rules.get(opts.ruleset);
+    const trials = opts.trials || 200;
+    const terr = opts.sea ? 'S' : 'L';
+    const map = {
+      id: 'sim', powers: [{ id: 'A', team: 'Axis' }, { id: 'D', team: 'Allies' }],
+      territories: [
+        { id: 'L', type: 'land', ipc: 0, adj: ['S', 'L0'] },
+        { id: 'L0', type: 'land', ipc: 0, adj: ['L'] },
+        { id: 'S', type: 'sea', adj: ['L', 'S0'] },
+        { id: 'S0', type: 'sea', adj: ['S'] },
+      ],
+    };
+    const sc = {
+      ruleset: R.id, playable: ['L', 'L0', 'S', 'S0'], maxTurns: 9, objectives: [{ type: 'capture', territories: ['L'] }],
+      powers: { A: { team: 'Axis', controller: 'ai', money: 0 }, D: { team: 'Allies', controller: 'human', money: 0 } },
+      setup: { L: { owner: 'D', units: {} }, L0: { owner: 'A', units: {} } },
+      turnOrder: ['A', 'D'],
+    };
+    const rng = makeRng(opts.seed || 12345);
+    let aw = 0, dw = 0, dr = 0, aLoss = 0, dLoss = 0, aLeft = 0;
+    const g0 = Game.create(map, sc, { seed: 1, force: true });
+    const cost = (u) => R.units[u.t].cost;
+    for (let i = 0; i < trials; i++) {
+      const g = new Game(map, sc, clone(g0.s));
+      g.s.rng = (rng() * 4294967296) | 0;
+      g.s.autoCasualties = true;
+      let id = g.s.nextId;
+      const T = g.s.terr;
+      for (const k of Object.keys(def)) for (let j = 0; j < def[k]; j++) T[terr].u.push({ id: id++, t: k, o: 'D', ml: 0, h: 0 });
+      for (const k of Object.keys(att)) for (let j = 0; j < att[k]; j++) {
+        const u = { id: id++, t: k, o: 'A', ml: 0, h: 0, cm: true, prev: opts.sea ? 'S0' : 'L0' };
+        if (opts.amphibious && R.units[k].domain === 'land') u.amph = 'S';
+        T[terr].u.push(u);
+      }
+      if (opts.bombard && !opts.sea) for (const k of Object.keys(opts.bombard)) for (let j = 0; j < opts.bombard[k]; j++) T.S.u.push({ id: id++, t: k, o: 'A', ml: 0, h: 0 });
+      g.s.nextId = id;
+      g.s.phase = 'combat';
+      g.s.turn = 0;
+      g.s.battles = [terr];
+      const before = { A: 0, D: 0 };
+      for (const u of T[terr].u) before[u.o] += cost(u);
+      g.startBattle(terr);
+      g.autoResolve(opts.retreatWhen ? (gg) => (opts.retreatWhen(gg) ? { retreat: gg.retreatOptions()[0] } : null) : null);
+      const res = g.s.lastBattle ? g.s.lastBattle.result : 'draw';
+      const after = { A: 0, D: 0 };
+      for (const u of T[terr].u) after[u.o] += cost(u);
+      for (const u of T.L0.u) if (u.o === 'A') after.A += cost(u);
+      if (res === 'attacker') aw++; else if (res === 'defender') dw++; else dr++;
+      aLoss += before.A - after.A;
+      dLoss += before.D - after.D;
+      aLeft += T[terr].u.filter((u) => u.o === 'A').length;
+    }
+    return { win: aw / trials, lose: dw / trials, draw: dr / trials, attLoss: aLoss / trials, defLoss: dLoss / trials, attLeft: aLeft / trials, trials };
+  }
+
+  return {
+    Game, Board, PHASES, PHASE_NAMES, clone, randomSeed, makeRng, simulate, normCdf,
+    maxAssignable, validatePicks, autoPicks,
+  };
+});

@@ -1,0 +1,137 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "east-african-sweep",
+  "title": "East African Sweep",
+  "description": "As United Kingdom, take Italian East Africa from Italy within 3 turns.",
+  "author": "Tacticle",
+  "map": "world_at_war",
+  "ruleset": "1942",
+  "playable": [
+    "british_somaliland",
+    "italian_east_africa",
+    "kenya",
+    "french_somaliland",
+    "equatoria",
+    "kordofan",
+    "nubia",
+    "kufra",
+    "58_sea_zone",
+    "57_sea_zone",
+    "62_sea_zone"
+  ],
+  "maxTurns": 3,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": false,
+  "powers": {
+    "United Kingdom": {
+      "team": "Allies",
+      "controller": "human",
+      "money": 0
+    },
+    "Italy": {
+      "team": "Axis",
+      "controller": "ai",
+      "money": 0
+    }
+  },
+  "turnOrder": [
+    "United Kingdom",
+    "Italy"
+  ],
+  "setup": {
+    "british_somaliland": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 1
+        }
+      }
+    },
+    "italian_east_africa": {
+      "owner": "Italy",
+      "units": {
+        "Italy": {
+          "infantry": 5,
+          "tank": 2,
+          "artillery": 1
+        }
+      }
+    },
+    "kenya": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 1
+        }
+      }
+    },
+    "french_somaliland": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 2
+        }
+      }
+    },
+    "equatoria": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 1
+        }
+      }
+    },
+    "kordofan": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "infantry": 1
+        }
+      }
+    },
+    "nubia": {
+      "owner": "United Kingdom",
+      "units": {
+        "United Kingdom": {
+          "artillery": 1
+        }
+      }
+    },
+    "kufra": {
+      "owner": "Italy",
+      "units": {
+        "Italy": {
+          "artillery": 2
+        }
+      }
+    },
+    "58_sea_zone": {
+      "units": {}
+    },
+    "57_sea_zone": {
+      "units": {}
+    },
+    "62_sea_zone": {
+      "units": {}
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "italian_east_africa"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 7070,
+    "difficulty": "easy",
+    "theater": "mediterranean",
+    "size": 8,
+    "naval": false,
+    "winRate": 0.875
+  },
+  "difficulty": "easy"
+}

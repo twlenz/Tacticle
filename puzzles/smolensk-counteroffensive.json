@@ -1,0 +1,153 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "smolensk-counteroffensive",
+  "title": "Smolensk Counteroffensive",
+  "description": "As Soviet Union, take Smolensk and Novgorod from Germany within 2 turns.",
+  "author": "Tacticle",
+  "map": "total_world_war",
+  "ruleset": "1942",
+  "playable": [
+    "moscow",
+    "smolensk",
+    "pskov",
+    "novgorod",
+    "tula",
+    "orel_kursk",
+    "volgarod",
+    "voronezh",
+    "vologda",
+    "pinsk_marshes"
+  ],
+  "maxTurns": 2,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": true,
+  "powers": {
+    "Soviet Union": {
+      "team": "Allies",
+      "controller": "human",
+      "money": 8
+    },
+    "Germany": {
+      "team": "Axis",
+      "controller": "ai",
+      "money": 8
+    }
+  },
+  "turnOrder": [
+    "Soviet Union",
+    "Germany"
+  ],
+  "setup": {
+    "moscow": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "factory": 1,
+          "tank": 1,
+          "infantry": 2
+        }
+      }
+    },
+    "smolensk": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "infantry": 3,
+          "tank": 2
+        }
+      }
+    },
+    "pskov": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "tank": 1
+        }
+      }
+    },
+    "novgorod": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "artillery": 1,
+          "infantry": 5,
+          "tank": 1
+        }
+      }
+    },
+    "tula": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "artillery": 2,
+          "tank": 1,
+          "infantry": 1
+        }
+      }
+    },
+    "orel_kursk": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "infantry": 3,
+          "artillery": 1
+        }
+      }
+    },
+    "volgarod": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "tank": 1
+        }
+      }
+    },
+    "voronezh": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "fighter": 1,
+          "artillery": 1
+        }
+      }
+    },
+    "vologda": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "artillery": 2,
+          "tank": 1,
+          "infantry": 1
+        }
+      }
+    },
+    "pinsk_marshes": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "infantry": 1
+        }
+      }
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "smolensk",
+        "novgorod"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 7030,
+    "difficulty": "hard",
+    "theater": "eastern",
+    "size": 10,
+    "naval": false,
+    "winRate": 0.375
+  },
+  "difficulty": "hard"
+}

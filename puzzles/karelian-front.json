@@ -1,0 +1,158 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "karelian-front",
+  "title": "Karelian Front",
+  "description": "As Finland, take Leningrad from Soviet Union within 4 turns.",
+  "author": "Tacticle",
+  "map": "total_world_war",
+  "ruleset": "1942",
+  "playable": [
+    "western_karelia",
+    "murmansk",
+    "eastern_finland",
+    "eastern_karelia",
+    "leningrad",
+    "kola_penninsula",
+    "northern_finland",
+    "pskov",
+    "13_sea_zone",
+    "14_sea_zone",
+    "29_sea_zone"
+  ],
+  "maxTurns": 4,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": false,
+  "powers": {
+    "Finland": {
+      "team": "Axis",
+      "controller": "human",
+      "money": 0
+    },
+    "Soviet Union": {
+      "team": "Allies",
+      "controller": "ai",
+      "money": 0
+    }
+  },
+  "turnOrder": [
+    "Finland",
+    "Soviet Union"
+  ],
+  "setup": {
+    "western_karelia": {
+      "owner": "Finland",
+      "units": {
+        "Finland": {
+          "infantry": 1,
+          "artillery": 1
+        }
+      }
+    },
+    "murmansk": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "infantry": 1
+        }
+      }
+    },
+    "eastern_finland": {
+      "owner": "Finland",
+      "units": {
+        "Finland": {
+          "infantry": 2
+        }
+      }
+    },
+    "eastern_karelia": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "infantry": 2,
+          "artillery": 1
+        }
+      }
+    },
+    "leningrad": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "infantry": 4,
+          "artillery": 1,
+          "aaa": 3
+        }
+      }
+    },
+    "kola_penninsula": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "infantry": 1
+        }
+      }
+    },
+    "northern_finland": {
+      "owner": "Finland",
+      "units": {
+        "Finland": {
+          "aaa": 1,
+          "infantry": 2
+        }
+      }
+    },
+    "pskov": {
+      "owner": "Finland",
+      "units": {
+        "Finland": {
+          "infantry": 1,
+          "artillery": 2,
+          "tank": 1
+        }
+      }
+    },
+    "13_sea_zone": {
+      "units": {
+        "Soviet Union": {
+          "transport": 1,
+          "destroyer": 1
+        }
+      }
+    },
+    "14_sea_zone": {
+      "units": {
+        "Soviet Union": {
+          "transport": 1
+        }
+      }
+    },
+    "29_sea_zone": {
+      "units": {
+        "Soviet Union": {
+          "cruiser": 1,
+          "transport": 1,
+          "submarine": 1
+        }
+      }
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "leningrad"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 7000,
+    "difficulty": "easy",
+    "theater": "eastern",
+    "size": 8,
+    "naval": false,
+    "mapUnits": true,
+    "winRate": 0.8125
+  },
+  "difficulty": "easy"
+}
