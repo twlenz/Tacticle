@@ -59,8 +59,14 @@ changes and push them.
   opens a past day; future dates are capped at today.
 - Turn: **buy → combat move → battles → noncombat move → place**, then income. The
   computer then takes its turns with animated moves (with a "Skip" button).
-- Controls: tap a territory to pick up every unit that can move (−/+ adjust counts);
-  highlighted territories are legal destinations (red outline = attack). Moving land
+- Selecting units:
+  - Tap a **unit icon** to pick all of that unit type there. Tap it again to drop one,
+    and again to drop another.
+  - Tapping another icon adds all of that type too.
+  - Tap the **territory** itself (outside the icons) to pick everything; tap again to
+    clear.
+  - The −/+ steppers in the panel fine-tune counts.
+- Moving: highlighted territories are legal destinations (red outline = attack). Moving land
   units into a sea zone loads them onto your transport; select the sea zone and tap a
   coast to unload. Drag to pan, pinch or scroll to zoom, <kbd>Esc</kbd> cancels,
   <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes a move.
@@ -72,6 +78,19 @@ changes and push them.
   dice already rolled. Undo is available only for moves made since the last dice roll,
   so battles can't be re-rolled. Each new game gets a random dice seed, so a player who
   clears site data can start over; a static site can't prevent that.
+- **Free play**: once today's game is over, "Free play" replays the same setup as a
+  separate game. It has its own save, a **Reset board** button, and no effect on the daily
+  result or stats. Its share text reads:
+
+  ```
+  Tacticle #1 · Karelian Front
+  I won in free play
+  🎲 I rolled above odds (+1 hits)
+  🎲 Opponent rolled below odds (-0.5 hits)
+  Me -6 IPC / Them -20 IPC
+  twlenz.github.io/Tacticle
+  ```
+
 - When the game ends, the result dialog shows text like:
 
   ```
@@ -109,6 +128,7 @@ refreshes `puzzles/index.json`.
 | Playable | <kbd>P</kbd> | toggle in/out of play | add it **and all neighbours** | remove |
 | Owner | <kbd>O</kbd> | set owner to the brush power (Alt: map default) | | neutral |
 | Units | <kbd>U</kbd>, <kbd>1</kbd>–<kbd>9</kbd> pick a unit | +1 (Ctrl: clear) | +5 | −1 |
+| Move | <kbd>M</kbd> | unit icon: pick that unit (again: one fewer; other icon: add it); territory: pick everything, or drop the picked units here | | cancel |
 | Objective | <kbd>J</kbd> | toggle territory in the chosen objective | | |
 
 Toolbar shortcuts in Playable mode: **+ Neighbours** grows the area by one ring,

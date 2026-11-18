@@ -110,6 +110,10 @@ test('daily: schedule lookup, numbering and share text', () => {
     luckYou: { dice: 20, diff: 0.1 }, luckFoe: { dice: 0 }, lossYou: 0, lossFoe: 12, url: 'https://twlenz.github.io/Tacticle/' });
   assert.equal(txt, 'Tacticle #3 · Kursk\n🏆 Won in 2/4 turns\n🟩🟧🟩\n🎲 I rolled at odds (+0.1 hits)\n🎲 Opponent rolled no dice\nMe 0 IPC / Them -12 IPC\ntwlenz.github.io/Tacticle');
   assert.equal(D.shortUrl('http://localhost:8080/'), 'http://localhost:8080/');
+  // free play: no squares or turns, just the outcome, dice and IPCs
+  txt = D.shareText({ number: 1, title: 'Karelian Front', freePlay: true, won: true, turns: 2, maxTurns: 4, targets: [{ met: true }],
+    luckYou: { dice: 10, diff: 1 }, luckFoe: { dice: 9, diff: -0.5 }, lossYou: 6, lossFoe: 20, url: 'https://twlenz.github.io/Tacticle/' });
+  assert.equal(txt, 'Tacticle #1 · Karelian Front\nI won in free play\n🎲 I rolled above odds (+1 hits)\n🎲 Opponent rolled below odds (-0.5 hits)\nMe -6 IPC / Them -20 IPC\ntwlenz.github.io/Tacticle');
 });
 
 test('authoring server: save a puzzle, index it, save the schedule', async () => {

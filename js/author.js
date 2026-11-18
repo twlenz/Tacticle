@@ -9,7 +9,7 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* full */ } },
   };
   const TABS = [['scenario', 'Scenario'], ['powers', 'Powers'], ['objectives', 'Objectives'], ['generate', 'Generate'], ['test', 'Test'], ['schedule', 'Schedule'], ['files', 'Files']];
-  const TOOLS = [['select', 'Select', 'S'], ['playable', 'Playable', 'P'], ['owner', 'Owner', 'O'], ['units', 'Units', 'U'], ['objective', 'Objective', 'J']];
+  const TOOLS = [['select', 'Select', 'S'], ['playable', 'Playable', 'P'], ['owner', 'Owner', 'O'], ['units', 'Units', 'U'], ['move', 'Move', 'M'], ['objective', 'Objective', 'J']];
   const A = {
     server: false, dir: null, maps: [], map: null, mv: null, sc: null, tab: 'scenario', tool: 'playable',
     brush: { power: null, unit: 'infantry', obj: 0 }, selected: null, hist: [], fut: [], savedJSON: null,
@@ -138,6 +138,7 @@
   }
   function undo() {
     if (!A.hist.length) return;
+    A.msel = null;
     A.fut.push(JSON.stringify(A.sc));
     const prevMap = A.sc.map;
     A.sc = JSON.parse(A.hist.pop());
@@ -145,6 +146,7 @@
   }
   function redo() {
     if (!A.fut.length) return;
+    A.msel = null;
     A.hist.push(JSON.stringify(A.sc));
     const prevMap = A.sc.map;
     A.sc = JSON.parse(A.fut.pop());
@@ -155,11 +157,77 @@
   function edit(fn) { commit(); fn(); renderAll(); }
 
   // ------------------------------------------------------------------ map interaction
-  function onClick(id, ev) {
-    if (!id) { A.selected = null; renderAll(); return; }
+  // ---- Move tool: the same selection rules as the player page
+  /** Units shown as icons in a territory, keyed "owner|type" (land units at sea ride along with transports). */
+  function iconUnits(id) {
+    const us = (A.sc.setup[id] && A.sc.setup[id].units) || {};
+    const out = {};
+    for (const p of Object.keys(us)) for (const k of Object.keys(us[p])) {
+      const d = R().units[k];
+      if (A.T[id].type === 'sea' && d && d.domain === 'land') continue;
+      if (us[p][k] > 0) out[p + '|' + k] = us[p][k];
+    }
+    return out;
+  }
+  function mselTotal() { return A.msel ? Object.values(A.msel.n).reduce((a, b) => a + b, 0) : 0; }
+  function moveChip(id, chip) {
+    const key = chip.o + '|' + chip.t;
+    const have = iconUnits(id)[key] || 0;
+    if (!have) return;
+    if (!A.msel || A.msel.from !== id) A.msel = { from: id, n: {} };
+    const cur = A.msel.n[key] || 0;
+    A.msel.n[key] = cur ? cur - 1 : have; // first click: all of them; then one fewer per click
+    if (!mselTotal()) A.msel = null;
+    A.selected = id;
+    renderAll();
+  }
+  function moveTerritory(id) {
+    if (A.msel && A.msel.from !== id && mselTotal()) return moveSelected(id);
+    const all = iconUnits(id);
+    const everything = A.msel && A.msel.from === id && Object.keys(all).every((k) => (A.msel.n[k] || 0) === all[k]);
+    A.msel = everything || !Object.keys(all).length ? null : { from: id, n: Object.assign({}, all) };
+    A.selected = id;
+    renderAll();
+  }
+  function moveSelected(to) {
+    const from = A.msel.from;
+    const toSea = A.T[to].type === 'sea';
+    for (const key of Object.keys(A.msel.n)) {
+      if (!A.msel.n[key]) continue;
+      const d = R().units[key.split('|')[1]];
+      if (!d) continue;
+      if (d.domain === 'land' && toSea) { toast('Land units go to sea aboard transports: move the transport'); return; }
+      if (d.domain === 'sea' && !toSea) { toast('Ships stay in sea zones'); return; }
+    }
+    edit(() => {
+      if (!A.sc.playable.includes(to)) setPlayable(to, true);
+      for (const key of Object.keys(A.msel.n)) {
+        const c = A.msel.n[key];
+        if (!c) continue;
+        const [p, t] = key.split('|');
+        addUnit(from, p, t, -c);
+        addUnit(to, p, t, c);
+        // a power's cargo sails with its last transports
+        if (t === 'transport' && A.T[from].type === 'sea' && !(((A.sc.setup[from] || {}).units || {})[p] || {}).transport) {
+          const left = ((A.sc.setup[from] || {}).units || {})[p] || {};
+          for (const k of Object.keys(left)) {
+            if (R().units[k] && R().units[k].domain === 'land') { addUnit(to, p, k, left[k]); addUnit(from, p, k, -left[k]); }
+          }
+        }
+      }
+      A.msel = null;
+      A.selected = to;
+    });
+  }
+
+  function onClick(id, ev, chip) {
+    if (!id) { A.selected = null; A.msel = null; renderAll(); return; }
     const t = A.T[id];
     switch (A.tool) {
       case 'select': A.selected = id; renderAll(); return;
+      case 'move':
+        if (chip) moveChip(id, chip); else moveTerritory(id);
+        return;
       case 'playable':
         edit(() => {
           const on = !A.sc.playable.includes(id);
@@ -204,6 +272,7 @@
     }
   }
   function onContext(id) {
+    if (A.tool === 'move') { A.msel = null; renderAll(); return; }
     if (!id) return;
     if (A.tool === 'units') edit(() => addUnit(id, A.brush.unit === 'factory' ? (ownerOf(id) || A.brush.power) : A.brush.power, A.brush.unit, -1));
     else if (A.tool === 'owner') edit(() => setOwner(id, null));
@@ -255,7 +324,8 @@
       for (const p of Object.keys(us)) {
         for (const k of Object.keys(us[p])) {
           if (t.type === 'sea' && R().units[k] && R().units[k].domain === 'land') { cargo[p] = (cargo[p] || 0) + us[p][k]; continue; }
-          list.push({ o: p, t: k, n: us[p][k], dim: !R().units[k] });
+          const sel = A.msel && A.msel.from === t.id ? A.msel.n[p + '|' + k] || 0 : 0;
+          list.push({ o: p, t: k, n: us[p][k], dim: !R().units[k], sel: sel || undefined });
         }
       }
       for (const c of list) if (c.t === 'transport' && cargo[c.o]) { c.cargo = cargo[c.o]; cargo[c.o] = 0; }
@@ -287,6 +357,7 @@
     }
     const hint = {
       select: 'Click a territory to inspect and edit it.',
+      move: A.msel ? `${mselTotal()} selected. Click where they go (right-click or Esc cancels). Icon clicks: one fewer, or add another type.` : 'Click a unit icon to pick those units (again: one fewer; another icon: add it), or the territory for everything. Then click where they go.',
       playable: 'Click toggles. Shift-click adds a territory and all its neighbours. Right-click removes.',
       owner: 'Click sets the owner. Right-click makes it neutral. Alt-click restores the map owner.',
       units: 'Click +1, Shift +5, right-click −1, Ctrl-click clears. Keys 1–9 pick a unit.',
@@ -294,7 +365,7 @@
     }[A.tool];
     h.push(`<div class="tgroup" style="padding:4px 8px;font-size:12.5px;color:var(--muted)">${hint}</div>`);
     $('toolbar').innerHTML = h.join('');
-    $('toolbar').querySelectorAll('[data-tool]').forEach((b) => b.onclick = () => { A.tool = b.dataset.tool; renderAll(); });
+    $('toolbar').querySelectorAll('[data-tool]').forEach((b) => b.onclick = () => { A.tool = b.dataset.tool; A.msel = null; renderAll(); });
     $('toolbar').querySelectorAll('[data-unit]').forEach((b) => b.onclick = () => { A.brush.unit = b.dataset.unit; renderToolbar(); });
     const bp = $('brushPower'); if (bp) bp.onchange = () => { A.brush.power = bp.value; renderToolbar(); };
     const bo = $('brushObj'); if (bo) bo.onchange = () => { A.brush.obj = +bo.value; renderAll(); };
@@ -344,7 +415,7 @@
       h.push('</div>');
     }
     h.push(`<label class="f">Add units for another power</label><select id="iAddPower"><option value="">—</option>${A.map.powers.filter((p) => !powersHere.includes(p.id)).map((p) => `<option>${esc(p.id)}</option>`).join('')}</select>`);
-    h.push('<div class="actions"><button id="iClose">Done</button></div>');
+    h.push('<p class="hint" style="margin-top:10px">Esc closes this panel.</p>');
     el.innerHTML = h.join('');
     $('iPlay').onchange = (e) => edit(() => setPlayable(id, e.target.checked));
     const io = $('iOwner'); if (io) io.onchange = () => edit(() => setOwner(id, io.value || null));
@@ -357,7 +428,6 @@
       edit(() => { if (!A.sc.playable.includes(id)) setPlayable(id, true); addUnit(id, p, ty, +d); });
     });
     $('iAddPower').onchange = (e) => { if (e.target.value) edit(() => { ensurePower(e.target.value); setupOf(id).units[e.target.value] = setupOf(id).units[e.target.value] || {}; }); };
-    $('iClose').onclick = () => { A.selected = null; renderAll(); };
   }
   function armyValue() {
     const out = {};
@@ -380,7 +450,7 @@
       <div class="list">${Object.keys(A.sc.powers).map((p) => `<div class="urow"><span class="swatch" style="background:${powerInfo(p).color}"></span><span class="nm">${esc(p)}<small>${A.sc.powers[p].controller === 'human' ? 'Player' : 'Computer'} · ${A.sc.powers[p].team} · ${A.sc.powers[p].money} IPC</small></span><b title="Army value in IPCs">${val[p] || 0}</b></div>`).join('')}</div>
       <div class="h">Checks</div>${msgs.length ? msgs.map((m) => `<div class="msg ${m.level}">${m.level === 'error' ? '✖' : '⚠'} ${esc(m.msg)}</div>`).join('') : '<div class="msg" style="color:var(--good)">✔ Ready to play</div>'}
       ${A.lastSim ? `<div class="h">Last balance check</div><p class="hint">Computer-as-player won ${Math.round(100 * A.lastSim.won / A.lastSim.games)}% of ${A.lastSim.games} games.</p>` : ''}
-      <div class="h">Shortcuts</div><div class="kbd-help"><kbd>S</kbd> select <kbd>P</kbd> playable <kbd>O</kbd> owner <kbd>U</kbd> units <kbd>J</kbd> objective · <kbd>1</kbd>–<kbd>9</kbd> unit · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> undo/redo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> play test</div>`;
+      <div class="h">Shortcuts</div><div class="kbd-help"><kbd>S</kbd> select <kbd>P</kbd> playable <kbd>O</kbd> owner <kbd>U</kbd> units <kbd>M</kbd> move <kbd>J</kbd> objective · <kbd>1</kbd>–<kbd>9</kbd> unit · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> undo/redo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> play test</div>`;
   }
   function bindSummary() { /* nothing interactive */ }
 
@@ -513,10 +583,10 @@
 
   function tabObjectives(el) {
     const sc = A.sc;
-    el.innerHTML = `<p class="hint">Pick an objective, switch to the Objective tool (<kbd>J</kbd>) and click territories on the map.</p>` +
-      sc.objectives.map((o, i) => `<div class="objbox ${A.brush.obj === i ? 'on' : ''}"><div class="row"><b>#${i + 1}</b>
+    el.innerHTML = `<p class="hint">Click an objective to edit it, then click territories on the map.</p>` +
+      sc.objectives.map((o, i) => `<div class="objbox ${A.brush.obj === i ? 'on' : ''}" data-opick="${i}" style="cursor:pointer" title="Click to edit this objective on the map"><div class="row"><b>#${i + 1}</b>
         <select data-otype="${i}" style="width:auto">${[['capture', 'Capture (control at the check)'], ['hold', 'Hold (never lose, through the last turn)'], ['destroy', 'Clear (no enemy units left)']].map(([k, n]) => `<option value="${k}" ${o.type === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
-        <div class="grow"></div><button class="small" data-opick="${i}">Edit on map</button><button class="small" data-odel="${i}">✕</button></div>
+        <div class="grow"></div><button class="small" data-odel="${i}" title="Delete objective">✕</button></div>
         <div class="chips">${o.territories.map((id) => `<span class="chipx">${esc(A.T[id] ? A.T[id].name : id)}<button data-orm="${i}|${id}">✕</button></span>`).join('') || '<span class="hint">No territories yet</span>'}</div></div>`).join('') +
       `<div class="actions"><button id="oAdd">+ Add objective</button></div>
       ${(() => {
@@ -527,7 +597,10 @@
       })()}
       <p class="hint">The player wins when every objective is met at the check (Scenario tab). With a Hold objective the game runs to the last turn, and losing a held territory at the end of any turn loses.</p>`;
     el.querySelectorAll('[data-otype]').forEach((s) => s.onchange = () => edit(() => { sc.objectives[+s.dataset.otype].type = s.value; }));
-    el.querySelectorAll('[data-opick]').forEach((b) => b.onclick = () => { A.brush.obj = +b.dataset.opick; A.tool = 'objective'; renderAll(); });
+    el.querySelectorAll('[data-opick]').forEach((b) => b.onclick = (e) => {
+      if (e.target.closest('button, select, input')) return;
+      A.brush.obj = +b.dataset.opick; A.tool = 'objective'; renderAll();
+    });
     el.querySelectorAll('[data-odel]').forEach((b) => b.onclick = () => edit(() => { sc.objectives.splice(+b.dataset.odel, 1); A.brush.obj = 0; }));
     el.querySelectorAll('[data-orm]').forEach((b) => b.onclick = () => edit(() => { const [i, id] = b.dataset.orm.split('|'); sc.objectives[+i].territories = sc.objectives[+i].territories.filter((x) => x !== id); }));
     const need = $('oNeed');
@@ -583,14 +656,14 @@
 
   function tabTest(el) {
     el.innerHTML = `<p class="hint">Play the current scenario in a new tab exactly as players will see it (progress is kept separately from the daily save).</p>
-      <div class="actions"><button class="primary" id="tPlay">▶ Play test</button><button id="tShare">Preview share text</button></div>
+      <p class="hint">Use <b>▶ Play test</b> at the top (or <kbd>Ctrl</kbd>+<kbd>Enter</kbd>).</p>
+      <div class="actions"><button id="tShare">Preview share text</button></div>
       <div class="h">Balance check</div><p class="hint">The computer plays your side against the computer opponent. A thoughtful human usually does better than this.</p>
       <div class="row">${field('Games', '<input type="number" id="tGames" value="30" min="5" max="200" style="width:90px">')}</div>
       <div class="actions"><button id="tRun">Run</button></div><div class="bar"><div id="tBar"></div></div><div id="tOut"></div>
       <div class="h">Battle odds</div><p class="hint">Attackers vs defenders as counts, e.g. <code>3 infantry, 1 tank</code>.</p>
       ${field('Attackers', '<input type="text" id="oA" value="3 infantry, 1 artillery, 1 tank">')}${field('Defenders', '<input type="text" id="oD" value="3 infantry">')}
       <label class="chk"><input type="checkbox" id="oSea"> Sea battle</label><div class="actions"><button id="oRun">Calculate</button></div><div id="oOut" class="hint"></div>`;
-    $('tPlay').onclick = playTest;
     $('tShare').onclick = () => {
       const txt = D.shareText({ number: 1, title: A.sc.title, won: true, turns: Math.min(2, A.sc.maxTurns), maxTurns: A.sc.maxTurns, objectivesDone: 1, objectivesTotal: 1, history: [{ progress: 0.5 }, { progress: 1 }], luckYou: { dice: 10, diff: 1.2 }, luckFoe: { dice: 8, diff: -0.6 }, url: location.origin + location.pathname.replace(/author\.html$/, '') });
       dialog(`<h2>Share text preview</h2><div class="share">${esc(txt)}</div><p class="hint">Example values; the real numbers come from the game.</p><div class="actions"><button class="primary" data-close>Close</button></div>`);
@@ -642,7 +715,7 @@
       ${field('First day (puzzle #1)', `<input type="date" id="schEpoch" value="${esc(sch.epoch || today)}">`)}
       ${field('Days with nothing scheduled', `<select id="schFallback"><option value="random" ${sch.fallback !== 'latest' ? 'selected' : ''}>Replay an earlier puzzle (picked from the date, same for everyone)</option><option value="latest" ${sch.fallback === 'latest' ? 'selected' : ''}>Keep showing the most recent puzzle</option></select>`)}
       <div class="actions"><button class="small" id="schPrev">← 4 weeks</button><button class="small" id="schToday">Today</button><button class="small" id="schNext">4 weeks →</button></div>
-      <div class="actions"><button class="small" id="schFill">Fill empty days with unscheduled puzzles</button><button class="small" id="schAdd">Schedule current puzzle on…</button></div>
+      <div class="actions"><button class="small" id="schFill">Fill empty days with unscheduled puzzles</button></div>
       <table class="sched">${days.map((d) => {
         const dt = D.parse(d);
         const n = D.number({ epoch: sch.epoch || today }, d);
@@ -661,13 +734,6 @@
       while (unused.length && n < 400) { if (!sch.days[d]) { sch.days[d] = unused.shift(); } d = D.addDays(d, 1); n++; }
       A.schedDirty = true;
       renderTab();
-    };
-    $('schAdd').onclick = () => {
-      const p = A.puzzles.find((x) => x.id === A.sc.id);
-      if (!p) { toast('Save the current puzzle first'); return; }
-      const d = prompt('Date (YYYY-MM-DD)', firstFree(today));
-      if (!d || !/^\d{4}-\d\d-\d\d$/.test(d)) return;
-      sch.days[d] = p.file; A.schedDirty = true; renderTab();
     };
     $('schSave').onclick = saveSchedule;
   }
@@ -953,13 +1019,13 @@
       if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); return; }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const tool = TOOLS.find((t) => t[2].toLowerCase() === e.key.toLowerCase());
-      if (tool) { A.tool = tool[0]; renderAll(); return; }
+      if (tool) { A.tool = tool[0]; A.msel = null; renderAll(); return; }
       if (/^[1-9]$/.test(e.key)) {
         const list = Rules.UNIT_ORDER.filter((t) => R().units[t]);
         const u = list[+e.key - 1];
         if (u) { A.brush.unit = u; A.tool = 'units'; renderAll(); }
       }
-      if (e.key === 'Escape') { A.selected = null; closeDialog(); renderAll(); }
+      if (e.key === 'Escape') { A.selected = null; A.msel = null; closeDialog(); renderAll(); }
     });
   }
 

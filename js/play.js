@@ -49,16 +49,14 @@
       return;
     }
     $('puzzleNo').textContent = S.test ? 'test' : `#${S.number} · ${S.date}`;
+    S.puzzleLabel = $('puzzleNo').textContent;
     document.title = `Tacticle ${S.test ? '(test)' : '#' + S.number}`;
+    S.dailyKey = S.key;
+    S.mode = 'daily';
+    const m = store.get('tacticle:mode');
+    if (!S.test && m && m.mode === 'free' && m.date === S.date && m.id === S.sc.id && dailyDone()) { S.mode = 'free'; S.key = freeKey(); }
     const saved = store.get(S.key);
-    if (saved && saved.state && saved.v === 1) {
-      S.g = new E.Game(S.map, S.sc, saved.state);
-      S.undo = saved.undo || [];
-    } else {
-      S.g = E.Game.create(S.map, S.sc, {});
-      save();
-    }
-    S.ai = new TAI(S.g);
+    loadGame(S.key);
     S.mv = new window.TacticleMapView($('map'), S.map, { onClick, onContext: () => clearSel(), onHover, onDblClick });
     S.mv.setFocus(S.sc.playable);
     S.fullFocus = true;
@@ -90,6 +88,49 @@
       if (m && /^maps\/[a-z0-9][a-z0-9_-]{0,63}\.json$/i.test(m.file)) file = m.file;
     } catch (e) { /* default path */ }
     return getJSON(file);
+  }
+
+  // ---------------------------------------------------------------- daily game vs free play
+  function freeKey() { return `tacticle:free:${S.date}:${S.sc.id}`; }
+  function dailyDone() {
+    const sv = store.get(S.dailyKey);
+    return !!(sv && sv.state && sv.state.phase === 'gameOver');
+  }
+  /** Load the game saved under `key` (or start a new one) and make it current. */
+  function loadGame(key, fresh) {
+    const saved = fresh ? null : store.get(key);
+    S.key = key;
+    if (saved && saved.state && saved.v === 1) {
+      S.g = new E.Game(S.map, S.sc, saved.state);
+      S.undo = saved.undo || [];
+    } else {
+      S.g = E.Game.create(S.map, S.sc, {});
+      S.undo = [];
+      save();
+    }
+    S.ai = new TAI(S.g);
+    S.sel = null; S.dest = {}; S.unload = {}; S.placeType = null; S.picks = {};
+    $('puzzleNo').textContent = (S.puzzleLabel || '') + (S.mode === 'free' ? ' · free play' : '');
+  }
+  function enterFreePlay(fresh) {
+    if (S.test || S.busy || !dailyDone()) return;
+    if (fresh && S.mode === 'free' && G().phase !== 'gameOver' && !confirm('Reset the board and start a new free-play game?')) return;
+    S.mode = 'free';
+    store.set('tacticle:mode', { mode: 'free', date: S.date, id: S.sc.id });
+    loadGame(freeKey(), fresh);
+    closeModal();
+    render();
+    toast(fresh ? 'New free-play game: try anything, it does not affect your stats' : 'Free play');
+    continueFlow();
+  }
+  function exitFreePlay() {
+    if (S.busy) return;
+    S.mode = 'daily';
+    store.set('tacticle:mode', { mode: 'daily', date: S.date, id: S.sc.id });
+    loadGame(S.dailyKey);
+    closeModal();
+    render();
+    showResult();
   }
 
   function save() {
@@ -212,7 +253,40 @@
     if (!silent) render();
   }
 
-  function onClick(id, ev) {
+  /**
+   * Clicking one of your unit icons: first click selects every unit of that type there,
+   * each further click on it drops one, and clicking another type adds all of that type.
+   */
+  function chipSelect(id, t) {
+    const groups = groupsAt(id);
+    const mine = groups.filter((gr) => gr.t === t && !gr.cargo);
+    if (!mine.length) return false;
+    if (!S.sel || S.sel.from !== id) {
+      const n = {};
+      for (const gr of groups) n[gr.key] = 0;
+      S.sel = { from: id, n };
+    }
+    const n = S.sel.n;
+    const cur = mine.reduce((a, gr) => a + (n[gr.key] || 0), 0);
+    if (!cur) for (const gr of mine) n[gr.key] = gr.ids.length;
+    else {
+      // drop one, from the group with the fewest moves left
+      const gr = mine.slice().reverse().find((x) => (n[x.key] || 0) > 0);
+      n[gr.key]--;
+    }
+    if (!Object.values(n).some((v) => v > 0)) { clearSel(); return true; }
+    computeDest();
+    render();
+    return true;
+  }
+  function allSelected(id) {
+    if (!S.sel || S.sel.from !== id) return false;
+    const groups = groupsAt(id);
+    const anyShip = groups.some((x) => !x.cargo);
+    return groups.every((gr) => (S.sel.n[gr.key] || 0) === (gr.cargo && anyShip ? 0 : gr.ids.length));
+  }
+
+  function onClick(id, ev, chip) {
     if (!id || S.busy) { if (!S.busy) clearSel(); return; }
     const g = G();
     if (!humanTurn()) return;
@@ -233,13 +307,13 @@
       return;
     }
     if (ph !== 'combatMove' && ph !== 'noncombatMove') return;
+    // a click on one of your own movable unit icons always adjusts the selection
+    if (chip && chip.o === g.current() && chipSelect(id, chip.t)) return;
+    // otherwise a click on the territory: move there if it is a destination...
     if (S.sel && id !== S.sel.from && (S.dest[id] || S.unload[id])) return doMove(id);
-    if (S.sel && S.sel.from === id) {
-      // clicking again adds one more of the first group (TripleA style)
-      clearSel();
-      return;
-    }
-    if (selectAt(id, !(ev && ev.altKey))) { render(); return; }
+    // ...or select everything there (a second click clears it)
+    if (allSelected(id)) { clearSel(); return; }
+    if (selectAt(id, true)) { render(); return; }
     clearSel();
   }
   function onDblClick(id) {
@@ -305,6 +379,7 @@
     const done = st.reduce((a, o) => a + o.done, 0), tot = st.reduce((a, o) => a + o.total, 0);
     const money = humanPowers().map((h) => `${h === p || humanPowers().length > 1 ? '' : ''}${g.s.powers[h].money}`).join(' / ');
     $('status').innerHTML = [
+      S.mode === 'free' ? '<span class="pill" style="border-color:var(--accent);color:var(--accent)"><b>Free play</b></span>' : '',
       `<span class="pill">Turn <b>${Math.min(g.s.round, g.s.maxTurns)}</b>/${g.s.maxTurns}</span>`,
       g.phase === 'gameOver' ? '<span class="pill"><b>Game over</b></span>'
         : `<span class="pill"><span class="swatch" style="background:${color(p)}"></span><b>${esc(p)}</b> · ${E.PHASE_NAMES[g.phase]}</span>`,
@@ -364,8 +439,11 @@
       }).join('');
     }).join('') + `</ul><div class="hint" style="margin-top:4px">${winCheckText()}</div>`);
 
+    if (S.mode === 'free' && !S.busy) {
+      parts.push('<div class="h">Free play</div><p class="hint">Practice on today\'s setup. It does not change your result or stats.</p><div class="actions"><button id="pFreeReset">↺ Reset board</button><button id="pDaily">Back to my result</button></div>');
+    }
     if (g.phase === 'gameOver') {
-      parts.push(`<div class="h">Result</div><p><b>${g.s.result.won ? '🏆 Victory' : '💀 Defeat'}</b> — ${esc(g.s.result.reason)}</p><div class="actions"><button class="primary" id="pResult">Share result</button></div>`);
+      parts.push(`<div class="h">Result</div><p><b>${g.s.result.won ? '🏆 Victory' : '💀 Defeat'}</b> — ${esc(g.s.result.reason)}</p><div class="actions"><button class="primary" id="pResult">Share result</button>${!S.test && S.mode === 'daily' ? '<button id="pFree">Free play</button>' : ''}</div>`);
       if (S.test) parts.push('<div class="actions"><button id="pRestart">Restart test</button></div>');
     } else if (!humanTurn()) {
       parts.push(`<div class="h">${esc(p)}'s turn</div><p class="hint">The computer is moving…</p>`);
@@ -414,7 +492,7 @@
       const combat = g.phase === 'combatMove';
       h.push(`<div class="h">${combat ? 'Combat move' : 'Noncombat move'}</div>`);
       h.push(`<p class="hint">${combat
-        ? 'Tap a territory with your units, then tap where to send them. Moving into enemy territory starts a battle; empty enemy land is captured. Tanks can blitz through empty enemy land.'
+        ? 'Tap a unit icon to pick those units (tap again to drop one), or tap the territory to pick everything. Then tap where to send them. Moving into enemy territory starts a battle; empty enemy land is captured; tanks can blitz through it.'
         : 'Reposition units that did not fight. Aircraft must end on friendly land held since the start of the turn, or on a carrier.'}</p>`);
       if (S.sel) h.push(selPanel());
       h.push(`<div class="actions">${undoBtn}<button class="primary" id="pNext">${combat ? 'Done moving → battles' : 'Done moving →'}</button></div>`);
@@ -471,6 +549,9 @@
     on('pUndo', undo);
     on('pNext', nextPhase);
     on('pResult', showResult);
+    on('pFree', () => enterFreePlay(false));
+    on('pFreeReset', () => enterFreePlay(true));
+    on('pDaily', exitFreePlay);
     on('pRestart', () => { if (confirm('Restart this test game?')) { store.del(S.key); location.reload(); } });
     on('pAuto', () => {
       pushUndo();
@@ -537,6 +618,7 @@
     let guard = 0;
     try {
       while (guard++ < 5000) {
+        if (G() !== g) return; // the game was switched (free play / reset)
         if (g.phase === 'gameOver') break;
         const b = g.s.battle;
         if (b && b.over && humanInvolved(b) && !S.fast) {
@@ -778,7 +860,7 @@
         <li><b>Place</b> the units you bought, then end your turn. You collect income from your territories.</li>
       </ol>
       <h3>Controls</h3>
-      <p class="hint">Tap a territory to select all units that can move (use −/+ to change counts). Tap a highlighted territory to move there. Load infantry or tanks by moving them into a sea zone with your transport; select the sea zone and tap a coast to unload. Drag to pan, pinch or scroll to zoom. <kbd>Esc</kbd> cancels, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes a move.</p>
+      <p class="hint">Tap a unit icon to select those units; tap it again to drop one; tap another icon to add that type too. Tap the territory itself to select everything (again to clear). −/+ in the panel fine-tune counts. Tap a highlighted territory to move there. Load infantry or tanks by moving them into a sea zone with your transport; select the sea zone and tap a coast to unload. Drag to pan, pinch or scroll to zoom. <kbd>Esc</kbd> cancels, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes a move.</p>
       <h3>Units (${esc(R.name)})</h3>
       <table class="hint" style="width:100%;border-collapse:collapse"><tr><th></th><th align="left">Unit</th><th>Cost</th><th>Att</th><th>Def</th><th>Move</th></tr>${rows}</table>
       <p class="hint">${esc(R.summary)}</p>
@@ -800,7 +882,7 @@
     return st;
   }
   function recordStats(won, turns) {
-    if (S.test) return;
+    if (S.test || S.mode === 'free') return;
     const st = stats();
     if (Object.prototype.hasOwnProperty.call(st.seen, S.date)) { store.set('tacticle:stats', st); return; }
     st.seen[S.date] = won ? Math.max(1, turns) : 0;
@@ -828,7 +910,7 @@
     const ht = humanTeam();
     const st = g.objectiveStatus();
     return D.shareText({
-      number: S.number, test: S.test, title: S.sc.title || 'Puzzle', won: g.s.result.won, turns: g.s.result.turns, maxTurns: g.s.maxTurns,
+      number: S.number, test: S.test, freePlay: S.mode === 'free', title: S.sc.title || 'Puzzle', won: g.s.result.won, turns: g.s.result.turns, maxTurns: g.s.maxTurns,
       objectivesDone: st.reduce((a, o) => a + o.done, 0), objectivesTotal: st.reduce((a, o) => a + o.total, 0),
       targets: g.objectiveTargets(), luckYou: g.luck(ht), luckFoe: g.luck(foeTeam()),
       lossYou: (g.s.losses || {})[ht] || 0,
@@ -843,11 +925,19 @@
     const text = shareText();
     const next = new Date(); next.setHours(24, 0, 0, 0);
     const mins = Math.max(0, Math.round((next - new Date()) / 60000));
-    openDialog(`<h2>${g.s.result.won ? '🏆 Victory!' : '💀 Defeat'}</h2><p>${esc(g.s.result.reason)}.</p>
+    const free = S.mode === 'free';
+    openDialog(`<h2>${free ? 'Free play: ' : ''}${g.s.result.won ? '🏆 Victory!' : '💀 Defeat'}</h2><p>${esc(g.s.result.reason)}.</p>
       <div class="share" id="shareText">${esc(text)}</div>
       <div class="actions"><button class="primary" id="copyShare">Copy result</button></div>
-      ${S.test ? '' : statsHtml() + `<p class="hint">Next puzzle in ${Math.floor(mins / 60)}h ${mins % 60}m.</p>`}
+      ${S.test || free ? '' : statsHtml() + `<p class="hint">Next puzzle in ${Math.floor(mins / 60)}h ${mins % 60}m.</p>`}
+      ${S.test ? '' : free
+        ? '<div class="actions"><button id="rFreeAgain">Play again</button><button id="rDaily">Back to my result</button></div>'
+        : '<p class="hint">Free play lets you replay this setup and try other plans. It does not change your result or stats.</p><div class="actions"><button id="rFree">Free play</button></div>'}
       <div class="actions"><button data-close="1">View the board</button></div>`);
+    const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
+    on('rFree', () => enterFreePlay(false));
+    on('rFreeAgain', () => enterFreePlay(true));
+    on('rDaily', exitFreePlay);
     $('copyShare').onclick = async () => {
       try { await navigator.clipboard.writeText(text); toast('Copied to clipboard'); } catch (e) {
         const r = document.createRange(); r.selectNodeContents($('shareText'));

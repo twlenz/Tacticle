@@ -84,11 +84,19 @@
 
   /**
    * r: {number, title, won, turns, maxTurns, targets:[{met}], objectivesDone, objectivesTotal,
-   *     luckYou, luckFoe, lossYou, lossFoe, url, test}
+   *     luckYou, luckFoe, lossYou, lossFoe, url, test, freePlay}
    */
   function shareText(r) {
     const lines = [];
     lines.push(`Tacticle ${r.test ? '(test)' : '#' + r.number} · ${r.title}`);
+    if (r.freePlay) {
+      lines.push(`I ${r.won ? 'won' : 'lost'} in free play`);
+      lines.push(`🎲 I ${luckWords(r.luckYou)}`);
+      lines.push(`🎲 Opponent ${luckWords(r.luckFoe)}`);
+      lines.push(`Me ${ipc(r.lossYou)} / Them ${ipc(r.lossFoe)}`);
+      if (r.url) lines.push(shortUrl(r.url));
+      return lines.join('\n');
+    }
     if (r.won) lines.push(`🏆 Won in ${r.turns}/${r.maxTurns} turn${r.maxTurns === 1 ? '' : 's'}`);
     else lines.push(`💀 Lost · ${r.objectivesDone}/${r.objectivesTotal} objective${r.objectivesTotal === 1 ? '' : 's'} · ${r.turns}/${r.maxTurns} turns`);
     const sq = squares(r.targets, r.won);

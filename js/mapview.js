@@ -185,7 +185,7 @@
       this.svg.addEventListener('click', (ev) => {
         if (moved) { moved = false; return; }
         const id = this._idAt(ev);
-        if (this.opts.onClick) this.opts.onClick(id, ev);
+        if (this.opts.onClick) this.opts.onClick(id, ev, this._chipAt(ev));
       });
       this.svg.addEventListener('dblclick', (ev) => {
         const id = this._idAt(ev);
@@ -196,6 +196,15 @@
         ev.preventDefault();
         this.opts.onContext(this._idAt(ev), ev);
       });
+    }
+    /** The unit chip under the pointer, if any: {t: unit type, o: owner}. */
+    _chipAt(ev) {
+      let t = ev.target;
+      while (t && t !== this.svg) {
+        if (t.classList && t.classList.contains('chip')) return { t: t.getAttribute('data-t'), o: t.getAttribute('data-o') };
+        t = t.parentNode;
+      }
+      return null;
     }
     _idAt(ev) {
       let t = ev.target;
@@ -238,7 +247,7 @@
     _relayout() {
       const s = this.state || {};
       const k = this.k || 1;
-      const scale = (this.opts.unitScale || 1) * ((this.c.clientWidth || 800) < 600 ? 0.78 : 1);
+      const scale = (this.opts.unitScale || 1) * ((this.c.clientWidth || 800) < 600 ? 0.84 : 1);
       this.gUnits.textContent = '';
       this.gLabels.textContent = '';
       this.gOver.textContent = '';
@@ -271,7 +280,7 @@
         if (t.type !== 'sea' && Math.max(bw, bh) < 18 * k) el('circle', { cx, cy, r: 16 * k, 'data-id': id, class: 'hit' }, this.gHit);
         const units = (s.units && s.units[id]) || [];
         const chips = units.slice().sort((a, b) => (a.o === b.o ? 0 : a.o < b.o ? -1 : 1) || ORDER.indexOf(a.t) - ORDER.indexOf(b.t));
-        const size = 24 * k * scale;
+        const size = 27 * k * scale;
         const per = Math.min(chips.length, chips.length > 6 ? 4 : 3) || 1;
         const rows = Math.ceil(chips.length / per);
         let y0 = cy - (rows * (size + 2 * k)) / 2 + (showLabels ? fs * 0.6 : 0);
@@ -287,7 +296,7 @@
           const inRow = Math.min(per, chips.length - r * per);
           const x = cx - (inRow * (size + 2 * k)) / 2 + col * (size + 2 * k);
           const y = y0 + r * (size + 2 * k);
-          const g = el('g', { transform: `translate(${x},${y})`, class: 'chip' + (c.dim ? ' dim' : '') + (c.sel ? ' sel' : ''), 'data-id': id }, this.gUnits);
+          const g = el('g', { transform: `translate(${x},${y})`, class: 'chip' + (c.dim ? ' dim' : '') + (c.sel ? ' sel' : ''), 'data-id': id, 'data-t': c.t, 'data-o': c.o }, this.gUnits);
           el('rect', { width: size, height: size, rx: size * 0.22, fill: this.colors[c.o] || '#777', class: 'chipbg' }, g);
           const ic = el('g', { transform: `translate(${size / 2},${size / 2 - size * 0.05}) scale(${size / 30})`, fill: '#fff', color: '#fff' }, g);
           ic.innerHTML = (root.TacticleIcons && root.TacticleIcons.ICON[c.t]) || '';
