@@ -1,0 +1,11 @@
+{
+  "maps": [
+    {
+      "id": "world1942",
+      "name": "World 1942",
+      "file": "maps/world1942.json",
+      "territories": 292,
+      "source": ""
+    }
+  ]
+}

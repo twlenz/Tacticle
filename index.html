@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tacticle</title>
+<meta name="description" content="A daily wargame puzzle: take the objectives before the turns run out.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-12 -12 24 24'%3E%3Crect x='-12' y='-12' width='24' height='24' rx='5' fill='%23b5452f'/%3E%3Cg fill='%23fff' transform='scale(.8)'%3E%3Crect x='-11' y='1.6' width='22' height='7' rx='3.5'/%3E%3Cpath d='M-7.4,1.6v-4.4q0-1.6 1.6-1.6h9q1.6 0 1.6 1.6v4.4z'/%3E%3Crect x='3' y='-3.4' width='9.6' height='2.2'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/tacticle.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">TACTICLE<small id="puzzleNo"></small></div>
+  <div class="spacer"></div>
+  <button class="icon-btn ghost" id="btnHelp" title="How to play" aria-label="How to play">?</button>
+  <button class="icon-btn ghost" id="btnStats" title="Statistics" aria-label="Statistics">📊</button>
+  <button class="icon-btn ghost" id="btnTheme" title="Light / dark" aria-label="Toggle theme">◐</button>
+</header>
+<div class="status" id="status"></div>
+<div class="main">
+  <div class="mapwrap" id="map">
+    <div class="zoombar">
+      <button id="zin" title="Zoom in" aria-label="Zoom in">+</button>
+      <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
+      <button id="zfit" title="Fit" aria-label="Fit to puzzle">⤢</button>
+    </div>
+    <div class="banner" id="banner"><div class="spin"></div><span id="bannerText"></span><button class="small" id="btnFast">Skip ⏩</button></div>
+  </div>
+  <aside class="side" id="panel"></aside>
+</div>
+<div class="modal" id="modal"><div class="dialog" id="dialog"></div></div>
+<div class="toast" id="toast"></div>
+<div class="tooltip" id="tip"></div>
+<script src="js/rulesets.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/mapview.js"></script>
+<script src="js/daily.js"></script>
+<script src="js/play.js"></script>
+</body>
+</html>

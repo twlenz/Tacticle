@@ -1,0 +1,22 @@
+{
+  "puzzles": [
+    {
+      "id": "auto-test-1",
+      "file": "puzzles/auto-test-1.json",
+      "title": "Mediterranean & Africa: French Equatorial Africa",
+      "map": "world1942",
+      "ruleset": "1942",
+      "maxTurns": 2,
+      "difficulty": "medium"
+    },
+    {
+      "id": "eastern-sample",
+      "file": "puzzles/eastern-sample.json",
+      "title": "Eastern Front: Finland & Belorussia",
+      "map": "world1942",
+      "ruleset": "1942",
+      "maxTurns": 3,
+      "difficulty": "medium"
+    }
+  ]
+}

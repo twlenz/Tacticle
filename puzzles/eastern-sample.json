@@ -1,0 +1,142 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "eastern-sample",
+  "title": "Eastern Front: Finland & Belorussia",
+  "description": "Take Finland and Belorussia from Germany within 3 turns.",
+  "author": "generator",
+  "map": "world1942",
+  "ruleset": "1942",
+  "playable": [
+    "leningrad",
+    "finland",
+    "arkhangelsk",
+    "belorussia",
+    "moscow",
+    "north_norway",
+    "karelia",
+    "murmansk",
+    "barents_sea",
+    "gulf_of_bothnia"
+  ],
+  "maxTurns": 3,
+  "winCheck": "turnEnd",
+  "income": true,
+  "purchase": true,
+  "powers": {
+    "Soviet Union": {
+      "team": "Allies",
+      "controller": "human",
+      "money": 6
+    },
+    "Germany": {
+      "team": "Axis",
+      "controller": "ai",
+      "money": 6
+    }
+  },
+  "turnOrder": [
+    "Soviet Union",
+    "Germany"
+  ],
+  "setup": {
+    "leningrad": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "factory": 1,
+          "artillery": 1,
+          "infantry": 1,
+          "tank": 1
+        }
+      }
+    },
+    "finland": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "infantry": 1,
+          "tank": 3
+        }
+      }
+    },
+    "arkhangelsk": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "infantry": 1,
+          "artillery": 1
+        }
+      }
+    },
+    "belorussia": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "artillery": 3,
+          "infantry": 4
+        }
+      }
+    },
+    "moscow": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "factory": 1,
+          "artillery": 1,
+          "infantry": 1
+        }
+      }
+    },
+    "north_norway": {
+      "owner": "Germany",
+      "units": {
+        "Germany": {
+          "artillery": 1,
+          "tank": 1
+        }
+      }
+    },
+    "karelia": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "infantry": 3,
+          "tank": 1
+        }
+      }
+    },
+    "murmansk": {
+      "owner": "Soviet Union",
+      "units": {
+        "Soviet Union": {
+          "artillery": 1,
+          "infantry": 4
+        }
+      }
+    },
+    "barents_sea": {
+      "units": {}
+    },
+    "gulf_of_bothnia": {
+      "units": {}
+    }
+  },
+  "objectives": [
+    {
+      "type": "capture",
+      "territories": [
+        "finland",
+        "belorussia"
+      ]
+    }
+  ],
+  "generator": {
+    "seed": 1942,
+    "difficulty": "medium",
+    "theater": "eastern",
+    "size": 8,
+    "naval": false,
+    "winRate": 0.6666666666666666
+  }
+}

@@ -1,0 +1,292 @@
+united_kingdom             land  8  english_channel, ireland, north_sea, western_approaches
+ireland                    land  1  english_channel, united_kingdom, western_approaches
+iceland                    land  0  denmark_strait, greenland_sea
+north_norway               land  1  barents_sea, finland, murmansk, norway, norwegian_sea, sweden
+norway                     land  2  north_norway, north_sea, norwegian_sea, sweden
+sweden                     land  2  baltic_sea, denmark, finland, gulf_of_bothnia, north_norway, north_sea, norway
+finland                    land  1  gulf_of_bothnia, karelia, leningrad, murmansk, north_norway, sweden
+denmark                    land  1  baltic_sea, germany, north_sea, sweden
+netherlands                land  1  belgium, english_channel, germany_west, north_sea
+belgium                    land  1  english_channel, germany_west, netherlands, northern_france
+northern_france            land  3  bay_of_biscay, belgium, english_channel, germany_west, southern_france
+southern_france            land  2  bay_of_biscay, germany_west, northern_france, northern_italy, spain, switzerland, tyrrhenian_sea, western_mediterranean
+spain                      land  2  bay_of_biscay, iberian_coast, morocco, portugal, southern_france, western_mediterranean
+portugal                   land  1  iberian_coast, spain
+switzerland                land  1  austria, germany_west, northern_italy, southern_france
+germany_west               land  4  austria, belgium, germany, netherlands, north_sea, northern_france, southern_france, switzerland
+germany                    land  5  austria, baltic_sea, czechoslovakia, denmark, germany_west, north_sea, poland
+east_prussia               land  1  baltic_sea, baltic_states, belorussia, poland, west_ukraine
+poland                     land  2  baltic_sea, czechoslovakia, east_prussia, germany, west_ukraine
+austria                    land  2  croatia, czechoslovakia, germany, germany_west, hungary, northern_italy, switzerland
+czechoslovakia             land  2  austria, germany, hungary, poland, west_ukraine
+hungary                    land  1  austria, croatia, czechoslovakia, romania, serbia, west_ukraine
+romania                    land  2  black_sea, bulgaria, hungary, serbia, west_ukraine
+bulgaria                   land  1  black_sea, greece, romania, serbia, turkey
+croatia                    land  1  adriatic_sea, austria, hungary, northern_italy, serbia
+serbia                     land  1  adriatic_sea, albania, bulgaria, croatia, greece, hungary, romania
+albania                    land  0  adriatic_sea, greece, ionian_sea, serbia
+crete                      land  0  aegean_sea, eastern_mediterranean
+greece                     land  1  aegean_sea, albania, bulgaria, eastern_mediterranean, ionian_sea, serbia, turkey
+sicily                     land  1  central_mediterranean, ionian_sea, italy, tyrrhenian_sea
+sardinia                   land  0  tyrrhenian_sea
+northern_italy             land  2  adriatic_sea, austria, croatia, italy, southern_france, switzerland, tyrrhenian_sea
+italy                      land  3  adriatic_sea, ionian_sea, northern_italy, sicily, tyrrhenian_sea
+malta                      land  0  central_mediterranean
+baltic_states              land  1  baltic_sea, belorussia, east_prussia, gulf_of_bothnia, leningrad
+belorussia                 land  2  baltic_states, east_prussia, leningrad, smolensk, west_ukraine
+crimea                     land  1  black_sea, caucasus, ukraine
+west_ukraine               land  2  belorussia, black_sea, czechoslovakia, east_prussia, hungary, poland, romania, smolensk, ukraine
+ukraine                    land  2  black_sea, crimea, kursk, rostov, smolensk, voronezh, west_ukraine
+murmansk                   land  1  barents_sea, finland, karelia, north_norway
+karelia                    land  1  arkhangelsk, barents_sea, finland, leningrad, murmansk
+leningrad                  land  2  arkhangelsk, baltic_states, belorussia, finland, gulf_of_bothnia, karelia, moscow, smolensk
+arkhangelsk                land  1  barents_sea, gorky, kara_sea, karelia, komi, leningrad, moscow, ob_basin
+smolensk                   land  1  belorussia, kursk, leningrad, moscow, ukraine, voronezh, west_ukraine
+kursk                      land  1  smolensk, ukraine, voronezh
+moscow                     land  6  arkhangelsk, gorky, leningrad, smolensk, volga, voronezh
+gorky                      land  2  arkhangelsk, komi, moscow, urals, volga
+voronezh                   land  1  kursk, moscow, rostov, smolensk, stalingrad, ukraine, volga
+volga                      land  2  gorky, moscow, stalingrad, urals, voronezh, west_kazakhstan
+rostov                     land  1  caucasus, stalingrad, ukraine, voronezh
+stalingrad                 land  2  caucasus, rostov, volga, voronezh, west_kazakhstan
+caucasus                   land  3  black_sea, crimea, rostov, stalingrad, transcaucasia
+transcaucasia              land  2  black_sea, caucasus, north_persia, turkey
+komi                       land  1  arkhangelsk, gorky, ob_basin, urals
+urals                      land  3  gorky, kazakhstan, komi, ob_basin, volga, west_kazakhstan, west_siberia
+ob_basin                   land  0  arkhangelsk, kara_sea, komi, krasnoyarsk, urals, west_siberia
+west_siberia               land  2  kazakhstan, krasnoyarsk, mongolia, ob_basin, urals, xinjiang
+krasnoyarsk                land  1  irkutsk, kara_sea, mongolia, ob_basin, west_siberia, yakutia
+irkutsk                    land  1  krasnoyarsk, mongolia, transbaikal, yakutia
+transbaikal                land  0  amur, inner_mongolia, irkutsk, manchuria, mongolia, yakutia
+yakutia                    land  0  amur, chukchi_sea, chukotka, irkutsk, khabarovsk, kolyma, krasnoyarsk, transbaikal
+amur                       land  1  khabarovsk, manchuria, transbaikal, yakutia
+khabarovsk                 land  1  amur, kolyma, manchuria, sea_of_japan, sea_of_okhotsk, vladivostok, yakutia
+vladivostok                land  1  khabarovsk, korea, manchuria, sea_of_japan
+kolyma                     land  0  chukotka, kamchatka, khabarovsk, sea_of_okhotsk, yakutia
+kamchatka                  land  0  bering_sea, chukotka, kolyma, kuril_basin, sea_of_okhotsk
+chukotka                   land  0  bering_sea, chukchi_sea, kamchatka, kolyma, yakutia
+sakhalin                   land  0  karafuto, sea_of_japan, sea_of_okhotsk
+karafuto                   land  0  kuril_basin, sakhalin, sea_of_japan, sea_of_okhotsk
+west_kazakhstan            land  1  kazakhstan, stalingrad, turkestan, urals, volga
+kazakhstan                 land  1  turkestan, urals, west_kazakhstan, west_siberia, xinjiang
+turkestan                  land  1  afghanistan, kazakhstan, north_persia, persia, west_kazakhstan, xinjiang
+mongolia                   land  0  inner_mongolia, irkutsk, krasnoyarsk, shaanxi, transbaikal, west_siberia, xinjiang
+turkey                     land  2  aegean_sea, black_sea, bulgaria, eastern_mediterranean, greece, iraq, north_persia, syria, transcaucasia
+cyprus                     land  0  eastern_mediterranean
+syria                      land  1  eastern_mediterranean, iraq, palestine, turkey
+palestine                  land  1  arabia, eastern_mediterranean, egypt, iraq, syria
+iraq                       land  2  arabia, north_persia, palestine, persia, persian_gulf, syria, turkey
+north_persia               land  1  iraq, persia, transcaucasia, turkestan, turkey
+persia                     land  2  afghanistan, iraq, north_persia, northwest_india, persian_gulf, turkestan
+arabia                     land  1  arabian_sea, gulf_of_aden, iraq, palestine, persian_gulf, red_sea
+afghanistan                land  0  northwest_india, persia, turkestan, xinjiang
+egypt                      land  2  cyrenaica, eastern_mediterranean, palestine, red_sea, sudan
+cyrenaica                  land  1  aegean_sea, central_mediterranean, eastern_mediterranean, egypt, french_equatorial_africa, ionian_sea, sudan, tripolitania
+tripolitania               land  1  algeria, central_mediterranean, cyrenaica, french_equatorial_africa, french_west_africa, tunisia
+tunisia                    land  1  algeria, central_mediterranean, tripolitania, tyrrhenian_sea
+algeria                    land  1  french_west_africa, morocco, tripolitania, tunisia, tyrrhenian_sea, western_mediterranean
+morocco                    land  1  algeria, canary_basin, french_west_africa, iberian_coast, spain, western_mediterranean
+french_west_africa         land  1  algeria, british_west_africa, canary_basin, cape_verde, french_equatorial_africa, guinea_coast, gulf_of_guinea, morocco, tripolitania
+british_west_africa        land  1  french_equatorial_africa, french_west_africa, guinea_coast, gulf_of_guinea
+french_equatorial_africa   land  1  angola, angola_basin, belgian_congo, british_west_africa, cyrenaica, french_west_africa, gulf_of_guinea, sudan, tripolitania
+belgian_congo              land  1  angola, angola_basin, east_africa, french_equatorial_africa, rhodesia, sudan
+angola                     land  0  angola_basin, belgian_congo, french_equatorial_africa, rhodesia, southwest_africa
+sudan                      land  1  belgian_congo, cyrenaica, east_africa, egypt, ethiopia, french_equatorial_africa, red_sea
+ethiopia                   land  1  east_africa, gulf_of_aden, red_sea, somaliland, sudan
+somaliland                 land  0  east_africa, ethiopia, gulf_of_aden, somali_basin
+east_africa                land  1  belgian_congo, ethiopia, mozambique, mozambique_channel, rhodesia, somali_basin, somaliland, sudan
+rhodesia                   land  1  angola, belgian_congo, east_africa, mozambique, south_africa, southwest_africa
+mozambique                 land  0  east_africa, mozambique_channel, rhodesia, south_africa
+southwest_africa           land  0  angola, angola_basin, cape_of_good_hope, rhodesia, south_africa
+south_africa               land  2  cape_of_good_hope, mozambique, mozambique_channel, rhodesia, southwest_africa
+madagascar                 land  0  mozambique_channel
+northwest_india            land  2  afghanistan, arabian_sea, india, persia, persian_gulf, tibet, xinjiang
+india                      land  3  arabian_sea, bengal, laccadive_sea, northwest_india, south_india, tibet
+bengal                     land  2  bay_of_bengal, burma, india, south_india, tibet
+south_india                land  2  bay_of_bengal, bengal, india, laccadive_sea
+andaman_islands            land  0  andaman_sea, bay_of_bengal
+ceylon                     land  1  laccadive_sea
+burma                      land  1  andaman_sea, bay_of_bengal, bengal, indochina, siam, tibet, yunnan
+siam                       land  1  andaman_sea, burma, gulf_of_siam, indochina, malaya
+indochina                  land  2  burma, guangdong, gulf_of_siam, siam, south_china_sea, yunnan
+malaya                     land  1  gulf_of_siam, siam
+borneo                     land  2  celebes_sea, java_sea
+sumatra                    land  2  andaman_sea, gulf_of_siam, java_sea
+java                       land  2  java_sea, timor_sea
+celebes                    land  1  arafura_sea, banda_sea, celebes_sea, java_sea, timor_sea
+timor                      land  0  banda_sea, timor_sea
+dutch_new_guinea           land  0  arafura_sea, banda_sea, bismarck_sea, new_guinea
+new_britain                land  0  bismarck_sea
+solomons                   land  0  new_hebrides_basin, solomon_sea
+new_guinea                 land  1  arafura_sea, bismarck_sea, coral_sea, dutch_new_guinea, solomon_sea
+luzon                      land  1  celebes_sea, east_china_sea, mindanao, philippine_sea, south_china_sea
+mindanao                   land  1  celebes_sea, luzon, philippine_sea, south_china_sea
+manchuria                  land  2  amur, inner_mongolia, khabarovsk, korea, north_china, transbaikal, vladivostok, yellow_sea
+inner_mongolia             land  0  manchuria, mongolia, north_china, shaanxi, transbaikal
+north_china                land  2  central_china, inner_mongolia, manchuria, shaanxi, shanghai, yellow_sea
+shanghai                   land  2  central_china, east_china_sea, fujian, north_china, yellow_sea
+central_china              land  1  fujian, guangdong, north_china, shaanxi, shanghai, sichuan, yunnan
+fujian                     land  1  central_china, east_china_sea, formosa, guangdong, shanghai
+guangdong                  land  1  central_china, east_china_sea, fujian, indochina, south_china_sea, yunnan
+sichuan                    land  2  central_china, shaanxi, tibet, yunnan
+yunnan                     land  1  burma, central_china, guangdong, indochina, sichuan, tibet
+shaanxi                    land  1  central_china, inner_mongolia, mongolia, north_china, sichuan, tibet, xinjiang
+xinjiang                   land  0  afghanistan, kazakhstan, mongolia, northwest_india, shaanxi, tibet, turkestan, west_siberia
+tibet                      land  0  bengal, burma, india, northwest_india, shaanxi, sichuan, xinjiang, yunnan
+formosa                    land  1  east_china_sea, fujian
+korea                      land  2  manchuria, sea_of_japan, vladivostok, yellow_sea
+okinawa                    land  0  east_china_sea
+hokkaido                   land  1  sea_of_japan
+kyushu                     land  1  east_china_sea, japan
+japan                      land  8  east_china_sea, kuroshio, kyushu, sea_of_japan, yellow_sea
+iwo_jima                   land  0  kuroshio
+marianas                   land  0  mariana_basin
+caroline_islands           land  0  banda_sea, caroline_basin, mariana_basin, marshall_basin, philippine_sea
+marshall_islands           land  0  marshall_basin
+wake_island                land  0  wake_basin
+gilbert_islands            land  0  gilbert_basin, marshall_basin
+midway                     land  0  midway_waters
+hawaii                     land  1  hawaiian_waters
+samoa                      land  0  samoa_basin
+fiji                       land  0  fiji_basin
+new_hebrides               land  0  new_hebrides_basin
+new_caledonia              land  0  coral_sea, new_hebrides_basin
+new_zealand                land  2  new_zealand_waters, samoa_basin, tasman_sea
+western_australia          land  1  great_australian_bight, northern_australia, south_australia, timor_sea, west_australian_basin
+northern_australia         land  1  arafura_sea, queensland, south_australia, timor_sea, western_australia
+queensland                 land  1  arafura_sea, coral_sea, eastern_australia, northern_australia, south_australia
+south_australia            land  1  eastern_australia, great_australian_bight, northern_australia, queensland, western_australia
+eastern_australia          land  2  great_australian_bight, queensland, south_australia, tasman_sea
+alaska                     land  1  aleutians, beaufort_sea, bering_sea, british_columbia, chukchi_sea, gulf_of_alaska, northeast_pacific
+aleutians                  land  0  alaska, bering_sea, north_pacific
+pacific_coast              land  4  british_columbia, california_coast, mexico, northeast_pacific, rocky_mountains
+rocky_mountains            land  1  british_columbia, great_plains, mexico, pacific_coast, prairies, texas
+great_plains               land  2  midwest, ontario, prairies, rocky_mountains, texas
+texas                      land  2  great_plains, gulf_of_mexico, mexico, midwest, rocky_mountains, southeast_us
+midwest                    land  4  eastern_us, great_plains, ontario, southeast_us, texas
+southeast_us               land  2  eastern_seaboard, eastern_us, gulf_of_mexico, midwest, texas
+eastern_us                 land  5  eastern_seaboard, midwest, new_england, ontario, quebec, southeast_us
+new_england                land  2  eastern_seaboard, eastern_us, gulf_of_st_lawrence, maritimes, quebec
+british_columbia           land  1  alaska, beaufort_sea, gulf_of_alaska, northeast_pacific, northern_canada, pacific_coast, prairies, rocky_mountains
+prairies                   land  1  british_columbia, great_plains, hudson_bay, northern_canada, ontario, rocky_mountains
+ontario                    land  2  eastern_us, great_plains, hudson_bay, midwest, prairies, quebec
+quebec                     land  1  eastern_us, gulf_of_st_lawrence, hudson_bay, labrador_sea, maritimes, new_england, newfoundland, northern_canada, ontario
+maritimes                  land  1  gulf_of_st_lawrence, new_england, quebec
+newfoundland               land  1  grand_banks, gulf_of_st_lawrence, labrador_sea, northern_canada, quebec
+northern_canada            land  0  baffin_bay, beaufort_sea, british_columbia, hudson_bay, labrador_sea, newfoundland, prairies, quebec
+greenland                  land  0  baffin_bay, denmark_strait, greenland_sea, labrador_sea
+mexico                     land  1  california_coast, central_america, eastern_pacific, gulf_of_mexico, pacific_coast, panama_approaches, rocky_mountains, texas
+central_america            land  1  caribbean_sea, colombia, gulf_of_mexico, mexico, panama_approaches
+cuba                       land  1  caribbean_sea, gulf_of_mexico
+west_indies                land  1  caribbean_sea, gulf_of_mexico, lesser_antilles
+bermuda                    land  0  sargasso_sea
+colombia                   land  1  amazonia, caribbean_sea, central_america, panama_approaches, peru, venezuela
+venezuela                  land  1  amazonia, caribbean_sea, colombia, guianas, lesser_antilles
+guianas                    land  0  amazonia, lesser_antilles, venezuela
+peru                       land  1  amazonia, argentina, chile, colombia, humboldt_current, panama_approaches, southern_brazil
+amazonia                   land  0  brazilian_bulge, brazilian_coast, colombia, guianas, lesser_antilles, peru, southern_brazil, venezuela
+brazilian_bulge            land  1  amazonia, brazilian_coast, santos_basin, southern_brazil
+southern_brazil            land  2  amazonia, argentina, argentine_basin, brazilian_bulge, peru, santos_basin
+argentina                  land  2  argentine_basin, chile, peru, southern_brazil
+chile                      land  0  argentina, humboldt_current, peru, south_pacific
+barents_sea                sea   0  arkhangelsk, kara_sea, karelia, murmansk, north_norway, norwegian_sea
+kara_sea                   sea   0  arkhangelsk, barents_sea, krasnoyarsk, ob_basin
+norwegian_sea              sea   0  barents_sea, greenland_sea, north_norway, north_sea, norway
+greenland_sea              sea   0  denmark_strait, greenland, iceland, north_atlantic, norwegian_sea, western_approaches
+denmark_strait             sea   0  greenland, greenland_sea, iceland, labrador_sea, north_atlantic
+north_sea                  sea   0  denmark, english_channel, germany, germany_west, netherlands, norway, norwegian_sea, sweden, united_kingdom, western_approaches
+baltic_sea                 sea   0  baltic_states, denmark, east_prussia, germany, gulf_of_bothnia, poland, sweden
+gulf_of_bothnia            sea   0  baltic_sea, baltic_states, finland, leningrad, sweden
+english_channel            sea   0  bay_of_biscay, belgium, ireland, netherlands, north_sea, northern_france, united_kingdom, western_approaches
+western_approaches         sea   0  azores, bay_of_biscay, english_channel, greenland_sea, iberian_coast, ireland, north_atlantic, north_sea, united_kingdom
+north_atlantic             sea   0  azores, denmark_strait, grand_banks, greenland_sea, labrador_sea, western_approaches
+bay_of_biscay              sea   0  english_channel, iberian_coast, northern_france, southern_france, spain, western_approaches
+iberian_coast              sea   0  azores, bay_of_biscay, canary_basin, morocco, portugal, spain, western_approaches, western_mediterranean
+azores                     sea   0  canary_basin, central_atlantic, grand_banks, iberian_coast, north_atlantic, western_approaches
+labrador_sea               sea   0  baffin_bay, denmark_strait, grand_banks, greenland, gulf_of_st_lawrence, hudson_bay, newfoundland, north_atlantic, northern_canada, quebec
+baffin_bay                 sea   0  greenland, hudson_bay, labrador_sea, northern_canada
+hudson_bay                 sea   0  baffin_bay, beaufort_sea, labrador_sea, northern_canada, ontario, prairies, quebec
+gulf_of_st_lawrence        sea   0  eastern_seaboard, grand_banks, labrador_sea, maritimes, new_england, newfoundland, quebec, sargasso_sea
+grand_banks                sea   0  azores, central_atlantic, gulf_of_st_lawrence, labrador_sea, newfoundland, north_atlantic, sargasso_sea
+eastern_seaboard           sea   0  caribbean_sea, eastern_us, gulf_of_mexico, gulf_of_st_lawrence, new_england, sargasso_sea, southeast_us
+sargasso_sea               sea   0  bermuda, caribbean_sea, central_atlantic, eastern_seaboard, grand_banks, gulf_of_st_lawrence, lesser_antilles
+gulf_of_mexico             sea   0  caribbean_sea, central_america, cuba, eastern_seaboard, mexico, southeast_us, texas, west_indies
+caribbean_sea              sea   0  central_america, colombia, cuba, eastern_seaboard, gulf_of_mexico, lesser_antilles, sargasso_sea, venezuela, west_indies
+lesser_antilles            sea   0  amazonia, brazilian_coast, cape_verde, caribbean_sea, central_atlantic, equatorial_atlantic, guianas, sargasso_sea, venezuela, west_indies
+central_atlantic           sea   0  azores, canary_basin, cape_verde, grand_banks, lesser_antilles, sargasso_sea
+canary_basin               sea   0  azores, cape_verde, central_atlantic, french_west_africa, iberian_coast, morocco
+cape_verde                 sea   0  canary_basin, central_atlantic, equatorial_atlantic, french_west_africa, guinea_coast, lesser_antilles
+equatorial_atlantic        sea   0  brazilian_coast, cape_verde, guinea_coast, lesser_antilles
+gulf_of_guinea             sea   0  angola_basin, british_west_africa, french_equatorial_africa, french_west_africa, guinea_coast
+guinea_coast               sea   0  angola_basin, brazilian_coast, british_west_africa, cape_verde, equatorial_atlantic, french_west_africa, gulf_of_guinea, south_atlantic
+brazilian_coast            sea   0  amazonia, brazilian_bulge, equatorial_atlantic, guinea_coast, lesser_antilles, santos_basin, south_atlantic
+santos_basin               sea   0  argentine_basin, brazilian_bulge, brazilian_coast, south_atlantic, southern_brazil
+argentine_basin            sea   0  argentina, santos_basin, south_atlantic, southern_brazil
+south_atlantic             sea   0  angola_basin, argentine_basin, brazilian_coast, cape_of_good_hope, guinea_coast, santos_basin
+angola_basin               sea   0  angola, belgian_congo, cape_of_good_hope, french_equatorial_africa, guinea_coast, gulf_of_guinea, south_atlantic, southwest_africa
+cape_of_good_hope          sea   0  angola_basin, mascarene_sea, mozambique_channel, south_africa, south_atlantic, southwest_africa
+western_mediterranean      sea   0  algeria, iberian_coast, morocco, southern_france, spain, tyrrhenian_sea
+tyrrhenian_sea             sea   0  algeria, central_mediterranean, italy, northern_italy, sardinia, sicily, southern_france, tunisia, western_mediterranean
+central_mediterranean      sea   0  cyrenaica, ionian_sea, malta, sicily, tripolitania, tunisia, tyrrhenian_sea
+adriatic_sea               sea   0  albania, croatia, ionian_sea, italy, northern_italy, serbia
+ionian_sea                 sea   0  adriatic_sea, aegean_sea, albania, central_mediterranean, cyrenaica, greece, italy, sicily
+aegean_sea                 sea   0  black_sea, crete, cyrenaica, eastern_mediterranean, greece, ionian_sea, turkey
+eastern_mediterranean      sea   0  aegean_sea, crete, cyprus, cyrenaica, egypt, greece, palestine, syria, turkey
+black_sea                  sea   0  aegean_sea, bulgaria, caucasus, crimea, romania, transcaucasia, turkey, ukraine, west_ukraine
+red_sea                    sea   0  arabia, egypt, ethiopia, gulf_of_aden, sudan
+gulf_of_aden               sea   0  arabia, arabian_sea, ethiopia, red_sea, somali_basin, somaliland
+somali_basin               sea   0  arabian_sea, central_indian_ocean, east_africa, gulf_of_aden, laccadive_sea, mascarene_sea, mozambique_channel, somaliland
+mozambique_channel         sea   0  cape_of_good_hope, east_africa, madagascar, mascarene_sea, mozambique, somali_basin, south_africa
+mascarene_sea              sea   0  cape_of_good_hope, central_indian_ocean, mozambique_channel, somali_basin, southern_indian_ocean
+persian_gulf               sea   0  arabia, arabian_sea, iraq, northwest_india, persia
+arabian_sea                sea   0  arabia, gulf_of_aden, india, laccadive_sea, northwest_india, persian_gulf, somali_basin
+laccadive_sea              sea   0  andaman_sea, arabian_sea, bay_of_bengal, central_indian_ocean, ceylon, india, somali_basin, south_india
+bay_of_bengal              sea   0  andaman_islands, andaman_sea, bengal, burma, laccadive_sea, south_india
+andaman_sea                sea   0  andaman_islands, bay_of_bengal, burma, central_indian_ocean, gulf_of_siam, java_sea, laccadive_sea, siam, sumatra
+central_indian_ocean       sea   0  andaman_sea, java_sea, laccadive_sea, mascarene_sea, somali_basin, southern_indian_ocean, west_australian_basin
+southern_indian_ocean      sea   0  central_indian_ocean, mascarene_sea, west_australian_basin
+west_australian_basin      sea   0  central_indian_ocean, great_australian_bight, java_sea, southern_indian_ocean, timor_sea, western_australia
+great_australian_bight     sea   0  eastern_australia, south_australia, tasman_sea, west_australian_basin, western_australia
+java_sea                   sea   0  andaman_sea, borneo, celebes, celebes_sea, central_indian_ocean, gulf_of_siam, java, south_china_sea, sumatra, timor_sea, west_australian_basin
+timor_sea                  sea   0  arafura_sea, banda_sea, celebes, java, java_sea, northern_australia, timor, west_australian_basin, western_australia
+arafura_sea                sea   0  banda_sea, celebes, coral_sea, dutch_new_guinea, new_guinea, northern_australia, queensland, timor_sea
+banda_sea                  sea   0  arafura_sea, bismarck_sea, caroline_basin, caroline_islands, celebes, celebes_sea, dutch_new_guinea, philippine_sea, timor, timor_sea
+celebes_sea                sea   0  banda_sea, borneo, celebes, java_sea, luzon, mindanao, philippine_sea, south_china_sea
+gulf_of_siam               sea   0  andaman_sea, indochina, java_sea, malaya, siam, south_china_sea, sumatra
+south_china_sea            sea   0  celebes_sea, east_china_sea, guangdong, gulf_of_siam, indochina, java_sea, luzon, mindanao, philippine_sea
+coral_sea                  sea   0  arafura_sea, bismarck_sea, new_caledonia, new_guinea, new_hebrides_basin, queensland, solomon_sea, tasman_sea
+solomon_sea                sea   0  bismarck_sea, caroline_basin, coral_sea, gilbert_basin, marshall_basin, new_guinea, new_hebrides_basin, solomons
+bismarck_sea               sea   0  banda_sea, caroline_basin, coral_sea, dutch_new_guinea, new_britain, new_guinea, solomon_sea
+tasman_sea                 sea   0  coral_sea, eastern_australia, great_australian_bight, new_hebrides_basin, new_zealand, new_zealand_waters
+new_hebrides_basin         sea   0  coral_sea, fiji_basin, gilbert_basin, new_caledonia, new_hebrides, new_zealand_waters, solomon_sea, solomons, tasman_sea
+philippine_sea             sea   0  banda_sea, caroline_basin, caroline_islands, celebes_sea, east_china_sea, kuroshio, luzon, mariana_basin, mindanao, south_china_sea
+east_china_sea             sea   0  formosa, fujian, guangdong, japan, kuroshio, kyushu, luzon, okinawa, philippine_sea, shanghai, south_china_sea, yellow_sea
+yellow_sea                 sea   0  east_china_sea, japan, korea, manchuria, north_china, sea_of_japan, shanghai
+sea_of_japan               sea   0  hokkaido, japan, karafuto, khabarovsk, korea, kuril_basin, kuroshio, sakhalin, sea_of_okhotsk, vladivostok, yellow_sea
+sea_of_okhotsk             sea   0  kamchatka, karafuto, khabarovsk, kolyma, kuril_basin, sakhalin, sea_of_japan
+kuroshio                   sea   0  east_china_sea, iwo_jima, japan, kuril_basin, mariana_basin, philippine_sea, sea_of_japan, wake_basin
+kuril_basin                sea   0  bering_sea, kamchatka, karafuto, kuroshio, midway_waters, north_pacific, sea_of_japan, sea_of_okhotsk, wake_basin
+mariana_basin              sea   0  caroline_basin, caroline_islands, kuroshio, marianas, marshall_basin, philippine_sea, wake_basin
+caroline_basin             sea   0  banda_sea, bismarck_sea, caroline_islands, mariana_basin, marshall_basin, philippine_sea, solomon_sea
+marshall_basin             sea   0  caroline_basin, caroline_islands, gilbert_basin, gilbert_islands, mariana_basin, marshall_islands, midway_waters, solomon_sea, wake_basin
+wake_basin                 sea   0  kuril_basin, kuroshio, mariana_basin, marshall_basin, midway_waters, wake_island
+gilbert_basin              sea   0  fiji_basin, gilbert_islands, line_islands, marshall_basin, new_hebrides_basin, samoa_basin, solomon_sea
+fiji_basin                 sea   0  fiji, gilbert_basin, new_hebrides_basin, new_zealand_waters, polynesia, samoa_basin
+samoa_basin                sea   0  fiji_basin, gilbert_basin, line_islands, new_zealand, polynesia, samoa
+new_zealand_waters         sea   0  fiji_basin, new_hebrides_basin, new_zealand, polynesia, tasman_sea
+midway_waters              sea   0  central_pacific, hawaiian_waters, kuril_basin, line_islands, marshall_basin, midway, north_pacific, wake_basin
+bering_sea                 sea   0  alaska, aleutians, chukchi_sea, chukotka, gulf_of_alaska, kamchatka, kuril_basin, north_pacific
+chukchi_sea                sea   0  alaska, beaufort_sea, bering_sea, chukotka, yakutia
+north_pacific              sea   0  aleutians, bering_sea, central_pacific, gulf_of_alaska, kuril_basin, midway_waters
+beaufort_sea               sea   0  alaska, british_columbia, chukchi_sea, hudson_bay, northern_canada
+gulf_of_alaska             sea   0  alaska, bering_sea, british_columbia, central_pacific, north_pacific, northeast_pacific
+hawaiian_waters            sea   0  california_coast, central_pacific, hawaii, line_islands, midway_waters, northeast_pacific
+central_pacific            sea   0  gulf_of_alaska, hawaiian_waters, midway_waters, north_pacific, northeast_pacific
+northeast_pacific          sea   0  alaska, british_columbia, california_coast, central_pacific, gulf_of_alaska, hawaiian_waters, pacific_coast
+california_coast           sea   0  eastern_pacific, hawaiian_waters, mexico, northeast_pacific, pacific_coast
+line_islands               sea   0  eastern_pacific, gilbert_basin, hawaiian_waters, midway_waters, polynesia, samoa_basin
+eastern_pacific            sea   0  california_coast, humboldt_current, line_islands, mexico, panama_approaches, polynesia, south_pacific
+panama_approaches          sea   0  central_america, colombia, eastern_pacific, humboldt_current, mexico, peru
+humboldt_current           sea   0  chile, eastern_pacific, panama_approaches, peru, south_pacific
+south_pacific              sea   0  chile, eastern_pacific, humboldt_current, polynesia
+polynesia                  sea   0  eastern_pacific, fiji_basin, line_islands, new_zealand_waters, samoa_basin, south_pacific
