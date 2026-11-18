@@ -324,3 +324,66 @@ test('objectives needed: any N of M capture targets wins; targets report each te
   const h = newGame({ objectives: [{ type: 'capture', territories: ['B1', 'B2'] }] });
   assert.equal(h.objectivesNeeded(), 2);
 });
+
+test('IPC line: destroying an infantry and a tank without losses reads Me 0 IPC / Them -9 IPC', () => {
+  const D = require('../js/daily.js');
+  const setup = Object.assign(scenario().setup, { B1: { owner: 'Soviet Union', units: { 'Soviet Union': { infantry: 1, tank: 1 } } } });
+  let checked = 0;
+  for (let seed = 1; seed < 200 && checked < 3; seed++) {
+    const g = newGame({ setup }, seed);
+    g.nextPhase();
+    g.move('A1', ids(g, 'A1', 'infantry').concat(ids(g, 'A1', 'tank'), ids(g, 'A1', 'fighter')), 'B1');
+    g.move('A2', ids(g, 'A2', 'infantry').concat(ids(g, 'A2', 'tank')), 'B1');
+    g.nextPhase();
+    g.startBattle('B1');
+    g.autoResolve();
+    const lost = g.s.battle.lost || { A: {}, D: {} };
+    if (Object.keys(lost.A).length || g.s.battle.result !== 'attacker') continue; // want a flawless win
+    checked++;
+    assert.equal(g.s.losses.Axis || 0, 0);
+    assert.equal(g.s.losses.Allies, 9, 'infantry 3 + tank 6');
+    const line = D.shareText({ number: 1, title: 'T', won: true, turns: 1, maxTurns: 3, targets: [], luckYou: { dice: 1, diff: 0 }, luckFoe: { dice: 1, diff: 0 },
+      lossYou: g.s.losses.Axis || 0, lossFoe: g.s.losses.Allies || 0 }).split('\n').find((l) => l.startsWith('Me '));
+    assert.equal(line, 'Me 0 IPC / Them -9 IPC');
+  }
+  assert.ok(checked > 0, 'found flawless wins to check');
+});
+
+test('IPC losses always equal starting value + units placed - units left, per team', () => {
+  const AI = require('../js/ai.js');
+  const G = require('../js/generator.js');
+  const tuv = (g) => {
+    const out = {};
+    for (const id of Object.keys(g.s.terr)) for (const u of g.s.terr[id].u) {
+      if (g.def(u).infrastructure) continue;
+      out[g.team(u.o)] = (out[g.team(u.o)] || 0) + g.def(u).cost;
+    }
+    return out;
+  };
+  const twMap = require('../maps/total_world_war.json');
+  const cases = [];
+  for (let i = 0; i < 4; i++) cases.push([map, scenario({ maxTurns: 4 }), i]);
+  for (let i = 0; i < 4; i++) cases.push([twMap, G.generate(twMap, { seed: 50 + i, theater: ['eastern', 'pacific', 'mediterranean', 'china'][i], naval: i % 2 === 1, tune: 0, mapUnits: i % 2 === 0 }), i]);
+  for (const [m, sc, seed] of cases) {
+    const g = E.Game.create(m, sc, { seed: seed + 1 });
+    const humans = Object.keys(g.s.powers).filter((p) => !g.s.powers[p].ai);
+    for (const p of humans) g.s.powers[p].ai = true;
+    g.humanTeam = () => g.s.powers[humans[0]].team;
+    g.isHuman = (p) => humans.includes(p);
+    const placed = {};
+    const place = g.place.bind(g);
+    g.place = (t, at) => {
+      const r = place(t, at);
+      if (r.ok && !g.R.units[t].infrastructure) placed[g.team(g.current())] = (placed[g.team(g.current())] || 0) + g.R.units[t].cost;
+      return r;
+    };
+    const start = tuv(g);
+    const ai = new AI(g);
+    let n = 0;
+    while (g.phase !== 'gameOver' && n++ < 20000) if (!ai.step()) break;
+    const end = tuv(g);
+    for (const t of new Set([...Object.keys(start), ...Object.keys(end)])) {
+      assert.equal((g.s.losses || {})[t] || 0, (start[t] || 0) + (placed[t] || 0) - (end[t] || 0), `${m.id} ${sc.id || ''} ${t}`);
+    }
+  }
+});
