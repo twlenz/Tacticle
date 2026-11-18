@@ -27,6 +27,17 @@ node tools/serve.js            # or: npm start
 npm test                       # rules, AI, generator, map, importer and server tests
 ```
 
+The authoring server only listens on `127.0.0.1`. It refuses:
+- requests addressed to any host name other than `localhost`/`127.0.0.1`, which blocks
+  DNS-rebinding attacks from web pages
+- cross-site API calls
+- paths that leave the repository through `..`, a symlink or a similarly named sibling
+  folder
+- hidden files such as `.git` and `.env`
+
+Schedule entries must be `puzzles/<id>.json`. Both pages carry a Content-Security-Policy
+that allows only their own scripts.
+
 ### Hosting
 
 Serve the repository root from any static host. For GitHub Pages: Settings → Pages →
@@ -37,8 +48,14 @@ changes and push them.
 
 ## Playing
 
-- The puzzle for the player's **local** date is chosen from `schedule.json`. On a date
-  with nothing scheduled, the most recent earlier puzzle is shown. `?date=YYYY-MM-DD`
+- The puzzle for the player's **local** date is chosen from `schedule.json`.
+- **On a date with nothing scheduled**, an earlier puzzle is replayed. The pick comes from
+  the date alone, so every player gets the same one. It avoids puzzles from the past week
+  when older ones exist and doesn't repeat the previous day's replay. It counts as that
+  day's game, with its own number and a fresh save. To keep showing the most recent
+  puzzle instead, set `"fallback": "latest"` in `schedule.json` (Schedule tab → "Days with
+  nothing scheduled").
+- `?date=YYYY-MM-DD`
   opens a past day; future dates are capped at today.
 - Turn: **buy → combat move → battles → noncombat move → place**, then income. The
   computer then takes its turns with animated moves (with a "Skip" button).
@@ -58,18 +75,25 @@ changes and push them.
 - When the game ends, the result dialog shows text like:
 
   ```
-  Tacticle #3 · Yellow River
-  🏆 Won in 2/3 turns
-  🟨🟩
-  🎲 I rolled above the odds (+1.2 hits)
-  🎲 Foe rolled below the odds (−0.8 hits)
-  https://…/
+  Tacticle #1 · Karelian Front
+  💀 Lost · 0/1 objective · 1/4 turns
+  🟥
+  🎲 I rolled below odds (-3 hits)
+  🎲 Opponent rolled above odds (+3.2 hits)
+  Me -15 IPC / Them -25 IPC
+  twlenz.github.io/Tacticle
   ```
 
-  Each square is one of your turns: 🟥 no objectives held, 🟨 some, 🟩 all. "Odds" compare
-  the hits each side actually rolled with the expected number (each die at value *v*
-  expects *v*/6 hits). AA fire and shore bombardment are included.
-- Stats (played, win %, streak, wins by turn count) are kept per browser.
+  - **Squares:** one per objective territory. On a win: 🟩 taken, 🟧 not taken but not
+    needed. On a loss: 🟨 taken, 🟥 not taken.
+  - **Odds:** compare the hits each side actually rolled with the expected number (each die
+    at value *v* expects *v*/6 hits). AA fire and shore bombardment are included.
+  - **Me / Them:** the IPC value of each side's destroyed units. This counts battle
+    casualties, aircraft that couldn't land, and troops lost with sunk transports.
+  - **Link:** the page address without `https://` (`twlenz.github.io/Tacticle`). Most chat
+    apps turn that into a link; Discord needs `https://`.
+- Stats (played, win %, streak, wins by turn count) are kept per browser. Each date counts
+  once, however often the page is reloaded.
 
 ## Authoring
 
@@ -100,7 +124,9 @@ you use them. Undo and redo: <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd
 - **Powers**: player or computer, team, starting IPCs, capital, and turn order.
 - **Objectives**: *Capture* (control at the check), *Hold* (lose immediately if lost at
   the end of any turn; the game runs to the last turn), *Clear* (no enemy units left).
-  The player wins when every objective is met at the check.
+  The player wins when every objective is met at the check. With several capture or clear
+  territories, **Needed to win** can lower that to "any N of M" (saved as
+  `"objectivesNeeded": N`).
 - **Generate**: a **new** puzzle (theatre or "around the selected territory", size,
   difficulty, player side, optional fleets and transports, and on TripleA maps the option
   to **use the map's own starting armies**), or a **variant** of the
@@ -174,7 +200,11 @@ Also implemented: combat and noncombat movement with automatic routing, blitzing
 loading, amphibious assaults (resolved after any sea battle in the launch zone; a lost
 sea battle sinks or re-embarks the landing force), shore bombardment limited to the
 number of landing units, retreats to a territory an attacker came from, aircraft
-landing checks (no landing in territory captured this turn; stranded aircraft are lost),
+range (an aircraft may only move, in combat or noncombat, to a territory or sea zone
+from which its remaining movement still reaches a landing spot: friendly land held since
+the start of the turn, a friendly carrier, or a zone one of your carriers can still sail
+to; anything it cannot reach is not offered), landing checks (no landing in territory
+captured this turn; aircraft left without a landing spot are lost),
 capital capture taking the treasury, liberation of allied territory, income, production
 limits, and neutral territories that block movement.
 

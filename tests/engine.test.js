@@ -151,15 +151,62 @@ test('transport: load, sail, amphibious landing captures empty island', () => {
 test('aircraft that cannot land are lost at the end of noncombat', () => {
   const g = newGame();
   g.nextPhase();
-  const f = ids(g, 'A1', 'fighter');
-  // fly out to sea and stay there with no carrier
-  g.s.phase = 'noncombatMove';
-  const r = g.move('A1', f, 'S3');
-  assert.ok(r.ok, r.error);
+  g.nextPhase(); // straight to noncombat (no battles)
+  // a fighter stranded at sea with no moves left (e.g. after a sea battle)
+  const f = g.units('A1').find((u) => u.t === 'fighter');
+  g._moveUnit(f, 'A1', 'S3');
+  f.ml = 0;
   assert.equal(g.strandedAir().length, 1);
   const res = g.nextPhase();
   assert.equal(res.lost.length, 1);
   assert.equal(ids(g, 'S3', 'fighter').length, 0);
+  assert.equal(g.s.losses.Axis, 10, 'counted in the IPC losses');
+});
+
+test('aircraft may only move where they can still return to friendly territory', () => {
+  // I (enemy island) is 3 spaces from A1; a fighter (move 4) would have 1 left and no landing spot
+  let g = newGame();
+  g.nextPhase();
+  const f = ids(g, 'A1', 'fighter');
+  let r = g.checkMove('A1', f, 'I');
+  assert.equal(r.ok, false);
+  assert.match(r.error, /return/);
+  assert.ok(!('I' in g.destinations('A1', f)), 'not highlighted');
+  // attacking B2 leaves 2 moves and A3 (held all turn) in reach
+  assert.ok(g.checkMove('A1', f, 'B2').ok);
+  // a friendly carrier next to the island makes the attack legal
+  g = newGame({ setup: Object.assign(scenario().setup, { S2: { units: { Germany: { carrier: 1 } } } }) });
+  g.nextPhase();
+  assert.ok(g.checkMove('A1', ids(g, 'A1', 'fighter'), 'I').ok, 'carrier in S2');
+  // so does one of your own carriers that can still sail there this turn
+  g = newGame({ setup: Object.assign(scenario().setup, { S1: { units: { Germany: { carrier: 1, destroyer: 1 } } } }) });
+  g.nextPhase();
+  assert.ok(g.checkMove('A1', ids(g, 'A1', 'fighter'), 'I').ok, 'carrier in S1 can reach S2');
+  // ...but not once it has moved and used its movement
+  const carrier = g.units('S1').find((u) => u.t === 'carrier');
+  carrier.ml = 0;
+  assert.equal(g.checkMove('A1', ids(g, 'A1', 'fighter'), 'I').ok, false);
+  // noncombat: no flying off to empty sea
+  g = newGame();
+  g.nextPhase(); g.nextPhase();
+  assert.equal(g.phase, 'noncombatMove');
+  assert.equal(g.checkMove('A1', ids(g, 'A1', 'fighter'), 'S3').ok, false);
+  assert.ok(g.checkMove('A1', ids(g, 'A1', 'fighter'), 'A3').ok);
+});
+
+test('aircraft cannot land in territory captured this turn', () => {
+  const g = newGame();
+  g.nextPhase();
+  g.move('A1', ids(g, 'A1', 'infantry').slice(0, 1), 'B1'); // capture empty B1
+  assert.equal(g.s.terr.B1.o, 'Germany');
+  g.nextPhase(); // no battles -> noncombat
+  const f = g.units('A1').find((u) => u.t === 'fighter');
+  // with moves to spare it may pass through, but it cannot end its move there
+  assert.ok(g.checkMove('A1', [f.id], 'B1').ok);
+  f.ml = 1;
+  const r = g.checkMove('A1', [f.id], 'B1');
+  assert.equal(r.ok, false, 'B1 was captured this turn, so it is not a landing spot');
+  assert.match(r.error, /return/);
 });
 
 test('purchase, placement at factory with capacity, income', () => {
@@ -246,4 +293,34 @@ test('rule sets load with their unit lists', () => {
   assert.ok(!Rules.get('1941').units.aaa);
   assert.equal(Rules.get('revised').units.tank.cost, 5);
   assert.equal(Rules.get('classic').units.battleship.hp, 1);
+});
+
+test('losses: IPC value of destroyed units is tallied per team', () => {
+  const g = newGame({ setup: Object.assign(scenario().setup, { B1: { owner: 'Soviet Union', units: { 'Soviet Union': { infantry: 2 } } } }) }, 5);
+  g.nextPhase();
+  g.move('A1', ids(g, 'A1', 'infantry').concat(ids(g, 'A1', 'tank')), 'B1');
+  g.nextPhase();
+  g.startBattle('B1');
+  g.autoResolve();
+  const lost = g.s.battle.lost || { A: {}, D: {} };
+  const R = require('../js/rulesets.js').get('1942');
+  const value = (m) => Object.keys(m).reduce((a, k) => a + m[k] * R.units[k].cost, 0);
+  assert.equal(g.s.losses.Axis || 0, value(lost.A));
+  assert.equal(g.s.losses.Allies || 0, value(lost.D));
+  assert.ok((g.s.losses.Axis || 0) + (g.s.losses.Allies || 0) > 0);
+});
+
+test('objectives needed: any N of M capture targets wins; targets report each territory', () => {
+  const sc = { objectives: [{ type: 'capture', territories: ['B1', 'B2', 'I'] }], objectivesNeeded: 1 };
+  const g = newGame(sc);
+  g.nextPhase();
+  g.move('A1', ids(g, 'A1', 'infantry').slice(0, 1), 'B1');
+  assert.deepEqual(g.objectiveTargets().map((t) => t.met), [true, false, false]);
+  assert.equal(g.objectivesNeeded(), 1);
+  g.nextPhase(); g.nextPhase(); g.nextPhase();
+  assert.equal(g.phase, 'gameOver');
+  assert.equal(g.s.result.won, true);
+  // without the setting every target is needed
+  const h = newGame({ objectives: [{ type: 'capture', territories: ['B1', 'B2'] }] });
+  assert.equal(h.objectivesNeeded(), 2);
 });

@@ -51,7 +51,8 @@
     };
   }
   async function useMap(id, initial) {
-    const entry = A.maps.find((m) => m.id === id) || { file: `maps/${id}.json` };
+    const known = A.maps.find((m) => m.id === id);
+    const entry = known && /^maps\/[a-z0-9][a-z0-9_-]{0,63}\.json$/i.test(known.file) ? known : { file: `maps/${String(id).replace(/[^a-z0-9_-]/gi, '')}.json` };
     const map = await getJSON(entry.file);
     A.map = map;
     A.T = {};
@@ -518,11 +519,19 @@
         <div class="grow"></div><button class="small" data-opick="${i}">Edit on map</button><button class="small" data-odel="${i}">✕</button></div>
         <div class="chips">${o.territories.map((id) => `<span class="chipx">${esc(A.T[id] ? A.T[id].name : id)}<button data-orm="${i}|${id}">✕</button></span>`).join('') || '<span class="hint">No territories yet</span>'}</div></div>`).join('') +
       `<div class="actions"><button id="oAdd">+ Add objective</button></div>
+      ${(() => {
+        const total = sc.objectives.filter((o) => o.type !== 'hold').reduce((a, o) => a + o.territories.length, 0);
+        if (total < 2) return '';
+        const cur = sc.objectivesNeeded > 0 && sc.objectivesNeeded < total ? sc.objectivesNeeded : 0;
+        return field('Needed to win', `<select id="oNeed"><option value="0">All ${total} capture/clear territories</option>${Array.from({ length: total - 1 }, (_, i) => i + 1).map((n) => `<option value="${n}" ${cur === n ? 'selected' : ''}>Any ${n} of ${total}</option>`).join('')}</select>`);
+      })()}
       <p class="hint">The player wins when every objective is met at the check (Scenario tab). With a Hold objective the game runs to the last turn, and losing a held territory at the end of any turn loses.</p>`;
     el.querySelectorAll('[data-otype]').forEach((s) => s.onchange = () => edit(() => { sc.objectives[+s.dataset.otype].type = s.value; }));
     el.querySelectorAll('[data-opick]').forEach((b) => b.onclick = () => { A.brush.obj = +b.dataset.opick; A.tool = 'objective'; renderAll(); });
     el.querySelectorAll('[data-odel]').forEach((b) => b.onclick = () => edit(() => { sc.objectives.splice(+b.dataset.odel, 1); A.brush.obj = 0; }));
     el.querySelectorAll('[data-orm]').forEach((b) => b.onclick = () => edit(() => { const [i, id] = b.dataset.orm.split('|'); sc.objectives[+i].territories = sc.objectives[+i].territories.filter((x) => x !== id); }));
+    const need = $('oNeed');
+    if (need) need.onchange = () => edit(() => { if (+need.value > 0) sc.objectivesNeeded = +need.value; else delete sc.objectivesNeeded; });
     $('oAdd').onclick = () => edit(() => { sc.objectives.push({ type: 'capture', territories: [] }); A.brush.obj = sc.objectives.length - 1; A.tool = 'objective'; });
   }
 
@@ -623,19 +632,26 @@
     const files = A.puzzles.map((p) => p.file);
     const used = {};
     for (const d of Object.keys(sch.days)) used[sch.days[d]] = (used[sch.days[d]] || 0) + 1;
-    const opts = (sel) => `<option value="">—</option>` + A.puzzles.map((p) => `<option value="${esc(p.file)}" ${sel === p.file ? 'selected' : ''}>${esc(p.id)}${used[p.file] ? ' ✓' : ''}</option>`).join('') + (sel && !files.includes(sel) ? `<option selected value="${esc(sel)}">${esc(sel)} (missing)</option>` : '');
+    const replayLabel = (d) => {
+      if (sch.fallback === 'latest') return '— (latest puzzle)';
+      const e = D.entryFor(sch, d);
+      return e && e.replay ? `— replay: ${e.file.replace(/^puzzles\/|\.json$/g, '')}` : '— (nothing to replay yet)';
+    };
+    const opts = (sel, d) => `<option value="">${esc(replayLabel(d))}</option>` + A.puzzles.map((p) => `<option value="${esc(p.file)}" ${sel === p.file ? 'selected' : ''}>${esc(p.id)}${used[p.file] ? ' ✓' : ''}</option>`).join('') + (sel && !files.includes(sel) ? `<option selected value="${esc(sel)}">${esc(sel)} (missing)</option>` : '');
     el.innerHTML = `<p class="hint">One puzzle per day, by the player's local date. Puzzle numbers count from the first day. Saved puzzles marked ✓ are already scheduled.</p>
       ${field('First day (puzzle #1)', `<input type="date" id="schEpoch" value="${esc(sch.epoch || today)}">`)}
+      ${field('Days with nothing scheduled', `<select id="schFallback"><option value="random" ${sch.fallback !== 'latest' ? 'selected' : ''}>Replay an earlier puzzle (picked from the date, same for everyone)</option><option value="latest" ${sch.fallback === 'latest' ? 'selected' : ''}>Keep showing the most recent puzzle</option></select>`)}
       <div class="actions"><button class="small" id="schPrev">← 4 weeks</button><button class="small" id="schToday">Today</button><button class="small" id="schNext">4 weeks →</button></div>
       <div class="actions"><button class="small" id="schFill">Fill empty days with unscheduled puzzles</button><button class="small" id="schAdd">Schedule current puzzle on…</button></div>
       <table class="sched">${days.map((d) => {
         const dt = D.parse(d);
         const n = D.number({ epoch: sch.epoch || today }, d);
-        return `<tr class="${d === today ? 'today' : d < today ? 'past' : ''}"><td>${dt.toLocaleDateString(undefined, { weekday: 'short' })}</td><td>${d}</td><td>${n >= 1 ? '#' + n : ''}</td><td><select data-day="${d}">${opts(sch.days[d])}</select></td></tr>`;
+        return `<tr class="${d === today ? 'today' : d < today ? 'past' : ''}"><td>${dt.toLocaleDateString(undefined, { weekday: 'short' })}</td><td>${d}</td><td>${n >= 1 ? '#' + n : ''}</td><td><select data-day="${d}">${opts(sch.days[d], d)}</select></td></tr>`;
       }).join('')}</table>
       <div class="actions"><button class="primary" id="schSave">Save schedule</button></div>`;
     el.querySelectorAll('[data-day]').forEach((s) => s.onchange = () => { if (s.value) sch.days[s.dataset.day] = s.value; else delete sch.days[s.dataset.day]; A.schedDirty = true; renderTab(); });
     $('schEpoch').onchange = (e) => { sch.epoch = e.target.value; A.schedDirty = true; renderTab(); };
+    $('schFallback').onchange = (e) => { if (e.target.value === 'latest') sch.fallback = 'latest'; else delete sch.fallback; A.schedDirty = true; renderTab(); };
     $('schPrev').onclick = () => { A.schedFrom = D.addDays(start, -28); renderTab(); };
     $('schNext').onclick = () => { A.schedFrom = D.addDays(start, 28); renderTab(); };
     $('schToday').onclick = () => { A.schedFrom = null; renderTab(); };
@@ -758,7 +774,7 @@
     } catch (e) { toast('Save failed: ' + e.message, 4000); }
   }
   async function saveSchedule(quiet) {
-    const text = JSON.stringify({ epoch: A.schedule.epoch, days: sortObj(A.schedule.days) }, null, 2);
+    const text = JSON.stringify(Object.assign({ epoch: A.schedule.epoch }, A.schedule.fallback === 'latest' ? { fallback: 'latest' } : {}, { days: sortObj(A.schedule.days) }), null, 2);
     try {
       if (A.server) {
         const r = await fetch('api/schedule', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: text });
@@ -840,7 +856,7 @@
       $('taMsg').textContent = `Downloading and converting ${g.name}…`;
       $('dialog').querySelectorAll('button').forEach((x) => { x.disabled = true; });
       try {
-        const id = slug(games.length === 1 ? entry.repo : g.name).replace(/-/g, '_');
+        const id = slug(games.length === 1 ? entry.repo : g.name).replace(/-/g, '_').slice(0, 60);
         const map = await TA.importGame(entry, g, fetchText, { id });
         await installMap(map);
       } catch (e) {

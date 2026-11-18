@@ -36,6 +36,9 @@
         if (!entry) throw new Error('No puzzle is scheduled yet. Come back soon!');
         S.date = entry.date;
         S.number = D.number(schedule, entry.date);
+        if (entry.replay) S.replayOf = { date: entry.from, number: D.number(schedule, entry.from) };
+        // only ever load puzzles from this site's puzzles/ folder
+        if (!/^puzzles\/[a-z0-9][a-z0-9_-]{0,63}\.json$/i.test(entry.file)) throw new Error('The schedule points at an invalid puzzle file');
         S.sc = await getJSON(entry.file);
         S.key = `tacticle:save:${S.date}:${S.sc.id}`;
       }
@@ -79,11 +82,12 @@
     return r.json();
   }
   async function loadMap(id) {
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(String(id))) throw new Error('Invalid map id in puzzle');
     let file = `maps/${id}.json`;
     try {
       const idx = await getJSON('maps/index.json');
       const m = (idx.maps || []).find((x) => x.id === id);
-      if (m) file = m.file;
+      if (m && /^maps\/[a-z0-9][a-z0-9_-]{0,63}\.json$/i.test(m.file)) file = m.file;
     } catch (e) { /* default path */ }
     return getJSON(file);
   }
@@ -350,7 +354,7 @@
     const parts = [];
     // objectives
     const st = g.objectiveStatus();
-    parts.push('<div class="h">Objectives</div><ul class="objlist">' + st.map((o) => {
+    parts.push(`<div class="h">Objectives${G().objectivesNeeded() < st.filter((o) => o.type !== 'hold').reduce((a, o) => a + o.total, 0) ? ` (need ${G().objectivesNeeded()})` : ''}</div><ul class="objlist">` + st.map((o) => {
       const verb = o.type === 'hold' ? 'Hold' : o.type === 'destroy' ? 'Clear enemies from' : 'Capture';
       return o.territories.map((id) => {
         const t = S.mv.T[id];
@@ -375,6 +379,12 @@
   }
   function winCheckText() {
     const holds = (S.sc.objectives || []).some((o) => o.type === 'hold');
+    const need = G().objectivesNeeded();
+    const total = (S.sc.objectives || []).filter((o) => o.type !== 'hold').reduce((a, o) => a + (o.territories || []).length, 0);
+    const some = need < total ? `Any ${need} of the ${total} capture objectives is enough. ` : '';
+    return some + winCheckTiming(holds);
+  }
+  function winCheckTiming(holds) {
     if (S.sc.winCheck === 'roundEnd' || holds) return `Checked at the end of each round${holds ? '; held territories must be kept every turn' : ''}. ${G().s.maxTurns} turns.`;
     return `Win as soon as they are yours at the end of your turn. ${G().s.maxTurns} turns.`;
   }
@@ -737,6 +747,7 @@
     const R = Rules.get(sc.ruleset);
     const objs = G().objectiveStatus().map((o) => `<li>${o.type === 'hold' ? 'Hold' : o.type === 'destroy' ? 'Clear enemies from' : 'Capture'} ${o.territories.map((id) => '<b>' + esc(S.mv.T[id].name) + '</b>').join(', ')}</li>`).join('');
     openDialog(`<h2>${esc(sc.title || 'Today\'s puzzle')}</h2>
+      ${S.replayOf ? `<p class="hint">No new puzzle was set for today, so this is a replay of #${S.replayOf.number} (${esc(S.replayOf.date)}). Everyone gets the same one.</p>` : ''}
       ${sc.description ? `<p>${esc(sc.description)}</p>` : ''}
       ${sidesText()}
       <h3>Objectives</h3><ul>${objs}</ul>
@@ -774,12 +785,25 @@
       ${S.map && mapCredit() ? `<p class="hint">Map: ${esc(mapCredit())}</p>` : ''}
       <div class="actions"><button class="primary" data-close="1">Close</button></div>`);
   }
-  function stats() { return store.get('tacticle:stats') || { played: 0, won: 0, streak: 0, best: 0, last: null, dist: {}, seen: {} }; }
+  /**
+   * Per-browser stats. `seen` maps each finished date to turns taken (wins) or 0 (losses), and is
+   * the source of truth: played/won are recounted from it, which also repairs totals that an
+   * earlier version inflated by counting a lost game again on every reload.
+   */
+  function stats() {
+    const st = Object.assign({ played: 0, won: 0, streak: 0, best: 0, last: null, dist: {}, seen: {} }, store.get('tacticle:stats') || {});
+    st.seen = st.seen && typeof st.seen === 'object' ? st.seen : {};
+    st.dist = st.dist && typeof st.dist === 'object' ? st.dist : {};
+    const dates = Object.keys(st.seen);
+    st.played = dates.length;
+    st.won = dates.filter((d) => st.seen[d] > 0).length;
+    return st;
+  }
   function recordStats(won, turns) {
     if (S.test) return;
     const st = stats();
-    if (st.seen[S.date]) return;
-    st.seen[S.date] = won ? turns : 0;
+    if (Object.prototype.hasOwnProperty.call(st.seen, S.date)) { store.set('tacticle:stats', st); return; }
+    st.seen[S.date] = won ? Math.max(1, turns) : 0;
     st.played++;
     if (won) {
       st.won++;
@@ -806,7 +830,9 @@
     return D.shareText({
       number: S.number, test: S.test, title: S.sc.title || 'Puzzle', won: g.s.result.won, turns: g.s.result.turns, maxTurns: g.s.maxTurns,
       objectivesDone: st.reduce((a, o) => a + o.done, 0), objectivesTotal: st.reduce((a, o) => a + o.total, 0),
-      history: g.s.history, luckYou: g.luck(ht), luckFoe: g.luck(foeTeam()),
+      targets: g.objectiveTargets(), luckYou: g.luck(ht), luckFoe: g.luck(foeTeam()),
+      lossYou: (g.s.losses || {})[ht] || 0,
+      lossFoe: Object.keys(g.s.losses || {}).filter((t) => t !== ht).reduce((a, t) => a + g.s.losses[t], 0),
       url: location.origin + location.pathname.replace(/index\.html$/, ''),
     });
   }

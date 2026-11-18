@@ -309,7 +309,7 @@
         round: 1, turn: 0, order, phase: 'purchase', maxTurns: scenario.maxTurns || 5,
         powers, terr, nextId, rng: opts.seed != null ? opts.seed | 0 : randomSeed(),
         buy: {}, battles: [], battle: null, startOwned: {},
-        stats: {}, history: [], log: [], result: null, origOwner: {},
+        stats: {}, losses: {}, history: [], log: [], result: null, origOwner: {},
       };
       for (const id of Object.keys(terr)) if (terr[id].o) s.origOwner[id] = terr[id].o;
       for (const p of Object.keys(powers)) if (!s.stats[powers[p].team]) s.stats[powers[p].team] = { exp: 0, act: 0, v: 0, n: 0 };
@@ -345,6 +345,8 @@
       if (!sc.playable || !sc.playable.length) err('No playable territories');
       if (!sc.objectives || !sc.objectives.length) err('Add at least one objective');
       if (!(sc.maxTurns >= 1)) err('Max turns must be at least 1');
+      const capTotal = (sc.objectives || []).filter((o) => o.type !== 'hold').reduce((a, o) => a + (o.territories || []).length, 0);
+      if (sc.objectivesNeeded && sc.objectivesNeeded > capTotal) warn(`Objectives needed (${sc.objectivesNeeded}) is more than the ${capTotal} capture/clear territories; all are required`);
       const R = Rules.get(sc.ruleset);
       const play = new Set(sc.playable || []);
       for (const o of sc.objectives || []) {
@@ -537,6 +539,26 @@
         return { type: o.type || 'capture', territories: ids, done, total: ids.length, met: done === ids.length };
       });
     }
+    /** One entry per objective territory: {id, type, met}. */
+    objectiveTargets() {
+      const ht = this.humanTeam();
+      const out = [];
+      for (const o of this.sc.objectives || []) {
+        for (const id of o.territories || []) {
+          let met;
+          if (o.type === 'destroy') met = !this.units(id).some((u) => this.team(u.o) !== ht && !this.def(u).infrastructure);
+          else met = !!(this.s.terr[id] && this.s.terr[id].o && this.team(this.s.terr[id].o) === ht);
+          out.push({ id, type: o.type || 'capture', met });
+        }
+      }
+      return out;
+    }
+    /** How many capture/clear targets must be met to win (all unless the puzzle says fewer). */
+    objectivesNeeded() {
+      const total = (this.sc.objectives || []).filter((o) => o.type !== 'hold').reduce((a, o) => a + (o.territories || []).length, 0);
+      const n = this.sc.objectivesNeeded | 0;
+      return n > 0 ? Math.min(n, total) : total;
+    }
     progress() {
       const st = this.objectiveStatus();
       let d = 0, t = 0;
@@ -570,7 +592,7 @@
       const alive = Object.keys(s.terr).some((id) => s.terr[id].o && this.team(s.terr[id].o) === ht) ||
         Object.keys(s.terr).some((id) => s.terr[id].u.some((u) => this.team(u.o) === ht));
       if (!alive) return finish(false, 'Your forces were wiped out');
-      const allOthers = others.every((o) => o.met);
+      const allOthers = others.reduce((a, o) => a + o.done, 0) >= this.objectivesNeeded();
       const humanTurnEnd = moment === 'turn' && this.isHuman(p) && this._lastHumanInRound(p);
       const check = this.sc.winCheck === 'roundEnd' ? moment === 'round' : (holds.length ? moment === 'round' : humanTurnEnd);
       if (check && allOthers && (!holds.length || s.round >= s.maxTurns) && (others.length || s.round >= s.maxTurns)) {
@@ -690,6 +712,8 @@
           return { error: 'Cannot move into enemy units now' };
         } else if (!toSea && !this.friendlyOwner(to, p)) return { error: 'Must stay in friendly territory' };
         if (d.bomber && toSea && !hostile) return { error: 'Bombers cannot land at sea' };
+        // aircraft may only go where they can still get back to a friendly landing spot
+        if (!this.canLandFrom(u, to, u.ml - dist[to])) return { error: 'Could not return to friendly territory from there' };
         return { path: this._pathFromDist(from, to, dist), cost: dist[to] };
       }
       if (d.domain === 'sea') {
@@ -833,31 +857,62 @@
       if (this.enemies(to, p).length && this.enemies(to, p).some((e) => !this.def(e).infrastructure)) kind = 'attack';
       else if (this.B.isLand(to) && !this.friendlyOwner(to, p)) kind = 'capture';
       if (plan.some((x) => x.blitz.length)) kind = kind === 'move' ? 'blitz' : kind;
-      // air landing warning
-      let warn = null;
-      const air = us.filter((u) => this.def(u).domain === 'air');
-      if (air.length && combat) {
-        for (const u of air) {
-          const left = u.ml - (plan.find((x) => x.uid === u.id).path.length - 1);
-          if (!this.canLandFrom(u, to, left)) { warn = 'Some aircraft may not be able to land afterwards'; break; }
-        }
-      }
-      return { ok: true, kind, plan, warn };
+      // (aircraft that could not get back were already refused in route())
+      return { ok: true, kind, plan, warn: null };
     }
     _attackingHere(sea) {
       return this.units(sea).some((u) => u.o === this.current() && u.cm && this.def(u).domain === 'sea' && !this.def(u).transport) &&
         this.enemies(sea, this.current()).length > 0;
     }
-    canLandFrom(u, at, left) {
+    /**
+     * Can aircraft `u`, once at `at` with `left` movement, still reach a landing spot this turn?
+     * Landing spots: friendly land held since the start of the turn (not captured this turn, no
+     * enemies), or for fighters a sea zone with a friendly carrier, including zones the
+     * current power's own carriers can still sail to this turn.
+     */
+    canLandFrom(u, at, left, strict) {
       const p = u.o;
       const d = this.def(u);
+      if (left < 0) return false;
       const dist = this.airDist(at, Math.max(0, left));
+      const carriers = d.bomber ? null : this._carrierZones(p, strict);
       for (const id of Object.keys(dist)) {
         if (this.B.isLand(id)) {
           if (this.friendlyOwner(id, p) && this.s.startOwned[id] && this.team(this.s.startOwned[id]) === this.team(p) && !this.enemies(id, p).length) return true;
-        } else if (!d.bomber && this.units(id).some((x) => this.team(x.o) === this.team(p) && this.def(x).carrierCapacity)) return true;
+        } else if (carriers && carriers.has(id)) return true;
       }
       return false;
+    }
+    /** Sea zones where a friendly carrier is, or that one of the mover's carriers can still reach. */
+    _carrierZones(p, strict) {
+      const out = new Set();
+      const me = this.current();
+      for (const id of Object.keys(this.s.terr)) {
+        if (!this.B.isSea(id)) continue;
+        for (const c of this.s.terr[id].u) {
+          if (this.team(c.o) !== this.team(p) || !this.def(c).carrierCapacity) continue;
+          out.add(id);
+          // the moving power's own carriers that can still sail this turn
+          const canSail = !strict && c.o === me && c.ml > 0 && !c.f && (this.s.phase === 'combatMove' || !c.cm);
+          if (!canSail) continue;
+          const dist = { [id]: 0 };
+          const q = [id];
+          while (q.length) {
+            const x = q.shift();
+            if (dist[x] >= c.ml) continue;
+            if (x !== id && this.enemies(x, c.o).some((e) => this.blocksShips(e, c))) continue;
+            for (const y of this.B.adj[x]) {
+              if (!this.B.isSea(y) || dist[y] !== undefined) continue;
+              const canals = this.B.canalKey[x + '|' + y];
+              if (canals && !canals.some((k) => k.requires.every((r) => this._canalFriendly(r, c.o)))) continue;
+              dist[y] = dist[x] + 1;
+              q.push(y);
+            }
+          }
+          for (const z of Object.keys(dist)) if (!this.enemies(z, c.o).some((e) => this.blocksShips(e, c))) out.add(z);
+        }
+      }
+      return out;
     }
 
     /** Destinations for highlight: {tid: kind} */
@@ -978,6 +1033,7 @@
         }
       }
       for (const { u, id } of lost) {
+        this._recordLoss(u);
         T[id].u.splice(T[id].u.indexOf(u), 1);
         this.log(`${this.def(u).name} could not land and was lost (${this.B.name(id)})`);
       }
@@ -1364,15 +1420,23 @@
       b.need = 'roll';
       this._runSteps();
     }
+    /** IPC value of destroyed units, per team (for the result text). */
+    _recordLoss(u) {
+      const team = this.team(u.o);
+      if (!team) return;
+      const L = this.s.losses || (this.s.losses = {});
+      L[team] = (L[team] || 0) + (this.def(u).cost || 0);
+    }
     _kill(u) {
       const at = this.whereIs(u.id);
       if (!at) return;
       const list = this.s.terr[at].u;
       // cargo sinks with its transport
       if (this.def(u).transport) {
-        for (const c of list.filter((x) => x.tr === u.id)) list.splice(list.indexOf(c), 1);
+        for (const c of list.filter((x) => x.tr === u.id)) { this._recordLoss(c); list.splice(list.indexOf(c), 1); }
         // units that already landed from this transport stay ashore
       }
+      this._recordLoss(u);
       list.splice(list.indexOf(u), 1);
       const b = this.s.battle;
       if (b) {
@@ -1523,6 +1587,7 @@
             u.tr = tr.id; delete u.amph;
           } else {
             const list = this.s.terr[id].u;
+            this._recordLoss(u);
             list.splice(list.indexOf(u), 1);
           }
         }

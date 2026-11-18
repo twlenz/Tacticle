@@ -373,7 +373,13 @@
   async function listMaps(fetchText) {
     return parseIndex(await fetchText(INDEX_URL));
   }
+  const SAFE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+  function checkRepo(repo, branch) {
+    if (!SAFE.test(repo || '') || repo.includes('..')) throw new Error(`Not a TripleA map repository name: ${repo}`);
+    if (branch && (!SAFE.test(branch) || branch.includes('..'))) throw new Error(`Not a branch name: ${branch}`);
+  }
   async function listGames(repo, branch, fetchText) {
+    checkRepo(repo, branch);
     const base = `${RAW}${repo}/${branch || 'master'}/`;
     try {
       const games = parseMapYml(await fetchText(base + 'map.yml'));
@@ -391,6 +397,8 @@
   /** entry: {repo, branch, name, text}; game: {name, file}. */
   async function importGame(entry, game, fetchText, opts) {
     opts = opts || {};
+    checkRepo(entry.repo, entry.branch);
+    if (!/^[^/\\]+\.xml$/i.test(game.file || '') || game.file.includes('..')) throw new Error(`Not a game file name: ${game.file}`);
     const base = `${RAW}${entry.repo}/${entry.branch || 'master'}/`;
     const poly = await firstOk([base + 'map/polygons.txt', base + 'polygons.txt'], fetchText);
     const dir = poly.url.slice(0, poly.url.lastIndexOf('/') + 1);
@@ -400,7 +408,7 @@
     try { properties = await fetchText(dir + 'map.properties'); } catch (e) { /* optional */ }
     const map = convert({
       xml: xml.text, polygons: poly.text, centers, properties, name: game.name,
-      id: opts.id || slug(entry.repo === slug(game.name) ? entry.repo : game.name),
+      id: (opts.id || slug(entry.repo === slug(game.name) ? entry.repo : game.name)).slice(0, 60),
       credit: opts.credit || '', origin: { repo: entry.repo, branch: entry.branch || 'master', game: game.file, map: entry.name },
     });
     return map;

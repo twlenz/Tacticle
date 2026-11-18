@@ -17,47 +17,88 @@
     const epoch = schedule.epoch || Object.keys(schedule.days || {}).sort()[0] || date;
     return daysBetween(epoch, date) + 1;
   }
-  /** The scheduled entry for a date, or the latest one before it. */
+  function hash(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  /** Earlier puzzles a replay day may use: older than a week where possible. */
+  function replayPool(days, date) {
+    const past = Object.keys(days).filter((d) => d < date).sort();
+    const all = [...new Set(past.map((d) => days[d]))].sort();
+    const recent = new Set(past.filter((d) => daysBetween(d, date) <= 7).map((d) => days[d]));
+    const older = all.filter((f) => !recent.has(f));
+    return { past, files: older.length ? older : all };
+  }
+  /**
+   * The puzzle for a date. With nothing scheduled that day the default is a replay of an
+   * earlier puzzle chosen from the date alone, so every player gets the same one
+   * (schedule.fallback = "latest" shows the most recent scheduled puzzle instead).
+   * Returns {date, file} or {date, file, replay: true, from} or null.
+   */
   function entryFor(schedule, date, exact) {
     const days = schedule.days || {};
     if (days[date]) return { date, file: days[date] };
     if (exact) return null;
-    const past = Object.keys(days).filter((d) => d <= date).sort();
+    const { past, files } = replayPool(days, date);
     if (!past.length) return null;
-    const d = past[past.length - 1];
-    return { date: d, file: days[d] };
+    if (schedule.fallback === 'latest') {
+      const d = past[past.length - 1];
+      return { date: d, file: days[d] };
+    }
+    let i = hash('tacticle:' + date) % files.length;
+    // avoid repeating yesterday's replay when there is a choice
+    const prev = addDays(date, -1);
+    if (files.length > 1 && !days[prev]) {
+      const p = replayPool(days, prev);
+      if (p.files.length && p.files[hash('tacticle:' + prev) % p.files.length] === files[i]) i = (i + 1) % files.length;
+    }
+    const file = files[i];
+    return { date, file, replay: true, from: past.filter((d) => days[d] === file).pop() };
   }
 
-  function signed(x) {
-    const v = Math.abs(x) < 0.05 ? 0 : x;
-    return (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toFixed(1);
+  /** One decimal, no trailing .0, ASCII minus (pastes cleanly everywhere). */
+  function fmt(x) {
+    const v = Math.round(x * 10) / 10;
+    return (v > 0 ? '+' : v < 0 ? '-' : '') + String(Math.abs(v)).replace(/\.0$/, '');
   }
   function luckWords(l) {
-    if (!l || !l.dice) return 'no dice rolled';
-    if (l.diff > 0.25) return `above the odds (${signed(l.diff)} hits)`;
-    if (l.diff < -0.25) return `below the odds (${signed(l.diff)} hits)`;
-    return `right on the odds (${signed(l.diff)} hits)`;
+    if (!l || !l.dice) return 'rolled no dice';
+    if (l.diff > 0.25) return `rolled above odds (${fmt(l.diff)} hits)`;
+    if (l.diff < -0.25) return `rolled below odds (${fmt(l.diff)} hits)`;
+    return `rolled at odds (${fmt(l.diff) || '0'} hits)`;
   }
-  function squares(history, maxTurns) {
-    const row = (history || []).map((h) => (h.progress >= 1 ? '🟩' : h.progress > 0 ? '🟨' : '🟥'));
-    return row.join('');
+  /** One square per objective: won -> green (taken) / orange (not needed); lost -> yellow (taken) / red. */
+  function squares(targets, won) {
+    return (targets || []).map((t) => (won ? (t.met ? '🟩' : '🟧') : (t.met ? '🟨' : '🟥'))).join('');
+  }
+  function ipc(n) { return n ? `-${Math.round(n)} IPC` : '0 IPC'; }
+  /** "https://twlenz.github.io/Tacticle/index.html" -> "twlenz.github.io/Tacticle" */
+  function shortUrl(href) {
+    try {
+      const u = new URL(href);
+      if (!/^https?:$/.test(u.protocol) || /^(localhost|127\.|\[::1\])/.test(u.host)) return href;
+      return (u.host + u.pathname.replace(/index\.html$/, '')).replace(/\/+$/, '');
+    } catch (e) { return href; }
   }
 
   /**
-   * r: {number, title, won, turns, maxTurns, objectivesDone, objectivesTotal, history, luckYou, luckFoe, url, test}
+   * r: {number, title, won, turns, maxTurns, targets:[{met}], objectivesDone, objectivesTotal,
+   *     luckYou, luckFoe, lossYou, lossFoe, url, test}
    */
   function shareText(r) {
     const lines = [];
     lines.push(`Tacticle ${r.test ? '(test)' : '#' + r.number} · ${r.title}`);
     if (r.won) lines.push(`🏆 Won in ${r.turns}/${r.maxTurns} turn${r.maxTurns === 1 ? '' : 's'}`);
-    else lines.push(`💀 Lost · ${r.objectivesDone}/${r.objectivesTotal} objectives · ${r.turns}/${r.maxTurns} turns`);
-    const sq = squares(r.history, r.maxTurns);
+    else lines.push(`💀 Lost · ${r.objectivesDone}/${r.objectivesTotal} objective${r.objectivesTotal === 1 ? '' : 's'} · ${r.turns}/${r.maxTurns} turns`);
+    const sq = squares(r.targets, r.won);
     if (sq) lines.push(sq);
-    lines.push(`🎲 I rolled ${luckWords(r.luckYou)}`);
-    lines.push(`🎲 Foe rolled ${luckWords(r.luckFoe)}`);
-    if (r.url) lines.push(r.url);
+    lines.push(`🎲 I ${luckWords(r.luckYou)}`);
+    lines.push(`🎲 Opponent ${luckWords(r.luckFoe)}`);
+    lines.push(`Me ${ipc(r.lossYou)} / Them ${ipc(r.lossFoe)}`);
+    if (r.url) lines.push(shortUrl(r.url));
     return lines.join('\n');
   }
 
-  return { today, dateStr, parse, addDays, daysBetween, number, entryFor, shareText, luckWords, squares };
+  return { today, dateStr, parse, addDays, daysBetween, number, entryFor, shareText, luckWords, squares, shortUrl };
 });
