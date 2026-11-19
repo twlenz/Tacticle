@@ -70,9 +70,20 @@ changes and push them.
   units into a sea zone loads them onto your transport; select the sea zone and tap a
   coast to unload. Drag to pan, pinch or scroll to zoom, <kbd>Esc</kbd> cancels,
   <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes a move.
-- Battles: roll each round, then choose casualties. The cheapest losses are
-  pre-selected; tap to change them. Between rounds, continue, retreat, submerge subs, or
-  "fight to the end".
+- Ending combat movement asks for confirmation in an in-page popup that lists the battles
+  about to be fought.
+- **Battles:**
+  - With several battles you pick each one from the list, and the page returns to the
+    list after each. A single battle opens by itself.
+  - When you roll, the dice grow in from their own spots. The units about to be hit
+    shake briefly with a "−n" badge, then the hits are applied, cheapest units first.
+  - Rolling again shrinks the old dice away first.
+  - **Let me choose my casualties** (remembered per browser) switches to picking losses
+    yourself.
+  - Between rounds you can continue, retreat, submerge subs, or "fight to the end".
+  - Animations are skipped for players who ask their system for reduced motion.
+- The page is light by default; the ◐ button switches to dark mode, and the choice is
+  remembered.
 - **Progress is saved after every action** in `localStorage`
   (`tacticle:save:<date>:<puzzle id>`). Refreshing restores the exact game, including
   dice already rolled. Undo is available only for moves made since the last dice roll,
@@ -242,12 +253,29 @@ when their territory is controlled by the mover's team.
 
 ### Computer opponent (`js/ai.js`)
 
-The AI is greedy and objective-aware. It weighs objective territories heavily and
-scores attacks with Monte-Carlo battle odds before committing. It also plans amphibious
-landings from loaded transports, retreats when odds turn bad, reinforces threatened
-territories, and buys infantry when threatened. It is a fair opponent for small puzzles,
-not a strong general one: it doesn't coordinate fleets beyond attacking adjacent zones,
-and it makes no multi-turn plans.
+The AI is greedy and objective-aware. For every possible attack it simulates the battle
+(Monte Carlo) and scores the result. The score is the **expected IPC damage dealt minus
+its own expected IPC losses**, plus half the territory's income, plus capitals and
+factories in full. Attacks made only for the IPC trade need 60% odds. It then commits
+the best attack and repeats.
+
+The objective race changes its priorities:
+- **The player meets enough objectives to win at the next check:** retaking one comes
+  first, at any odds above about 12%, and the AI fights those battles to the end rather
+  than retreating.
+- **The player is one objective short:** the remaining objectives get full garrisons,
+  1.5× reinforcements and all-infantry purchases, placed near them.
+- **Spoiling attacks:** wiping out player units that could strike a guarded objective
+  next turn earns extra score.
+- **Hold objectives:** territories the player must hold are always worth attacking.
+- **Playing the player's side** (balance checks): it goes all-in for the missing
+  objectives on the last turn.
+
+It also plans amphibious landings from loaded transports, retreats from hopeless fights,
+and only counts landing spots that exist (it doesn't plan carrier moves). In 336
+generated puzzles played against the earlier version, the player side's win rate fell
+from 53% to about 51%. It is a fair opponent for small puzzles, not a strong general one:
+it makes no multi-turn plans.
 
 ## Maps
 

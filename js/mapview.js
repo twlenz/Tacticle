@@ -46,11 +46,10 @@
       this.gArrows = el('g', { class: 'arrows' }, this.gWorld);
       this.els = {};
       this._buildCopy(0);
-      this.vb = { x: 0, y: 0, w: this.W, h: this.H };
       this.full = { x: 0, y: 0, w: this.W, h: this.H };
-      this._setVB();
+      this._showBox(this.full);
       this._wire();
-      this._ro = new ResizeObserver(() => { this._setVB(); this._relayout(); });
+      this._ro = new ResizeObserver(() => { this._setVB(); this._relayoutSoon(); });
       this._ro.observe(this.c);
     }
 
@@ -71,7 +70,7 @@
     /** Fit the view to these territories; wraps across the seam when that is tighter. */
     setFocus(ids, pad) {
       ids = (ids || []).filter((id) => this.T[id]);
-      if (!ids.length) { this.full = { x: 0, y: 0, w: this.W, h: this.H }; this.vb = Object.assign({}, this.full); this._setVB(); this._relayout(); return; }
+      if (!ids.length) { this.full = { x: 0, y: 0, w: this.W, h: this.H }; this._showBox(this.full); this._relayout(); return; }
       const box = (shift) => {
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
         for (const id of ids) {
@@ -91,8 +90,7 @@
       const p = pad == null ? 0.08 : pad;
       const w = Math.max(60, r.x1 - r.x0), h = Math.max(40, r.y1 - r.y0);
       this.full = { x: r.x0 - w * p, y: r.y0 - h * p, w: w * (1 + 2 * p), h: h * (1 + 2 * p) };
-      this.vb = Object.assign({}, this.full);
-      this._setVB();
+      this._showBox(this.full);
       this._relayout();
     }
     _setWrap(on) {
@@ -106,24 +104,40 @@
       for (const t of this.map.territories) this.offset[t.id] = on && t.center[0] < this.W / 2 ? this.W : 0;
       this.update(this.state);
     }
-    fit() { this.vb = Object.assign({}, this.full); this._setVB(); this._relayout(); }
+    fit() { this._showBox(this.full); this._relayout(); }
 
-    _setVB() {
-      const cw = this.c.clientWidth || 800, ch = this.c.clientHeight || 600;
-      // keep aspect: expand vb to the container's ratio
-      const ar = cw / ch;
-      let { x, y, w, h } = this.vb;
-      if (w / h > ar) { const nh = w / ar; y -= (nh - h) / 2; h = nh; } else { const nw = h * ar; x -= (nw - w) / 2; w = nw; }
-      this.vb = { x, y, w, h };
-      this.svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
-      this.k = w / cw; // map units per screen pixel
+    /*
+     * The view is a centre point plus a scale (map units per screen pixel). The viewBox is
+     * derived from those and the container size, so resizing the page (phone address bar,
+     * panel height) never moves or zooms the map.
+     */
+    _size() { return { cw: this.c.clientWidth || 800, ch: this.c.clientHeight || 600 }; }
+    _showBox(b) {
+      const { cw, ch } = this._size();
+      this.view = { cx: b.x + b.w / 2, cy: b.y + b.h / 2, k: Math.max(b.w / cw, b.h / ch) };
+      this._setVB();
     }
-    zoom(f, cx, cy) {
-      const v = this.vb;
-      if (cx == null) { cx = v.x + v.w / 2; cy = v.y + v.h / 2; }
-      const nw = Math.min(Math.max(v.w * f, 30), this.W * 1.5);
-      const r = nw / v.w;
-      this.vb = { x: cx - (cx - v.x) * r, y: cy - (cy - v.y) * r, w: v.w * r, h: v.h * r };
+    _clampK(k) {
+      const { cw } = this._size();
+      return Math.min(Math.max(k, 30 / cw), (this.W * 1.5) / cw);
+    }
+    _setVB() {
+      const { cw, ch } = this._size();
+      const v = this.view || { cx: this.W / 2, cy: this.H / 2, k: this.W / cw };
+      v.k = this._clampK(v.k);
+      this.view = v;
+      const w = cw * v.k, h = ch * v.k;
+      this.vb = { x: v.cx - w / 2, y: v.cy - h / 2, w, h };
+      this.svg.setAttribute('viewBox', `${this.vb.x} ${this.vb.y} ${w} ${h}`);
+      this.k = v.k; // map units per screen pixel
+    }
+    /** Zoom by factor f keeping map point (px, py) under the same spot on screen. */
+    zoom(f, px, py) {
+      const v = this.view;
+      if (px == null) { px = v.cx; py = v.cy; }
+      const k2 = this._clampK(v.k * f);
+      const r = k2 / v.k;
+      this.view = { cx: px - (px - v.cx) * r, cy: py - (py - v.cy) * r, k: k2 };
       this._setVB();
       this._relayoutSoon();
     }
@@ -141,10 +155,14 @@
       }, { passive: false });
       this.svg.addEventListener('pointerdown', (ev) => {
         pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
-        if (pts.size === 1) { drag = { x: ev.clientX, y: ev.clientY, vb: Object.assign({}, this.vb) }; moved = false; }
+        if (pts.size === 1) { drag = { x: ev.clientX, y: ev.clientY, cx: this.view.cx, cy: this.view.cy }; moved = false; }
         if (pts.size === 2) {
           const [a, b] = [...pts.values()];
-          pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), vb: Object.assign({}, this.vb) };
+          const r = this.svg.getBoundingClientRect();
+          const mx = (a.x + b.x) / 2 - r.left - r.width / 2, my = (a.y + b.y) / 2 - r.top - r.height / 2;
+          // the map point under the fingers' midpoint stays under it
+          pinch = { d: Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1), k: this.view.k, px: this.view.cx + mx * this.view.k, py: this.view.cy + my * this.view.k };
+          drag = null;
           moved = true;
         }
       });
@@ -156,29 +174,36 @@
         pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
         if (pinch && pts.size === 2) {
           const [a, b] = [...pts.values()];
-          const d = Math.hypot(a.x - b.x, a.y - b.y);
+          const d = Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1);
           const r = this.svg.getBoundingClientRect();
-          const cx = pinch.vb.x + (((a.x + b.x) / 2) - r.left) * (pinch.vb.w / r.width);
-          const cy = pinch.vb.y + (((a.y + b.y) / 2) - r.top) * (pinch.vb.h / r.height);
-          this.vb = Object.assign({}, pinch.vb);
+          const mx = (a.x + b.x) / 2 - r.left - r.width / 2, my = (a.y + b.y) / 2 - r.top - r.height / 2;
+          const k = this._clampK(pinch.k * pinch.d / d);
+          this.view = { cx: pinch.px - mx * k, cy: pinch.py - my * k, k };
           this._setVB();
-          this.zoom(pinch.d / Math.max(d, 1), cx, cy);
+          this._relayoutSoon();
           return;
         }
         if (drag) {
           const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
           if (Math.abs(dx) + Math.abs(dy) > 6) moved = true;
           if (moved) {
-            this.vb = { x: drag.vb.x - dx * this.k, y: drag.vb.y - dy * this.k, w: drag.vb.w, h: drag.vb.h };
-            this.svg.setAttribute('viewBox', `${this.vb.x} ${this.vb.y} ${this.vb.w} ${this.vb.h}`);
+            this.view.cx = drag.cx - dx * this.view.k;
+            this.view.cy = drag.cy - dy * this.view.k;
+            this._setVB();
           }
         }
       });
       const up = (ev) => {
         if (!pts.has(ev.pointerId)) return;
         pts.delete(ev.pointerId);
+        if (pinch && pts.size === 1) {
+          // one finger left after a pinch: continue as a drag from where things are now
+          const [p] = [...pts.values()];
+          drag = { x: p.x, y: p.y, cx: this.view.cx, cy: this.view.cy };
+        }
         if (pts.size < 2) pinch = null;
         if (!pts.size) drag = null;
+        this._relayoutSoon();
       };
       window.addEventListener('pointerup', up);
       window.addEventListener('pointercancel', up);

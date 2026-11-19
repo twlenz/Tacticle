@@ -3,7 +3,9 @@
  *
  * Greedy and objective-aware:
  *   purchase  - infantry first when threatened, otherwise a mix with artillery/tanks
- *   combat    - pick the best attack by simulated odds x value, commit, repeat
+ *   combat    - pick the attack with the best simulated IPC swing (damage dealt minus own
+ *               losses) plus territory value; when the player is about to win, retaking or
+ *               holding objectives comes first, even at long odds
  *   battles   - retreat when the odds turn bad; casualties cheapest-first
  *   noncombat - fighters land where they defend best; land units reinforce the
  *               most threatened valuable territories, else move toward the front
@@ -22,7 +24,7 @@
   class AI {
     constructor(game, opts) {
       this.g = game;
-      this.opts = Object.assign({ trials: 60, attackOdds: 0.7, playerAggression: 1 }, opts || {});
+      this.opts = Object.assign({ trials: 60, swingOdds: 0.6, playerAggression: 1 }, opts || {});
       this.queue = [];
       this.planned = null; // phase key the queue was built for
     }
@@ -134,8 +136,9 @@
       const b = g.s.battle;
       const A = g._side('A'), D = g._side('D');
       const odds = E.simulate(count(A), count(D), { sea: b.sea, ruleset: g.R.id, trials: 40, seed: g.s.rng ^ 0x5bd1 });
-      const objective = this._objectiveIds().has(b.id);
-      return odds.win < (objective ? 0.15 : 0.3);
+      const bonus = this._objBonus(b.id, this._situation());
+      if (bonus >= 60) return odds.win < 0.03; // the game depends on it: fight on
+      return odds.win < (bonus ? 0.15 : 0.3);
     }
 
     // ------------------------------------------------------------------
@@ -144,13 +147,92 @@
       for (const o of this.g.sc.objectives || []) for (const id of o.territories || []) s.add(id);
       return s;
     }
+    /** Plain worth of a territory: income, capitals, factories (objectives are scored separately). */
     _value(id) {
       const g = this.g;
       if (g.B.isSea(id)) return 0;
       let v = g.B.ipc(id) + 1;
-      if (this._objectiveIds().has(id)) v += 12 * this.opts.playerAggression;
       for (const p of Object.keys(g.s.powers)) if (g.s.powers[p].capital === id) v += 6;
       if (g.units(id).some((u) => u.t === 'factory')) v += 3;
+      return v;
+    }
+    /**
+     * Where the race for the objectives stands, from the moving power's point of view.
+     * state: 'winning' = the player meets enough objectives to win at the next check,
+     *        'close' = one short, 'calm' otherwise.
+     */
+    _situation() {
+      const g = this.g;
+      const p = g.current();
+      const ht = g.humanTeam();
+      const targets = g.objectiveTargets();
+      const need = g.objectivesNeeded();
+      const met = targets.filter((t) => t.type !== 'hold' && t.met).length;
+      const state = need > 0 && met >= need ? 'winning' : need > 0 && met === need - 1 ? 'close' : 'calm';
+      return { p, forPlayer: g.team(p) === ht, targets, need, met, state, finalRound: g.s.round >= g.s.maxTurns };
+    }
+    /** What capturing `to` is worth next to the IPC swing: half its income, plus capitals and factories in full. */
+    _gain(id) {
+      const g = this.g;
+      if (g.B.isSea(id)) return 0;
+      let v = (g.B.ipc(id) + 1) / 2;
+      for (const p of Object.keys(g.s.powers)) if (g.s.powers[p].capital === id) v += 6;
+      if (g.units(id).some((u) => u.t === 'factory')) v += 3;
+      return v;
+    }
+    /** Extra score (in IPC) for winning a battle at `to` because of the objectives. */
+    _objBonus(to, sit) {
+      const t = sit.targets.filter((x) => x.id === to);
+      if (!t.length) return 0;
+      const k = this.opts.playerAggression;
+      if (sit.forPlayer) {
+        // the player's side: take what is still missing, all-in on the last turn
+        return t.some((x) => x.type !== 'hold' && !x.met) ? (sit.finalRound ? 60 : 25) * k : 0;
+      }
+      let b = 0;
+      if (t.some((x) => x.type === 'hold')) b = Math.max(b, sit.finalRound ? 60 : 30); // breaking a hold wins outright
+      if (t.some((x) => x.type !== 'hold' && x.met)) b = Math.max(b, sit.state === 'winning' ? 80 : sit.state === 'close' ? 30 : 18);
+      return b;
+    }
+    /** Lowest win chance worth attacking with, given how much rides on the battle. */
+    _minOdds(bonus) {
+      if (bonus >= 60) return 0.12;
+      if (bonus >= 25) return 0.35;
+      if (bonus > 0) return 0.45;
+      return this.opts.swingOdds;
+    }
+    /** Is this a territory the moving side must keep for the objectives? */
+    _guarding(id, sit) {
+      const t = sit.targets.filter((x) => x.id === id);
+      if (!t.length || !this.g.friendlyOwner(id, sit.p)) return false;
+      return sit.forPlayer ? t.some((x) => x.type === 'hold' || x.met) : t.some((x) => x.type !== 'hold' && !x.met);
+    }
+    _unitValue(units) { return units.reduce((a, u) => a + (this.g.def(u).cost || 0), 0); }
+    /** Bonus for wiping out enemy units at `to` that could reach an objective we guard next turn. */
+    _spoilValue(to, sit) {
+      const g = this.g;
+      const D = this._dist();
+      const guarded = [...g.B.playable].filter((id) => this._guarding(id, sit));
+      if (!guarded.length) return 0;
+      let v = 0;
+      for (const u of g.enemies(to, sit.p)) {
+        const d = g.def(u);
+        if (d.infrastructure || !d.att) continue;
+        const reach = d.domain === 'land' ? D.land[to] : D.any[to];
+        if (guarded.some((id) => reach && reach[id] !== undefined && reach[id] <= d.move)) v += d.att * 1.5;
+      }
+      return v;
+    }
+    /** How much the moving side cares about keeping territory `id` (for garrisons and reinforcement). */
+    _defValue(id, sit) {
+      let v = this._value(id);
+      const t = sit.targets.filter((x) => x.id === id);
+      if (!t.length) return v;
+      if (sit.forPlayer) {
+        if (t.some((x) => x.type === 'hold' || x.met)) v += 25; // must keep what the objectives need
+      } else if (t.some((x) => x.type !== 'hold' && !x.met)) {
+        v += sit.state === 'close' || sit.state === 'winning' ? 40 : 14; // deny the player's targets
+      }
       return v;
     }
 
@@ -223,6 +305,8 @@
       const U = g.R.units;
       let threatened = false;
       for (const id of Object.keys(fac)) if (this._threat(id, p) > this._defense(id, p)) threatened = true;
+      const sit = this._situation();
+      if (!sit.forPlayer && sit.state !== 'calm') threatened = true; // the player is close to winning: bodies first
       const buy = {};
       let n = 0;
       const add = (t) => { if (!U[t] || U[t].cost > money || n >= capacity) return false; buy[t] = (buy[t] || 0) + 1; money -= U[t].cost; n++; return true; };
@@ -274,20 +358,21 @@
       const p = g.current();
       const used = new Set();
       const committed = new Set();
+      const sit = this._situation();
       // garrison: keep a defender in threatened capitals/objectives/factories
       const keep = {};
       for (const id of g.B.playable) {
         if (!g.friendlyOwner(id, p) || g.B.isSea(id)) continue;
-        const v = this._value(id);
+        const v = this._defValue(id, sit);
         if (v < 5) continue;
         const threat = this._threat(id, p);
-        if (threat > 0) keep[id] = Math.min(threat, v * 2);
+        if (threat > 0) keep[id] = this._guarding(id, sit) ? threat * 1.5 : Math.min(threat, v * 2) * 0.6;
       }
       const garrisonOk = (from, u) => {
         if (!keep[from]) return true;
         const rest = g.units(from).filter((x) => g.team(x.o) === g.team(p) && !used.has(x.id) && x.id !== u.id && !x.tr);
         const def = rest.reduce((a, x) => a + g.def(x).def, 0);
-        return def >= keep[from] * 0.6;
+        return def >= keep[from];
       };
       for (let iter = 0; iter < 12; iter++) {
         let best = null;
@@ -299,31 +384,37 @@
           if (!isSea && (g.friendlyOwner(to, p) || !g.s.terr[to].o)) continue;
           const cand = this._attackersFor(to, used).filter((c) => garrisonOk(c.from, c.u));
           if (!cand.length) continue;
-          const value = this._value(to);
+          const value = this._gain(to);
+          const bonus = this._objBonus(to, sit);
           if (!foes.length) {
             // empty enemy land: take it with the cheapest land unit
             const land = cand.filter((c) => g.def(c.u).domain === 'land').sort((a, b) => g.def(a.u).cost - g.def(b.u).cost);
             if (!land.length) continue;
-            const score = value;
+            const score = value + bonus;
             if (!best || score > best.score) best = { to, score, units: [land[0]] };
             continue;
           }
           const def = count(foes);
-          let set = cand.slice();
           const sim = (s) => E.simulate(count(s.map((c) => c.u)), def, { sea: isSea, ruleset: g.R.id, trials: this.opts.trials, seed: (g.s.rng ^ hash(to)) | 0 });
+          // expected IPC damage dealt minus expected IPC lost, plus what winning the territory is worth
+          // spoiling attacks: destroying units poised to strike an objective we guard is worth extra
+          const spoil = this._spoilValue(to, sit);
+          const scoreOf = (o) => (o.defLoss - o.attLoss) + o.win * (value + bonus) + (o.defLoss / Math.max(1, this._unitValue(foes))) * spoil;
+          const minOdds = this._minOdds(bonus);
+          let set = cand.slice();
           let odds = sim(set);
-          const need = this._objectiveIds().has(to) ? this.opts.attackOdds - 0.1 : this.opts.attackOdds;
-          if (odds.win < need) continue;
-          // trim expensive extras while odds stay high
+          if (odds.win < minOdds) continue;
+          let score = scoreOf(odds);
+          // try leaving out the most expensive units; keep whichever force scores best
           set.sort((a, b) => g.def(b.u).cost - g.def(a.u).cost);
           for (let k = 0; k < set.length && set.length > 1; k++) {
             const trial = set.slice(0, k).concat(set.slice(k + 1));
             if (!trial.some((c) => g.def(c.u).domain === 'land') && !isSea) continue;
             const o2 = sim(trial);
-            if (o2.win >= Math.max(need, odds.win - 0.05)) { set = trial; odds = o2; k--; }
+            const s2 = scoreOf(o2);
+            if (o2.win >= minOdds && s2 >= score - 0.5) { set = trial; odds = o2; score = s2; k--; }
           }
           if (!isSea && !set.some((c) => g.def(c.u).domain === 'land')) continue;
-          const score = odds.win * (value + odds.defLoss / 3) - odds.attLoss / 3;
           if (score > 0 && (!best || score > best.score)) best = { to, score, units: set };
         }
         if (!best) break;
@@ -386,14 +477,14 @@
               const foes = g.enemies(to, p).filter((e) => !g.def(e).infrastructure || g.def(e).aa);
               const extra = this._attackersFor(to, used);
               const all = cargo.concat(extra.map((c) => c.u));
-              const value = this._value(to);
+              const value = this._gain(to);
+              const bonus = this._objBonus(to, this._situation());
               let odds = { win: 1, attLoss: 0, defLoss: 0 };
               if (foes.length) {
                 odds = E.simulate(count(all), count(foes), { ruleset: g.R.id, trials: this.opts.trials, seed: (g.s.rng ^ hash(to + z0)) | 0, amphibious: true });
               }
-              const need = this._objectiveIds().has(to) ? this.opts.attackOdds - 0.1 : this.opts.attackOdds;
-              if (odds.win < need) continue;
-              const score = odds.win * (value + odds.defLoss / 3) - odds.attLoss / 3;
+              if (odds.win < Math.max(this._minOdds(bonus), 0.4)) continue;
+              const score = (odds.defLoss - odds.attLoss) + odds.win * (value + bonus);
               if (score > 0 && (!best || score > best.score)) best = { score, tr, z0, z1, to, loads, extra };
             }
           }
@@ -431,6 +522,7 @@
       const p = g.current();
       const D = this._dist();
       const moves = [];
+      const sit = this._situation();
       const doMove = (from, uids, to) => {
         const r = g.move(from, uids, to);
         if (r.ok) moves.push({ type: 'shown', from, to, uids });
@@ -444,7 +536,8 @@
           const th = this._threat(id, p);
           const def = this._defense(id, p);
           const front = g.B.adj[id].some((y) => g.B.isLand(y) && g.s.terr[y].o && g.isEnemy(g.s.terr[y].o, p));
-          out[id] = { deficit: Math.max(0, th - def), value: this._value(id), front, th };
+          // objective territories the player needs are over-provisioned: 1.5x the threat
+          out[id] = { deficit: Math.max(0, th * (this._guarding(id, sit) ? 1.5 : 1) - def), value: this._defValue(id, sit), front, th };
         }
         return out;
       };
@@ -534,8 +627,14 @@
       const p = g.current();
       const out = [];
       const types = Object.keys(g.s.buy);
-      // most threatened factory first
-      const order = Object.keys(g.factories()).sort((a, b) => (this._threat(b, p) - this._defense(b, p)) - (this._threat(a, p) - this._defense(a, p)));
+      // factories whose area most needs men first (threat, weighted by what is at stake nearby)
+      const sit = this._situation();
+      const need = (id) => {
+        let v = (this._threat(id, p) - this._defense(id, p)) * (1 + this._defValue(id, sit) / 20);
+        for (const n of g.B.adj[id]) if (g.B.isLand(n) && g.friendlyOwner(n, p)) v += Math.max(0, this._threat(n, p) - this._defense(n, p)) * this._defValue(n, sit) / 40;
+        return v;
+      };
+      const order = Object.keys(g.factories()).sort((a, b) => need(b) - need(a));
       for (const t of types) {
         let left = g.s.buy[t];
         while (left-- > 0) {

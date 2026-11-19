@@ -256,3 +256,50 @@ test('bundled TripleA maps: symmetric adjacency, geometry, playable generator pu
     assert.ok(AI.selfPlay(map, sc, { seed: 1 }).result, entry.id + ' self-play finishes');
   }
 });
+
+test('AI: when the player is about to win, it counter-attacks the objective even at poor odds', () => {
+  // Germany (player) took B2 and only needs to keep it to the end of the round
+  const sc = scenario({ winCheck: 'roundEnd', objectives: [{ type: 'capture', territories: ['B2'] }] });
+  const run = (objectiveHeld) => {
+    const g = E.Game.create(fixtureMap, sc, { seed: 4 });
+    for (const id of ['B1', 'B2', 'A3']) g.s.terr[id].u = [];
+    g.s.terr.B2.o = objectiveHeld ? 'Germany' : 'Soviet Union';
+    let id = 900;
+    for (let i = 0; i < 4; i++) g.s.terr.B2.u.push({ id: id++, t: 'infantry', o: objectiveHeld ? 'Germany' : 'Soviet Union', ml: 1, h: 0 });
+    g.s.terr.B1.o = 'Soviet Union';
+    for (const t of ['infantry', 'infantry', 'tank']) g.s.terr.B1.u.push({ id: id++, t, o: 'Soviet Union', ml: g.R.units[t].move, h: 0 });
+    g.s.turn = 1; // Soviet Union to move
+    g._startTurn();
+    g.nextPhase(); // to combat move
+    const ai = new AI(g);
+    let n = 0;
+    while (g.phase === 'combatMove' && n++ < 50) ai.step();
+    return g.s.battles.slice();
+  };
+  // 2 inf + 1 tank against 4 defending infantry is a long shot (~16%), yet it must try: B2 decides the game
+  assert.ok(E.simulate({ infantry: 2, tank: 1 }, { infantry: 4 }, { trials: 400 }).win < 0.3);
+  assert.deepEqual(run(true), ['B2']);
+});
+
+test('AI: picks the attack with the better expected IPC swing', () => {
+  // two targets next to B1 with no capital or factory in play: A1 (1 infantry, 3 IPC of units)
+  // and A2 (4 artillery, 16 IPC of units); A1 even has more income, but A2 is the bigger swing
+  const sc = scenario({ objectives: [{ type: 'capture', territories: ['I'] }] });
+  const g = E.Game.create(fixtureMap, sc, { seed: 9 });
+  for (const id of Object.keys(g.s.terr)) g.s.terr[id].u = [];
+  g.s.powers.Germany.capital = null;
+  let id = 1000;
+  const put = (at, o, t, n) => { for (let i = 0; i < n; i++) g.s.terr[at].u.push({ id: id++, t, o, ml: g.R.units[t].move, h: 0 }); };
+  g.s.terr.B1.o = 'Soviet Union';
+  put('B1', 'Soviet Union', 'tank', 3);
+  put('B1', 'Soviet Union', 'infantry', 2);
+  put('A1', 'Germany', 'infantry', 1);
+  put('A2', 'Germany', 'artillery', 4);
+  g.s.turn = 1;
+  g._startTurn();
+  g.nextPhase();
+  const ai = new AI(g);
+  let n = 0;
+  while (g.phase === 'combatMove' && n++ < 50) ai.step();
+  assert.ok(g.s.battles.includes('A2'), 'goes for the bigger expected IPC swing (the artillery)');
+});
