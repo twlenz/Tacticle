@@ -87,7 +87,12 @@
       const m = (idx.maps || []).find((x) => x.id === id);
       if (m && /^maps\/[a-z0-9][a-z0-9_-]{0,63}\.json$/i.test(m.file)) file = m.file;
     } catch (e) { /* default path */ }
-    return getJSON(file);
+    try { return await getJSON(file); } catch (e) {
+      // a play test may run on a map imported in the authoring tool and kept only in this browser
+      const local = S.test && window.TacticleLocalMaps ? await window.TacticleLocalMaps.get(id) : null;
+      if (local) return local;
+      throw e;
+    }
   }
 
   // ---------------------------------------------------------------- daily game vs free play

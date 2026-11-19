@@ -136,16 +136,21 @@ refreshes `puzzles/index.json`.
 | Tool | Key | Click | Shift-click | Right-click |
 |---|---|---|---|---|
 | Select | <kbd>S</kbd> | inspect/edit a territory in the right panel | | |
-| Playable | <kbd>P</kbd> | toggle in/out of play | add it **and all neighbours** | remove |
+| Playable | <kbd>P</kbd> | toggle in/out of play; a unit icon removes one of those units (a transport takes the cargo that no longer fits) | add it **and all neighbours** | remove |
 | Owner | <kbd>O</kbd> | set owner to the brush power (Alt: map default) | | neutral |
 | Units | <kbd>U</kbd>, <kbd>1</kbd>–<kbd>9</kbd> pick a unit | +1 (Ctrl: clear) | +5 | −1 |
 | Move | <kbd>M</kbd> | unit icon: pick that unit (again: one fewer; other icon: add it); territory: pick everything, or drop the picked units here | | cancel |
-| Objective | <kbd>J</kbd> | toggle territory in the chosen objective | | |
+| Objective | <kbd>J</kbd> | toggle territory in the chosen objective | | remove from it |
 
 Toolbar shortcuts in Playable mode: **+ Neighbours** grows the area by one ring,
 **+ Seas** adds sea zones that touch two or more playable coasts. Making a territory
 playable fills in its map owner and any factory. Powers are added automatically when
-you use them. Undo and redo: <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd>.
+you use them. Taking a territory out of play also takes it out of any objective. Only the
+Select tool selects; switching tools clears the selection. Undo and redo:
+<kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd>.
+
+If the draft cannot be opened at start-up (usually because its map is missing), the page
+starts a new puzzle and keeps the draft; **Files** offers to open it once the map is back.
 
 **Tabs:**
 
@@ -291,7 +296,10 @@ it makes no multi-turn plans.
 Search it, open a map, pick one of its games (starting setups), and **Import**. The tool
 reads the map's text files straight from `raw.githubusercontent.com/triplea-maps/…`:
 `map.yml`, the game XML, `polygons.txt`, `centers.txt` and `map.properties`. It writes
-`maps/<id>.json` and adds it to `maps/index.json`. From a terminal:
+`maps/<id>.json` and adds it to `maps/index.json`. Without the server (for example on
+GitHub Pages) the map file downloads for you to add to `maps/` and `maps/index.json`, and a
+copy is kept in the browser (IndexedDB), so you can build and play-test puzzles on it
+straight away. From a terminal:
 
 ```sh
 node tools/triplea_fetch.js list "1942"                       # search the catalogue
