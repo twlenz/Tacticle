@@ -108,13 +108,16 @@
       S.undo = [];
       save();
     }
+    S.g.s.uiHold = true;
+    S.chooseOwn = store.get('tacticle:chooseCasualties') === true;
+    S.g.s.autoCasualties = !S.chooseOwn;
     S.ai = new TAI(S.g);
     S.sel = null; S.dest = {}; S.unload = {}; S.placeType = null; S.picks = {};
     $('puzzleNo').textContent = (S.puzzleLabel || '') + (S.mode === 'free' ? ' · free play' : '');
   }
-  function enterFreePlay(fresh) {
+  async function enterFreePlay(fresh) {
     if (S.test || S.busy || !dailyDone()) return;
-    if (fresh && S.mode === 'free' && G().phase !== 'gameOver' && !confirm('Reset the board and start a new free-play game?')) return;
+    if (fresh && S.mode === 'free' && G().phase !== 'gameOver' && !await ask('Reset the board?', '<p>Start a new free-play game from the beginning.</p>', 'Reset', 'Keep playing')) return;
     S.mode = 'free';
     store.set('tacticle:mode', { mode: 'free', date: S.date, id: S.sc.id });
     loadGame(freeKey(), fresh);
@@ -164,7 +167,7 @@
     $('btnStats').onclick = showStats;
     $('btnTheme').onclick = () => {
       const cur = document.documentElement.getAttribute('data-theme');
-      const dark = cur ? cur === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+      const dark = cur === 'dark'; // light unless the player chose dark
       applyTheme(dark ? 'light' : 'dark');
       store.set('tacticle:theme', dark ? 'light' : 'dark');
     };
@@ -328,7 +331,6 @@
     if (!kind && S.unload[to]) { ids = selIds(true).length ? selIds(true) : allCargo(); kind = S.unload[to]; }
     const chk = g.checkMove(from, ids, to);
     if (!chk.ok) { toast(chk.error); return; }
-    if (chk.warn && !confirm(chk.warn + '. Move anyway?')) return;
     pushUndo();
     const r = g.move(from, ids, to);
     if (!r.ok) { S.undo.pop(); toast(r.error); return; }
@@ -552,7 +554,7 @@
     on('pFree', () => enterFreePlay(false));
     on('pFreeReset', () => enterFreePlay(true));
     on('pDaily', exitFreePlay);
-    on('pRestart', () => { if (confirm('Restart this test game?')) { store.del(S.key); location.reload(); } });
+    on('pRestart', async () => { if (await ask('Restart the test?', '<p>Start this test game again from the beginning.</p>', 'Restart', 'Cancel')) { store.del(S.key); location.reload(); } });
     on('pAuto', () => {
       pushUndo();
       for (const t of Object.keys(g.s.buy)) {
@@ -563,21 +565,34 @@
     });
   }
 
-  function nextPhase() {
+  /** In-page confirmation in the same style as the battle window. Resolves true/false. */
+  function ask(title, body, ok, cancel) {
+    return new Promise((resolve) => {
+      openDialog(`<div class="battle"><h2>${title}</h2>${body}
+        <div class="actions"><button id="askNo">${esc(cancel || 'Cancel')}</button><button class="primary" id="askYes">${esc(ok || 'OK')}</button></div></div>`, false);
+      const done = (v) => { closeModal(); resolve(v); };
+      $('askYes').onclick = () => done(true);
+      $('askNo').onclick = () => done(false);
+      $('askYes').focus();
+    });
+  }
+  async function nextPhase() {
     const g = G();
     if (g.phase === 'purchase') g.commitPurchase();
     if (g.phase === 'combatMove') {
-      const idle = [];
-      if (!confirm('End combat movement and fight the battles?')) return;
-      void idle;
+      const battles = g.findBattles();
+      const body = battles.length
+        ? `<p>You will fight ${battles.length === 1 ? 'this battle' : `these ${battles.length} battles`}:</p><ul class="blines">${battles.map((id) => `<li>⚔️ ${esc(S.mv.T[id].name)}</li>`).join('')}</ul><p class="hint">Moves can't be changed once the dice roll.</p>`
+        : '<p class="hint">No attacks are planned this turn.</p>';
+      if (!await ask(battles.length ? 'Ready for battle?' : 'End combat moves?', body, battles.length ? 'Fight ⚔️' : 'Continue', 'Back to moves')) return;
     }
     if (g.phase === 'noncombatMove') {
       const lost = g.strandedAir();
-      if (lost.length && !confirm(`${lost.length} aircraft cannot land and will be lost. End movement anyway?`)) return;
+      if (lost.length && !await ask('Aircraft cannot land', `<p>${lost.length} aircraft ${lost.length === 1 ? 'has' : 'have'} no friendly territory or carrier to land on and will be lost.</p>`, 'End movement', 'Back to moves')) return;
     }
     if (g.phase === 'place') {
       const left = Object.values(g.s.buy).reduce((a, b) => a + b, 0);
-      if (left && !confirm(`${left} unit(s) are not placed; they wait until your next turn. End turn?`)) return;
+      if (left && !await ask('Units not placed', `<p>${left} unit${left === 1 ? ' is' : 's are'} not placed. They wait until your next turn.</p>`, 'End turn', 'Keep placing')) return;
       g.clearBorn();
     }
     const r = g.nextPhase();
@@ -595,6 +610,12 @@
   function continueFlow() {
     const g = G();
     if (g.phase === 'gameOver') { render(); showResult(); return; }
+    if (g.s.battle && g.s.battle.held && !S.animating) {
+      // reloaded while hits were on show: finish applying them
+      openBattle();
+      animateBattle().then(afterBattleAction);
+      return;
+    }
     if (g.s.battle) { openBattle(); if (!g.s.powers[g.s.battle.att].ai) return; }
     if (humanTurn()) {
       const pw = g.s.powers[g.current()];
@@ -602,7 +623,8 @@
       if (g.phase === 'purchase' && (S.sc.purchase === false || noRoom || (pw.money < 3 && !Object.keys(pw.unplaced || {}).length))) {
         g.commitPurchase(); g.nextPhase(); save(); render();
       }
-      if (g.phase === 'combat' && g.s.battles.length === 1 && !g.s.battle) fight(g.s.battles[0]);
+      if (g.phase === 'combat' && !g.s.battle && g.s.battles.length === 1 && (g.s.battleCount || 1) === 1) fight(g.s.battles[0]);
+      else if (g.phase === 'combat' && !g.s.battle && g.s.battles.length) toast('Pick your next battle');
       return;
     }
     runAI();
@@ -626,6 +648,10 @@
           await new Promise((res) => { S.waitAck = res; });
         }
         if (!b && humanTurn()) break;
+        if (b && !b.over && humanInvolved(b)) {
+          if (b.held) { openBattle(); await animateBattle(); continue; }
+          if (b.need === 'roll' && g.s.powers[b.att].ai && S.battleOpen) await shrinkDice();
+        }
         const p = g.current();
         banner.classList.add('on');
         $('bannerText').textContent = `${p} is moving…`;
@@ -639,7 +665,7 @@
         if (g.s.battle && humanInvolved(g.s.battle)) openBattle();
         else if (a.type === 'battleEnd' && $('modal').classList.contains('open') && S.battleOpen) closeModal();
         render();
-        const wait = S.fast ? 0 : a.type === 'move' ? 550 : a.type === 'battleRoll' ? 900 : a.type === 'place' ? 200 : a.type === 'phase' ? 250 : 120;
+        const wait = S.fast ? 0 : a.type === 'move' ? 550 : a.type === 'battleRoll' ? 420 : a.type === 'place' ? 200 : a.type === 'phase' ? 250 : 120;
         if (wait) await sleep(wait);
         else if (guard % 20 === 0) await sleep(0);
       }
@@ -675,7 +701,7 @@
     $('modal').classList.add('open');
     renderBattle();
   }
-  function bunits(list, side, pickable) {
+  function bunits(list, side, pickable, hitIds) {
     const g = G();
     const groups = {};
     for (const u of list) {
@@ -689,8 +715,10 @@
       const val = side === 'A' ? d.att : d.def;
       const picked = pickable ? (S.picks[side] || []).filter((id) => gr.ids.includes(id)).length : 0;
       const doomed = b ? gr.ids.filter((id) => b.doomed.includes(id)).length : 0;
-      return `<div class="bunit ${pickable ? 'pick' : ''} ${picked ? 'picked' : ''} ${doomed === gr.ids.length ? 'dead' : ''}" style="background:${color(gr.o)}" title="${esc(d.name)}${gr.h ? ' (damaged)' : ''}" ${pickable ? `data-pick="${side}|${gr.t}|${gr.h}"` : ''}>
-        ${I.svg(gr.t, 28, '#fff')}<span class="v">${val}</span><span class="n">${gr.ids.length}</span>${picked ? `<span class="x">−${picked}</span>` : ''}${gr.h ? '<span class="x" style="left:auto;right:-5px;top:-5px;background:#ff8800">dmg</span>' : ''}</div>`;
+      const hits = hitIds ? hitIds.filter((id) => gr.ids.includes(id)).length : 0;
+      const minus = picked || hits;
+      return `<div class="bunit ${pickable ? 'pick' : ''} ${picked ? 'picked' : ''} ${hits ? 'shake' : ''} ${doomed === gr.ids.length ? 'dead' : ''}" style="background:${color(gr.o)}" title="${esc(d.name)}${gr.h ? ' (damaged)' : ''}" ${pickable ? `data-pick="${side}|${gr.t}|${gr.h}"` : ''}>
+        ${I.svg(gr.t, 28, '#fff')}<span class="v">${val}</span><span class="n">${gr.ids.length}</span>${minus ? `<span class="x">−${minus}</span>` : ''}${gr.h ? '<span class="x" style="left:auto;right:-5px;top:-5px;background:#ff8800">dmg</span>' : ''}</div>`;
     }).join('');
   }
   function renderBattle() {
@@ -703,8 +731,11 @@
     const defOwner = (Dd[0] && Dd[0].o) || g.s.terr[b.id].o || '—';
     const att = b.att;
     const humanA = !g.s.powers[att].ai;
-    const needA = b.need === 'casualties' && b.pend.A && !b.picks.A && humanA;
-    const needD = b.need === 'casualties' && b.pend.D && !b.picks.D && Dd.length && !g.s.powers[Dd[0].o].ai;
+    const held = b.need === 'casualties' && b.held;
+    const needA = !held && b.need === 'casualties' && b.pend.A && !b.picks.A && humanA;
+    const needD = !held && b.need === 'casualties' && b.pend.D && !b.picks.D && Dd.length && !g.s.powers[Dd[0].o].ai;
+    const shakeA = held && S.shaking ? b.picks.A : null;
+    const shakeD = held && S.shaking ? b.picks.D : null;
     for (const side of ['A', 'D']) {
       if ((side === 'A' ? needA : needD) && !S.picks[side + 'init']) {
         const ch = g.casualtyChoice(side);
@@ -712,16 +743,25 @@
         S.picks[side + 'init'] = true;
       }
     }
-    const dice = (arr) => arr.map((d) => `<span class="die ${d.hit ? 'hit' : ''}" title="${esc(uname(d.t))} needs ${d.v} or less">${d.die}</span>`).join('');
+    // dice added since the last render grow in; everything else is drawn still
+    if (S.diceRoll !== b.rollNo) { S.diceRoll = b.rollNo; S.diceSeen = { A: 0, D: 0 }; }
+    const seen = S.diceSeen || { A: 0, D: 0 };
+    const dice = (arr, side) => arr.map((d, i) => {
+      const fresh = i >= seen[side];
+      return `<span class="die ${d.hit ? 'hit' : ''} ${fresh ? 'new' : ''}" ${fresh ? `style="animation-delay:${Math.min(220, (i - seen[side]) * 22)}ms"` : ''} title="${esc(uname(d.t))} needs ${d.v} or less">${d.die}</span>`;
+    }).join('');
+    S.diceSeen = { A: (b.dice.A || []).length, D: (b.dice.D || []).length };
     const h = [];
     h.push(`<div class="battle"><h2>⚔️ ${esc(t.name)}</h2><p class="hint">Round ${Math.max(1, b.round)}${b.sea ? ' · sea battle' : ''}${b.bombard && b.bombard.length ? ' · shore bombardment ready' : ''}</p>`);
     h.push('<div class="sides">');
-    h.push(`<div><div class="side-h"><span class="swatch" style="background:${color(att)}"></span>Attacker · ${esc(att)}</div><div class="units">${bunits(A, 'A', needA)}</div><div class="dice">${dice(b.dice.A || [])}</div></div>`);
-    h.push(`<div><div class="side-h"><span class="swatch" style="background:${color(defOwner)}"></span>Defender · ${esc(defOwner)}</div><div class="units">${bunits(Dd, 'D', needD)}</div><div class="dice">${dice(b.dice.D || [])}</div></div>`);
+    h.push(`<div><div class="side-h"><span class="swatch" style="background:${color(att)}"></span>Attacker · ${esc(att)}</div><div class="units">${bunits(A, 'A', needA, shakeA)}</div><div class="dice">${dice(b.dice.A || [], 'A')}</div></div>`);
+    h.push(`<div><div class="side-h"><span class="swatch" style="background:${color(defOwner)}"></span>Defender · ${esc(defOwner)}</div><div class="units">${bunits(Dd, 'D', needD, shakeD)}</div><div class="dice">${dice(b.dice.D || [], 'D')}</div></div>`);
     h.push('</div>');
     if (b.lines && b.lines.length) h.push('<ul class="blines">' + b.lines.map((l) => `<li>${esc(l)}</li>`).join('') + '</ul>');
     const btns = [];
-    if (b.over) {
+    if (held || S.animating) {
+      h.push('<p class="hint" style="min-height:1.4em">&nbsp;</p>');
+    } else if (b.over) {
       const r = b.result === 'attacker' ? `${att} wins` : b.result === 'defender' ? `${defOwner} holds` : 'No winner';
       h.push(`<p><b>${esc(r)}.</b></p>`);
       btns.push('<button class="primary" id="bClose">Continue</button>');
@@ -744,12 +784,16 @@
     } else {
       h.push('<p class="hint">…</p>');
     }
-    h.push(`<div class="actions">${btns.join('')}</div></div>`);
+    h.push(`<div class="actions">${btns.join('')}</div>`);
+    if (!b.over) h.push(`<label class="chk hint" style="margin-top:10px"><input type="checkbox" id="bChoose" ${S.chooseOwn ? 'checked' : ''}> Let me choose my casualties</label>`);
+    h.push('</div>');
     $('dialog').innerHTML = h.join('');
+    const ch = $('bChoose');
+    if (ch) ch.onchange = () => { S.chooseOwn = ch.checked; store.set('tacticle:chooseCasualties', S.chooseOwn); g.s.autoCasualties = !S.chooseOwn; save(); };
     const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
     $('dialog').querySelectorAll('[data-pick]').forEach((el) => el.onclick = () => togglePick(el.dataset.pick));
-    on('bRoll', () => { g.battleRoll(); afterBattleAction(); });
-    on('bCont', () => { g.battleContinue(); afterBattleAction(); });
+    on('bRoll', () => rollWith(() => g.battleRoll()));
+    on('bCont', () => rollWith(() => g.battleContinue()));
     on('bAuto', () => { g.autoResolve(); afterBattleAction(); });
     on('bRetreat', () => { g.battleRetreat($('bRetTo').value); afterBattleAction(); });
     on('bSub', () => { const r = g.battleSubmerge('A'); if (!r.ok) toast(r.error); afterBattleAction(); });
@@ -759,7 +803,7 @@
       const r = g.battleAssign(side, S.picks[side]);
       if (!r.ok) { toast(r.error); return; }
       S.picks = {};
-      afterBattleAction();
+      animateBattle().then(afterBattleAction);
     });
     on('bClose', () => {
       if (S.waitAck) { const f = S.waitAck; S.waitAck = null; closeModal(); f(); return; }
@@ -793,6 +837,42 @@
     }
     S.picks[side] = picks;
     renderBattle();
+  }
+  // ---- battle animation: dice grow in, hit units shake, then the hits are applied
+  async function shrinkDice() {
+    const boxes = [...$('dialog').querySelectorAll('.dice')];
+    if (!boxes.some((x) => x.children.length)) return;
+    boxes.forEach((x) => x.classList.add('out'));
+    await sleep(S.fast ? 0 : 150);
+  }
+  async function animateBattle() {
+    if (S.animating) return;
+    S.animating = true;
+    try {
+      for (let i = 0; i < 30; i++) {
+        renderBattle();
+        await sleep(S.fast ? 0 : 380);
+        const b = G().s.battle;
+        if (!b || b.over || !(b.need === 'casualties' && b.held)) break;
+        S.shaking = true;
+        renderBattle();
+        await sleep(S.fast ? 0 : 480);
+        S.shaking = false;
+        G().battleCommit();
+        save();
+      }
+    } finally {
+      S.animating = false;
+      S.shaking = false;
+    }
+  }
+  async function rollWith(fn) {
+    if (S.animating) return;
+    await shrinkDice();
+    fn();
+    save();
+    await animateBattle();
+    afterBattleAction();
   }
   function afterBattleAction() {
     S.picks = {};

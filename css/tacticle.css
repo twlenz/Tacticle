@@ -9,24 +9,21 @@
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #17191c; --panel: #212428; --ink: #ece8df; --muted: #a29b8e; --line: #3a3e44;
-    --ocean: #2d4a5c; --sea: #345467; --sea-line: #5f8aa3; --lake: #2d4a5c;
-    --inactive-land: #3a3c3f; --inactive-hatch: #333538; --inactive-sea: #2b3a44; --decor: #45474a;
-    --neutral: #8c8574; --border: #111; --label: #fff; --label-halo: #000a; --shadow: 0 6px 24px #0008; --obj-label: #ffd23f;
-    color-scheme: dark;
-  }
-}
 :root[data-theme="dark"] {
+  /* water is clearly blue and land warm grey so the two never blur together */
   --bg: #17191c; --panel: #212428; --ink: #ece8df; --muted: #a29b8e; --line: #3a3e44;
-  --ocean: #2d4a5c; --sea: #345467; --sea-line: #5f8aa3; --lake: #2d4a5c;
-  --inactive-land: #3a3c3f; --inactive-hatch: #333538; --inactive-sea: #2b3a44; --decor: #45474a;
-  --neutral: #8c8574; --border: #111; --label: #fff; --label-halo: #000a; --shadow: 0 6px 24px #0008; --obj-label: #ffd23f;
+  --ocean: #173f5c; --sea: #256489; --sea-line: #8cc3e4; --lake: #173f5c;
+  --inactive-land: #575249; --inactive-hatch: #625d53; --inactive-sea: #163a54; --decor: #575249;
+  --neutral: #a39a85; --border: #0b0b0b; --label: #fff; --label-halo: #000c; --shadow: 0 6px 24px #0008; --obj-label: #ffd23f;
   color-scheme: dark;
 }
+:root[data-theme="dark"] .tmap .tz.land { stroke: #0b0b0b; stroke-width: .8; }
+:root[data-theme="dark"] .tmap .decor { stroke: #8cc3e480; stroke-width: .6; }
+:root[data-theme="dark"] .tmap .tz.land.inactive { stroke: #8cc3e455; }
+:root[data-theme="dark"] .tmap .tlabel.sea { fill: #cfe8f7; stroke: #0b2638cc; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: var(--font); }
+body { height: 100dvh; }
 body { display: flex; flex-direction: column; overflow: hidden; }
 button, select, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 12px; }
@@ -55,7 +52,8 @@ button.small { padding: 3px 8px; font-size: 13px; }
 .zoombar button { width: 34px; height: 34px; padding: 0; border-radius: 8px; box-shadow: var(--shadow); }
 @media (max-width: 760px) {
   .main { flex-direction: column; }
-  .side { width: auto; max-width: none; border-left: 0; border-top: 1px solid var(--line); max-height: 42vh; min-height: 120px; padding: 10px 12px; }
+  /* a fixed height so the map above never resizes as the panel's content changes */
+  .side { width: auto; max-width: none; border-left: 0; border-top: 1px solid var(--line); height: 38vh; height: 38dvh; flex: none; padding: 10px 12px; }
   .brand { font-size: 17px; }
   .status { font-size: 13px; padding: 5px 10px; }
   .log { max-height: 90px; }
@@ -72,7 +70,9 @@ button.small { padding: 3px 8px; font-size: 13px; }
 .tmap .tz.land.inactive { fill: url(#tm-hatch); stroke: #0002; }
 .tmap .decor { fill: var(--decor); stroke: #0002; stroke-width: .4; }
 .tmap .lake { fill: var(--lake); stroke: var(--sea-line); stroke-width: .3; pointer-events: none; }
-.tmap .tz:not(.inactive):hover { filter: brightness(1.12); }
+/* no CSS filters on map shapes: mobile browsers can fail to draw filtered large SVG paths,
+   and a tap leaves :hover stuck. Highlight on hover only where there is a real mouse. */
+@media (hover: hover) and (pointer: fine) { .tmap .tz.land:not(.inactive):hover { fill-opacity: .82; } .tmap .tz.sea:not(.inactive):hover { fill-opacity: .8; } }
 .tmap .tz.sea.hl-move, .tmap .tz.sea.hl-load, .tmap .tz.sea.hl-place { fill: #d9f0fb; }
 .tmap .tz.sea.hl-attack { fill: #f6b7a8; }
 .tmap .tz.sea.selected { fill: #fff2b0; }
@@ -100,7 +100,7 @@ button.small { padding: 3px 8px; font-size: 13px; }
 .tmap .arrow { fill: none; stroke: #ffd23f; stroke-linecap: round; stroke-linejoin: round; opacity: .9; pointer-events: none; }
 .tmap .arrow.enemy { stroke: #ff5a36; }
 .tmap .flash { animation: flash .7s; }
-@keyframes flash { 50% { filter: brightness(1.6); } }
+@keyframes flash { 50% { fill-opacity: .55; } }
 
 /* panel pieces */
 .h { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 0 6px; font-weight: 650; }
@@ -168,3 +168,18 @@ kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4p
 
 /* credit line */
 .credit { flex: none; text-align: center; font-size: 10.5px; line-height: 1; padding: 4px 8px 5px; color: var(--muted); opacity: .7; background: var(--panel); border-top: 1px solid var(--line); padding-bottom: max(5px, env(safe-area-inset-bottom)); }
+
+/* battle animation */
+.die.new { animation: diein .26s cubic-bezier(.2, 1.4, .4, 1) both; }
+@keyframes diein { from { transform: scale(.05); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.dice.out .die { animation: dieout .14s ease-in both; }
+@keyframes dieout { from { transform: scale(1); opacity: 1; } to { transform: scale(.05); opacity: 0; } }
+.bunit.shake { animation: shake .42s ease-in-out; }
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-2px) rotate(-3deg); }
+  40% { transform: translateX(2px) rotate(3deg); }
+  60% { transform: translateX(-1.5px) rotate(-2deg); }
+  80% { transform: translateX(1.5px) rotate(1deg); }
+}
+@media (prefers-reduced-motion: reduce) { .die.new, .dice.out .die, .bunit.shake { animation: none; } }

@@ -467,6 +467,7 @@
       }
       if (s.phase === 'combatMove') {
         s.battles = this.findBattles();
+        s.battleCount = s.battles.length;
         s.phase = 'combat';
         if (!s.battles.length) s.phase = 'noncombatMove';
         return { ok: true };
@@ -1152,7 +1153,7 @@
       const b = {
         id, sea, att: p, round: 0, step: 'start', over: false, winner: null,
         pend: { A: null, D: null }, picks: { A: null, D: null }, doomed: [], dice: { A: [], D: [] },
-        need: 'roll', lines: [], bombard: [], fired: {},
+        need: 'roll', lines: [], bombard: [], fired: {}, rollNo: 0,
       };
       // bombardment: ships in the source zones of amphibious units that did not fight this turn
       if (!sea) {
@@ -1163,6 +1164,9 @@
         if (this.R.bombardLimitedByLanders) ships = ships.slice(0, landers);
         b.bombard = ships.map((u) => u.id);
       }
+      // With uiHold, battles the player is part of pause after each roll with casualties chosen
+      // (b.held) until battleCommit(), so the page can show the dice and the hits first.
+      b.hold = !!this.s.uiHold && (this.isHuman(p) || this.units(id).some((u) => this.isEnemy(u.o, p) && this.isHuman(u.o)));
       this.s.battle = b;
       // empty landing (sea battle already won): capture straight away
       if (!this._side('D').length) {
@@ -1267,6 +1271,7 @@
       b.dice = { A: [], D: [] };
       b.lines = [];
       if (b.step === 'start' || b.step === 'decide') { b.round++; b.step = b.round === 1 ? 'aa' : 'subs'; }
+      b.rollNo = (b.rollNo || 0) + 1;
       this._runSteps();
       return { ok: true };
     }
@@ -1370,7 +1375,10 @@
           b.picks[side] = autoPicks(this.R, units, h, side, this._defenselessOpt());
         }
       }
-      if ((!b.pend.A || b.picks.A) && (!b.pend.D || b.picks.D)) return this._applyCasualties();
+      if ((!b.pend.A || b.picks.A) && (!b.pend.D || b.picks.D)) {
+        if (b.hold) { b.held = true; b.need = 'casualties'; return; }
+        return this._applyCasualties();
+      }
       b.need = 'casualties';
     }
     /** For the UI: units the side may choose from and the default picks. */
@@ -1391,7 +1399,18 @@
       const err = validatePicks(this.R, ch.units, ch.hits, picks, this._defenselessOpt());
       if (err) return { ok: false, error: err };
       b.picks[side] = picks.slice();
-      if ((!b.pend.A || b.picks.A) && (!b.pend.D || b.picks.D)) this._applyCasualties();
+      if ((!b.pend.A || b.picks.A) && (!b.pend.D || b.picks.D)) {
+        if (b.hold) b.held = true;
+        else this._applyCasualties();
+      }
+      return { ok: true };
+    }
+    /** Apply casualties that are chosen but held for display (see b.hold). */
+    battleCommit() {
+      const b = this.s.battle;
+      if (!b || !b.held) return { ok: false, error: 'Nothing to apply' };
+      b.held = false;
+      this._applyCasualties();
       return { ok: true };
     }
     _applyCasualties() {
@@ -1612,7 +1631,8 @@
         const b = this.s.battle;
         if (b.need === 'roll') this.battleRoll();
         else if (b.need === 'casualties') {
-          for (const side of ['A', 'D']) if (b.pend[side] && !b.picks[side]) this.battleAssign(side, this.casualtyChoice(side).auto);
+          if (b.held) this.battleCommit();
+          else for (const side of ['A', 'D']) if (b.pend[side] && !b.picks[side]) this.battleAssign(side, this.casualtyChoice(side).auto);
         } else if (b.need === 'decision') {
           const d = decide ? decide(this) : null;
           if (d && d.retreat) this.battleRetreat(d.retreat);
