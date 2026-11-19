@@ -740,10 +740,12 @@
           }
         }
         if (dist[to] === undefined) return { error: 'Out of range or blocked' };
-        if (!combat && this.enemies(to, p).length && !this.enemies(to, p).every((e) => !this.blocksShips(e, u))) {
+        // in noncombat, ships end only where no enemy ship would stop them; submarines may end in a hostile sea zone
+        const subFree = d.sub && this.R.subsEnterHostileNoncombat;
+        if (!combat && !subFree && this.enemies(to, p).some((e) => this.blocksShips(e, u))) {
           return { error: 'Enemy ships there (combat move only)' };
         }
-        if (!combat && this.enemies(to, p).length && this.enemies(to, p).some((e) => this.blocksShips(e))) {
+        if (!combat && !subFree && this.enemies(to, p).some((e) => this.blocksShips(e))) {
           return { error: 'Enemy ships there' };
         }
         const path = [to];
@@ -1086,7 +1088,8 @@
       }
       if (d.domain === 'sea' || (d.domain === 'air' && this.B.isSea(at))) {
         if (!this.B.isSea(at)) return { ok: false, error: 'Ships go in a sea zone next to a factory' };
-        if (this.hostileSurface(at, p)) return { ok: false, error: 'Enemy warships are there' };
+        // 1942 rules: new ships may be placed among enemy warships; no combat now, the enemy fights or leaves on its turn
+        if (this.hostileSurface(at, p) && !this.R.placeInHostileSea) return { ok: false, error: 'Enemy warships are there' };
         if (d.domain === 'air') {
           let cap = 0, need = 1;
           for (const u of this.units(at)) {
@@ -1127,7 +1130,9 @@
       const out = [];
       for (const id of Object.keys(this.s.terr)) {
         const mine = this.units(id).filter((u) => u.o === p && u.cm && !u.tr);
-        if (!mine.length) continue;
+        // ships that start the turn sharing a sea zone with enemy warships must fight there or leave (rulebook p. 9)
+        const sharing = this.B.isSea(id) && this.hostileSurface(id, p) && this.units(id).some((u) => u.o === p && !u.tr && this.def(u).domain === 'sea');
+        if (!mine.length && !sharing) continue;
         const foes = this.enemies(id, p).filter((e) => !this.def(e).infrastructure || (this.def(e).aa));
         const realFoes = foes.filter((e) => !(this.R.aaCaptured && this.def(e).aa) || mine.some((m) => this.def(m).domain === 'air'));
         if (this.B.isSea(id)) {
@@ -1180,10 +1185,9 @@
         this._endBattle();
         return { ok: true };
       }
-      // defenders that cannot fight back at all are destroyed without a roll; AA guns first get their
-      // shot at attacking aircraft (that happens in the first round)
-      const aaShot = !sea && this._side('D').some((u) => this.def(u).aa) && this._side('A').some((u) => this.def(u).domain === 'air');
-      if (!aaShot && this._destroyHelpless() && this._roundOver(this._side('A'), this._side('D'))) this._endBattle();
+      // units that cannot fight back at all are destroyed without combat: AA guns with no combat units
+      // (no AA shot either: "no actual combat is necessary", rulebook pp. 16, 25) and defenceless transports
+      if (this._destroyHelpless() && this._roundOver(this._side('A'), this._side('D'))) this._endBattle();
       return { ok: true };
     }
     _side(side) {
@@ -1245,7 +1249,7 @@
       const b = this.s.battle;
       const team = this._teamOf(role);
       const enemyUnits = this._side(role === 'A' ? 'D' : 'A');
-      const destroyer = this._hasDestroyer(this._side(role));
+      const destroyer = b && b.dd ? b.dd[role] : this._hasDestroyer(this._side(role));
       const hits = { any: 0, notAir: 0, notSub: 0, airOnly: 0 };
       const dice = [];
       // artillery support
@@ -1292,6 +1296,8 @@
         b.dice = { A: [], D: [] };
         b.lines = [];
         b.roundDead = [];
+        // destroyers present when the round starts decide submarine abilities for the whole round
+        b.dd = { A: this._hasDestroyer(this._side('A')), D: this._hasDestroyer(this._side('D')) };
       }
       b.rollNo = (b.rollNo || 0) + 1;
       this._runSteps();
@@ -1368,8 +1374,8 @@
       const aSubs = A.filter((u) => this.def(u).sub);
       const dSubs = D.filter((u) => this.def(u).sub);
       b.fired = {};
-      const aFirst = aSubs.length && !this._hasDestroyer(D);
-      const dFirst = dSubs.length && !this._hasDestroyer(A);
+      const aFirst = aSubs.length && !(b.dd ? b.dd.D : this._hasDestroyer(D));
+      const dFirst = dSubs.length && !(b.dd ? b.dd.A : this._hasDestroyer(A));
       if (!aFirst && !dFirst) return false;
       if (aFirst) {
         const shot = this._fire(aSubs, 'A');
@@ -1551,13 +1557,20 @@
       return (side === 'A' ? d.att : d.def) <= 0 && ((d.transport && this.R.transportsDefenseless) || !!d.aa);
     }
     /**
-     * When every unit left on a side is helpless, the ones the enemy could hit are destroyed outright
-     * instead of being rolled at until a die happens to hit them. Returns those units.
+     * Helpless units the enemy could hit are destroyed outright, instead of being rolled at until a die
+     * happens to hit them, when nothing on their side can protect them: no combat units left, or the combat
+     * units left on both sides cannot hit each other (e.g. transports and subs against aircraft). Attacking
+     * transports that can still retreat are left alone. Rulebook p. 17 (defenceless transports), p. 25 (AA).
      */
     _helplessVictims(mine, other, side) {
-      if (!mine.length || !mine.every((u) => this._helpless(u, side))) return [];
       const role = side === 'A' ? 'D' : 'A';
-      return mine.filter((u) => this._canHit(other, [u], role));
+      const helpless = mine.filter((u) => this._helpless(u, side));
+      if (!helpless.length) return [];
+      const fighters = mine.filter((u) => !this._helpless(u, side));
+      const foes = other.filter((u) => !this._helpless(u, role));
+      if (fighters.length && (this._canHit(fighters, foes, side) || this._canHit(foes, fighters, role))) return [];
+      if (side === 'A' && this._retreatSpots(mine).length) return [];
+      return helpless.filter((u) => this._canHit(other, [u], role));
     }
     /** Destroy helpless sides (see _helplessVictims). True if any unit was removed. */
     _destroyHelpless() {
@@ -1606,8 +1619,12 @@
     retreatOptions() {
       const b = this.s.battle;
       if (!b || b.need !== 'decision') return [];
+      return this._retreatSpots(this.survivors('A'));
+    }
+    /** Where these attacking units could retreat to: a space at least one of them came from. */
+    _retreatSpots(A) {
+      const b = this.s.battle;
       const p = b.att;
-      const A = this.survivors('A');
       const set = new Set();
       for (const u of A) {
         const d = this.def(u);
@@ -1632,6 +1649,8 @@
       if (!b || b.need !== 'decision') return { ok: false, error: 'No decision pending' };
       if (!b.settled && this._settle()) return { ok: true };
       b.need = 'roll';
+      // with hold the page rolls the next round itself, after any submarine decisions (step 2 of the round)
+      if (b.hold) return { ok: true };
       return this.battleRoll();
     }
     battleRetreat(to) {
@@ -1653,22 +1672,50 @@
       b.lines.push(`Attacker retreats${to !== b.id ? ' to ' + this.B.name(to) : ''}`);
       this.log(`${b.att} retreats from ${this.B.name(b.id)}`);
       b.retreatedTo = to;
-      if (left) { b.need = 'roll'; return this.battleRoll(); }
+      if (left) { b.need = 'roll'; return b.hold ? { ok: true } : this.battleRoll(); }
       b.retreated = true;
       return this._endBattle();
     }
-    /** Submerge subs (side 'A' or 'D') when the enemy has no destroyer. */
+    /** True between rounds: after a round's decision, or before the first or next round's dice. */
+    _betweenRounds() {
+      const b = this.s.battle;
+      return !!b && !b.over && (b.need === 'decision' || (b.need === 'roll' && (b.step === 'start' || b.step === 'decide')));
+    }
+    /** Whether a side's submarines may submerge now: between rounds, and the enemy has no destroyer in the battle. */
+    canSubmerge(side) {
+      if (!this._betweenRounds()) return false;
+      const live = (s) => this.survivors(s);
+      return live(side).some((u) => this.def(u).sub) && !this._hasDestroyer(live(side === 'A' ? 'D' : 'A'));
+    }
+    /** A side may still decide whether to submerge before the coming round. */
+    subChoicePending(side) {
+      const b = this.s.battle;
+      if (!this.canSubmerge(side)) return false;
+      return (b.subChoice || {})[side] !== b.round + 1;
+    }
+    /** Keep a side's submarines in the coming round (records the decision so it is not asked again). */
+    battleKeepSubs(side) {
+      const b = this.s.battle;
+      if (!b) return { ok: false, error: 'No battle' };
+      b.subChoice = b.subChoice || {};
+      b.subChoice[side] = b.round + 1;
+      return { ok: true };
+    }
+    /** Submerge a side's subs: they leave the battle. Only between rounds and when the enemy has no destroyer. */
     battleSubmerge(side) {
       const b = this.s.battle;
-      if (!b || b.need !== 'decision') return { ok: false, error: 'Only between rounds' };
-      if (!b.settled && this._settle()) return { ok: true };
+      if (!this._betweenRounds()) return { ok: false, error: 'Only between rounds' };
+      if (b.need === 'decision' && !b.settled && this._settle()) return { ok: true };
       const enemy = this._side(side === 'A' ? 'D' : 'A');
       if (this._hasDestroyer(enemy)) return { ok: false, error: 'An enemy destroyer prevents submerging' };
       const subs = this._side(side).filter((u) => this.def(u).sub);
       if (!subs.length) return { ok: false, error: 'No submarines' };
       for (const u of subs) u.sub = true;
+      this.battleKeepSubs(side);
       b.lines.push(`${side === 'A' ? 'Attacking' : 'Defending'} submarines submerge`);
-      if (!this._side('A').length || !this._hittable('D').length) return this._endBattle();
+      // what is left may now be defenceless (e.g. transports whose subs dived), or the battle over
+      this._destroyHelpless();
+      if (this._roundOver(this._side('A'), this._side('D'))) return this._endBattle();
       return { ok: true };
     }
     _endBattle() {

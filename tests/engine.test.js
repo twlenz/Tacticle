@@ -448,8 +448,10 @@ test('held battle: attacker rolls, defender casualties stay and fire back, attac
     assert.equal(soviets(g), 3 - defHits);
     for (const id of picksA) assert.ok(!g.unit(id), 'attacker casualty removed');
     if (!g.s.battle.over) {
+      assert.equal(g.s.battle.need, 'roll', 'the page rolls the next round itself (subs may dive first)');
+      g.battleRoll();
       assert.equal(g.s.battle.round, 2);
-      assert.equal(g.s.battle.step, 'fireD', 'next round already rolled the attack');
+      assert.equal(g.s.battle.step, 'fireD', 'the next round\'s attack is rolled');
       assert.equal(g.s.battle.dice.D.length, 0, 'last round\'s dice are cleared');
     }
   }
@@ -526,20 +528,13 @@ test('AA guns alone are destroyed without a roll; the attacker takes the territo
   assert.equal(g.s.losses.Allies, 2 * g.R.units.aaa.cost, 'their value counts in the IPC exchange');
 });
 
-test('AA guns alone still fire at attacking aircraft first, then are destroyed without the attacker rolling', () => {
+test('AA guns alone are destroyed without combat even when aircraft attack (rulebook pp. 16, 25: no AA shot)', () => {
   const g = attackB1(5, { aaa: 1 }, [['A1', 'tank'], ['A1', 'fighter']]);
   const b = g.s.battle;
-  assert.ok(!b.over, 'the AA shot comes first');
-  g.battleRoll();
-  assert.equal(b.dice.D.length, 1, 'one AA shot at the fighter');
-  assert.equal(b.dice.A.length, 0);
-  g.battleRoll();
-  assert.equal(b.dice.A.length, 0, 'no attacker dice against a gun that cannot fight back');
-  assert.equal(b.need, 'decision');
-  assert.ok(b.ending);
-  g.battleContinue();
   assert.ok(b.over);
   assert.equal(b.result, 'attacker');
+  assert.equal(g.s.stats.Allies.n + g.s.stats.Axis.n, 0, 'no dice at all');
+  assert.equal(ids(g, 'A1', 'fighter').length + g.units('B1').filter((u) => u.t === 'fighter').length, 1, 'the fighter is safe');
 });
 
 test('defenders left with only AA guns are destroyed at the end of the round, not rolled at round after round', () => {
@@ -575,4 +570,122 @@ test('transports alone are sunk without a roll', () => {
   assert.equal(b.result, 'attacker');
   assert.equal(g.units('S2').filter((u) => u.t === 'transport').length, 0);
   assert.equal(g.s.stats.Axis.n, 0);
+});
+
+
+// ---- 1942 Second Edition rulebook checks: placement in hostile seas, submarines, destroyers, defenceless transports
+function seaGame(over, seed, ruleset) {
+  const setup = Object.assign(scenario().setup, over);
+  const g = newGame(Object.assign({ setup }, ruleset ? { ruleset } : {}), seed == null ? 3 : seed);
+  g.s.uiHold = true;
+  return g;
+}
+const toPhase = (g, ph) => { let n = 0; while (g.phase !== ph && n++ < 20) g.nextPhase(); assert.equal(g.phase, ph); };
+
+test('new ships may be placed in a sea zone with enemy warships; no combat then, and the enemy must fight or leave on its turn', () => {
+  const g = seaGame({ S1: { units: { 'Soviet Union': { destroyer: 1 } } } });
+  g.buy('destroyer', 1);
+  toPhase(g, 'place');
+  const r = g.place('destroyer', 'S1');
+  assert.ok(r.ok, r.error);
+  assert.ok(!g.s.battle && !g.s.battles.length, 'no combat at placement');
+  // the Soviet turn: its destroyer shares S1 with a German warship
+  let n = 0;
+  while (g.current() !== 'Soviet Union' && n++ < 20) g.nextPhase();
+  toPhase(g, 'combatMove');
+  g.nextPhase();
+  assert.equal(g.phase, 'combat');
+  assert.ok(g.s.battles.includes('S1'), 'staying means fighting');
+});
+
+test('leaving the shared sea zone avoids the battle', () => {
+  const g = seaGame({ S1: { units: { 'Soviet Union': { destroyer: 1 } } } });
+  g.buy('destroyer', 1);
+  toPhase(g, 'place');
+  g.place('destroyer', 'S1');
+  let n = 0;
+  while (g.current() !== 'Soviet Union' && n++ < 20) g.nextPhase();
+  toPhase(g, 'combatMove');
+  const r = g.move('S1', ids(g, 'S1', 'destroyer', 'Soviet Union'), 'S2');
+  assert.ok(r.ok, r.error);
+  g.nextPhase();
+  assert.ok(!g.s.battles.includes('S1'));
+});
+
+test('Revised rules keep blocking placement among enemy warships', () => {
+  const g = seaGame({ S1: { units: { 'Soviet Union': { destroyer: 1 } } } }, 3, 'revised');
+  g.buy('destroyer', 1);
+  toPhase(g, 'place');
+  assert.equal(g.place('destroyer', 'S1').ok, false);
+});
+
+test('a submarine may end a noncombat move among enemy warships (no destroyer)', () => {
+  const g = seaGame({ S1: { units: { Germany: { submarine: 1 } } }, S2: { units: { 'Soviet Union': { cruiser: 1 } } } });
+  toPhase(g, 'noncombatMove');
+  const r = g.move('S1', ids(g, 'S1', 'submarine'), 'S2');
+  assert.ok(r.ok, r.error);
+});
+
+function subBattle(att, def, seed) {
+  const g = seaGame({ S1: { units: { Germany: att } }, S2: { units: { 'Soviet Union': def } } }, seed);
+  toPhase(g, 'combatMove');
+  const r = g.move('S1', g.units('S1').filter((u) => u.o === 'Germany').map((u) => u.id), 'S2');
+  assert.ok(r.ok, r.error);
+  g.nextPhase();
+  assert.ok(g.startBattle('S2').ok);
+  return g;
+}
+
+test('defending submarines may submerge before a round when the attacker has no destroyer', () => {
+  const g = subBattle({ cruiser: 1 }, { submarine: 1, transport: 1 });
+  assert.ok(g.canSubmerge('D'));
+  assert.ok(g.subChoicePending('D'));
+  assert.ok(g.battleSubmerge('D').ok);
+  const b = g.s.battle;
+  // with the sub gone the transport is defenceless and is destroyed: the battle is over
+  assert.ok(b.over);
+  assert.equal(g.units('S2').filter((u) => u.t === 'submarine').length, 1, 'the submerged sub is still on the map');
+  assert.equal(g.units('S2').filter((u) => u.t === 'transport').length, 0);
+});
+
+test('an enemy destroyer stops submerging and the surprise strike', () => {
+  const g = subBattle({ destroyer: 1 }, { submarine: 1, cruiser: 1 });
+  assert.ok(!g.canSubmerge('D'));
+  assert.equal(g.battleSubmerge('D').ok, false);
+  g.battleRoll();
+  const b = g.s.battle;
+  assert.ok(!b.dice.D.some((d) => d.k === 'subs'), 'no surprise strike against a destroyer');
+});
+
+test('submarines strike first when the enemy has no destroyer, and their hits cannot fall on aircraft', () => {
+  for (let seed = 1; seed <= 6; seed++) {
+    const g = subBattle({ submarine: 2, fighter: 0 }, { cruiser: 1, fighter: 0 }, seed);
+    g.battleRoll();
+    const b = g.s.battle;
+    assert.equal(b.dice.A.filter((d) => d.k === 'subs').length, 2, 'surprise strike');
+    assert.equal(b.dice.D.length, 0, 'before any defender dice');
+  }
+});
+
+test('transports with subs against aircraft only: the transports are defenceless (rulebook p. 17)', () => {
+  const g = seaGame({ S1: { units: { 'Soviet Union': { submarine: 1, transport: 2 } } } });
+  toPhase(g, 'combatMove');
+  const r = g.move('A1', ids(g, 'A1', 'fighter'), 'S1');
+  assert.ok(r.ok, r.error);
+  g.nextPhase();
+  assert.ok(g.startBattle('S1').ok);
+  const b = g.s.battle;
+  assert.equal(g.units('S1').filter((u) => u.t === 'transport').length, 0, 'transports destroyed without a roll');
+  assert.ok(b.over, 'fighter and sub cannot hit each other');
+});
+
+test('attacking transports that can retreat are not destroyed as defenceless', () => {
+  const g = seaGame({ S1: { units: { Germany: { transport: 1, destroyer: 1 } } }, S2: { units: { 'Soviet Union': { cruiser: 1, destroyer: 2 } } } });
+  toPhase(g, 'combatMove');
+  g.move('S1', g.units('S1').filter((u) => u.o === 'Germany').map((u) => u.id), 'S2');
+  g.nextPhase();
+  g.startBattle('S2');
+  const b = g.s.battle;
+  assert.ok(!b.over);
+  assert.equal(g._helplessVictims(g._side('A').filter((u) => u.t === 'transport'), g._side('D'), 'A').length, 0, 'it can retreat to S1');
 });

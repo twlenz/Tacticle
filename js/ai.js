@@ -103,6 +103,8 @@
       const attackerAI = g.s.powers[b.att].ai;
       if (b.need === 'roll') {
         if (!attackerAI) return null; // the human rolls their own attacks
+        this.subDecisions();
+        if (g.s.battle !== b || b.over) return { type: 'battleRoll', id: b.id };
         g.battleRoll();
         return { type: 'battleRoll', id: b.id };
       }
@@ -129,6 +131,20 @@
         return { type: 'battleRoll', id: b.id };
       }
       return null;
+    }
+    /**
+     * Before a round's dice: the computer's defending submarines dive when the defence is likely lost anyway
+     * (only possible when the attacker has no destroyer). Records the choice either way.
+     */
+    subDecisions() {
+      const g = this.g;
+      const b = g.s.battle;
+      if (!b || !g.subChoicePending('D')) return;
+      const owner = (g._side('D').find((u) => g.def(u).sub) || {}).o;
+      if (!owner || !g.s.powers[owner].ai) return;
+      const odds = E.simulate(count(g.survivors('A')), count(g.survivors('D')), { sea: b.sea, ruleset: g.R.id, trials: 40, seed: g.s.rng ^ 0x51b });
+      if (odds.win >= 0.75) g.battleSubmerge('D');
+      else g.battleKeepSubs('D');
     }
     /** At the end of a round: where the attacking computer retreats to, or null to press the attack. */
     battleDecision() {
@@ -369,6 +385,25 @@
       const used = new Set();
       const committed = new Set();
       const sit = this._situation();
+      // ships sharing a sea zone with enemy warships must fight there or leave: leave when the odds are poor
+      this._lastMoves = this._lastMoves || [];
+      for (const z of g.B.playable) {
+        if (!g.B.isSea(z) || !g.hostileSurface(z, p)) continue;
+        const mine = g.units(z).filter((u) => u.o === p && !u.tr && g.def(u).domain === 'sea');
+        if (!mine.length) continue;
+        const foes = g.enemies(z, p).filter((e) => !g.def(e).infrastructure);
+        const odds = E.simulate(count(mine), count(foes), { sea: true, ruleset: g.R.id, trials: 60, seed: hash(z) ^ g.s.round });
+        for (const u of mine) used.add(u.id);
+        if (odds.win >= 0.5) continue; // stay and fight
+        const away = g.B.adj[z].filter((y) => g.B.isSea(y) && !g.hostileSurface(y, p))
+          .sort((a, c) => g.units(c).filter((u) => g.team(u.o) === g.team(p)).length - g.units(a).filter((u) => g.team(u.o) === g.team(p)).length);
+        for (const u of mine) {
+          const to = away.find((y) => g.checkMove(z, [u.id], y).ok);
+          if (!to) continue;
+          const r = g.move(z, [u.id], to);
+          if (r.ok) this._lastMoves.push({ from: z, to, uids: [u.id] });
+        }
+      }
       // garrison: keep a defender in threatened capitals/objectives/factories
       const keep = {};
       for (const id of g.B.playable) {
@@ -650,7 +685,12 @@
         while (left-- > 0) {
           const targets = g.placeTargets(t);
           if (!targets.length) break;
-          const pick = order.find((id) => targets.includes(id)) || targets[0];
+          let pick = order.find((id) => targets.includes(id));
+          if (!pick) {
+            // sea zones: next to the factory that most needs help, away from enemy warships when possible
+            const rank = (z) => (g.hostileSurface(z, p) ? 100 : 0) + Math.min(...g.B.adj[z].map((x) => (order.indexOf(x) < 0 ? 99 : order.indexOf(x))));
+            pick = targets.slice().sort((a, c) => rank(a) - rank(c))[0];
+          }
           const r = g.place(t, pick);
           if (r.ok) out.push({ type: 'shownPlace', unit: t, at: pick });
         }
