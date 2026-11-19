@@ -279,8 +279,6 @@
       this.gHit.textContent = '';
       const play = s.playable;
       const ids = this.map.territories.filter((t) => !play || play.has(t.id)).map((t) => t.id);
-      const v = this.vb;
-      const inView = (x, y) => x > v.x - 50 && x < v.x + v.w + 50 && y > v.y - 50 && y < v.y + v.h + 50;
       // land highlight outlines above land
       for (const id of ids) {
         const t = this.T[id];
@@ -299,7 +297,7 @@
         const t = this.T[id];
         const o = this.offset[id] || 0;
         const cx = t.center[0] + o, cy = t.center[1];
-        if (!inView(cx, cy)) continue;
+        // drawn whether or not it is on screen, so panning never reveals a half-drawn map
         // generous hit target for small islands
         const bw = t.bbox[2] - t.bbox[0], bh = t.bbox[3] - t.bbox[1];
         if (t.type !== 'sea' && Math.max(bw, bh) < 18 * k) el('circle', { cx, cy, r: 16 * k, 'data-id': id, class: 'hit' }, this.gHit);
