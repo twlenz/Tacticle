@@ -156,9 +156,17 @@ button.small { padding: 3px 8px; font-size: 13px; }
 .bunit .n { position: absolute; right: -4px; bottom: -4px; background: #fff; color: #111; border-radius: 99px; font-size: 11px; font-weight: 700; padding: 0 5px; border: 1px solid #0004; }
 .bunit .v { position: absolute; left: 2px; top: 1px; color: #fff; font-size: 10px; font-weight: 700; text-shadow: 0 0 2px #000; }
 .bunit.pick { cursor: pointer; }
-.bunit.picked { border-color: #ff3b1f; filter: grayscale(.6); }
+@media (hover: hover) { .bunit.pick:hover { outline: 2px solid var(--ink); outline-offset: 1px; } }
+.bunit.pick:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 .bunit .x { position: absolute; left: -5px; top: -5px; background: #ff3b1f; color: #fff; border-radius: 99px; font-size: 11px; font-weight: 800; padding: 0 5px; }
-.bunit.dead { opacity: .3; }
+/* marked as a casualty: stays on show (and may still fire back) until the round is settled */
+.bunit.cas { border-color: #ff3b1f; }
+.bunit.cas > svg { opacity: .35; }
+.bunit.cas::after { content: '✕'; position: absolute; inset: 0; display: grid; place-items: center; color: #ff3b1f; font-size: 32px; font-weight: 900; line-height: 1; text-shadow: 0 0 2px #fff, 0 0 3px #fff, 0 0 5px #fff; pointer-events: none; }
+.bunit.dmg { border-color: #ff8800; }
+.battle .bstate { min-height: 1.4em; margin: 10px 0 4px; }
+.dsep { align-self: center; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 0 2px 0 6px; }
+.dsep:first-child { margin-left: 0; }
 .dice { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; min-height: 26px; }
 .die { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; font-weight: 800; font-size: 13px; background: var(--bg); border: 1px solid var(--line); }
 .die.hit { background: #ff5a36; color: #fff; border-color: #ff5a36; }
@@ -180,8 +188,11 @@ kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4p
 .die.new { animation: diein .26s cubic-bezier(.2, 1.4, .4, 1) both; }
 @keyframes diein { from { transform: scale(.05); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .dice.out .die { animation: dieout .14s ease-in both; }
+.dice.out .dsep { visibility: hidden; }
 @keyframes dieout { from { transform: scale(1); opacity: 1; } to { transform: scale(.05); opacity: 0; } }
 .bunit.shake { animation: shake .42s ease-in-out; }
+.bunit.leaving { animation: leave .34s ease-in forwards; }
+@keyframes leave { to { transform: scale(.15); opacity: 0; } }
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
   20% { transform: translateX(-2px) rotate(-3deg); }
@@ -189,4 +200,4 @@ kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4p
   60% { transform: translateX(-1.5px) rotate(-2deg); }
   80% { transform: translateX(1.5px) rotate(1deg); }
 }
-@media (prefers-reduced-motion: reduce) { .die.new, .dice.out .die, .bunit.shake { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .die.new, .dice.out .die, .bunit.shake { animation: none; } .bunit.leaving { animation: none; opacity: .2; } }

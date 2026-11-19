@@ -75,12 +75,23 @@ changes and push them.
 - **Battles:**
   - With several battles you pick each one from the list, and the page returns to the
     list after each. A single battle opens by itself.
-  - When you roll, the dice grow in from their own spots. The units about to be hit
-    shake briefly with a "−n" badge, then the hits are applied, cheapest units first.
-  - Rolling again shrinks the old dice away first.
-  - **Let me choose my casualties** (remembered per browser) switches to picking losses
-    yourself.
-  - Between rounds you can continue, retreat, submerge subs, or "fight to the end".
+  - A round follows the rule book. **Roll dice**: your dice grow in, then the defender's
+    casualties are marked ✕ with a brief shake. They stay on show and still fire back.
+    After a short pause the defender rolls, and your casualties are marked the same way.
+  - Both sides' dice and every casualty of the round stay on show. You can tap your units
+    to lose different ones (tap a marked unit to keep it; tap another to lose it instead).
+  - Then **Press the attack** (the casualties shrink away and the next round is rolled),
+    **Retreat**, or, if the battle is decided, **End of battle**. **Submerge subs** appears
+    when your submarines can dive.
+  - **Retreat** closes the battle window and outlines, with arrows, where your units can go.
+    Click one on the map and every unit that can retreat goes there together. Nothing else
+    can be done until then, apart from going back to the battle.
+  - When the computer attacks you, it rolls first and your casualties are marked. Change
+    them if you like, then **Roll for defense**. After your roll it pauses briefly and then
+    presses on or retreats.
+  - Opening fire (AA guns, shore bombardment, submarine surprise strikes) is shown the same
+    way, labelled by the dice. It pauses for you only when you have a choice of casualties.
+  - Reloading mid-battle resumes at the same step with the same dice.
   - Animations are skipped for players who ask their system for reduced motion.
 - The page is light by default; the ◐ button switches to dark mode, and the choice is
   remembered.

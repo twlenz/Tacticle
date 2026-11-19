@@ -387,3 +387,119 @@ test('IPC losses always equal starting value + units placed - units left, per te
     }
   }
 });
+
+// ---- battles a person is in (uiHold): one roll at a time, casualties on show until the next action
+function heldBattle(seed, sovietInf) {
+  const g = newGame({ setup: Object.assign(scenario().setup, { B1: { owner: 'Soviet Union', units: { 'Soviet Union': { infantry: sovietInf } } } }) }, seed);
+  g.s.uiHold = true;
+  g.nextPhase();
+  g.move('A1', ids(g, 'A1', 'infantry').concat(ids(g, 'A1', 'tank')), 'B1');
+  g.move('A2', ids(g, 'A2', 'tank'), 'B1');
+  g.nextPhase();
+  assert.ok(g.startBattle('B1').ok);
+  assert.ok(g.s.battle.hold);
+  return g;
+}
+const soviets = (g) => g.units('B1').filter((u) => u.o === 'Soviet Union').length;
+const germans = (g) => g.units('B1').filter((u) => u.o === 'Germany').length;
+
+test('held battle: attacker rolls, defender casualties stay and fire back, attacker decides with casualties on show', () => {
+  let sawDefHits = 0, sawAttHits = 0;
+  for (let seed = 1; seed <= 12; seed++) {
+    const g = heldBattle(seed, 3);
+    const b = g.s.battle;
+    // 1. the attacker's roll only
+    assert.ok(g.battleRoll().ok);
+    assert.equal(b.need, 'roll');
+    assert.equal(b.step, 'fireD', 'the defender rolls next');
+    assert.equal(b.dice.A.length, 4);
+    assert.equal(b.dice.D.length, 0);
+    const defHits = (b.picks.D || []).length;
+    assert.equal(soviets(g), 3, 'defender casualties are marked, not removed');
+    if (defHits) {
+      sawDefHits++;
+      assert.deepEqual(g.casualtyChoice('D').picks, b.picks.D, 'default picks are on show');
+    }
+    // 2. the defender's roll: every defender fires, including the ones marked as casualties
+    assert.ok(g.battleRoll().ok);
+    assert.equal(b.dice.D.length, 3, 'casualties still fire back');
+    assert.equal(b.dice.A.length, 4, 'the round keeps both sides\' dice');
+    assert.equal(b.need, 'decision');
+    assert.equal(b.doomed.length, defHits, 'defender picks were locked in by the defender roll');
+    assert.equal(soviets(g), 3, 'still on the board until the attacker decides');
+    const attHits = (b.picks.A || []).length;
+    assert.equal(germans(g), 4);
+    assert.equal(g.survivors('A').length, 4 - attHits);
+    assert.equal(g.survivors('D').length, 3 - defHits);
+    if (attHits) {
+      sawAttHits++;
+      // the attacker can still change its casualties: take tanks instead of infantry, or the other way round
+      const ch = g.casualtyChoice('A');
+      const alt = ch.units.filter((u) => !b.picks.A.includes(u.id)).slice(0, attHits).map((u) => u.id);
+      if (alt.length === attHits) {
+        assert.ok(g.battleAssign('A', alt).ok);
+        assert.deepEqual(b.picks.A, alt);
+      }
+    }
+    assert.equal(b.ending, 3 - defHits === 0 || 4 - attHits === 0);
+    // 3. press the attack: only now do the round's casualties go
+    const picksA = (b.picks.A || []).slice();
+    assert.ok(g.battleContinue().ok);
+    assert.equal(soviets(g), 3 - defHits);
+    for (const id of picksA) assert.ok(!g.unit(id), 'attacker casualty removed');
+    if (!g.s.battle.over) {
+      assert.equal(g.s.battle.round, 2);
+      assert.equal(g.s.battle.step, 'fireD', 'next round already rolled the attack');
+      assert.equal(g.s.battle.dice.D.length, 0, 'last round\'s dice are cleared');
+    }
+  }
+  assert.ok(sawDefHits && sawAttHits, 'some seeds score hits on both sides');
+});
+
+test('held and unheld battles play out the same (same dice, same default casualties)', () => {
+  for (let seed = 1; seed <= 10; seed++) {
+    const a = heldBattle(seed, 4);
+    const c = heldBattle(seed, 4);
+    c.s.uiHold = false;
+    c.s.battle.hold = false;
+    a.autoResolve();
+    c.autoResolve();
+    assert.equal(a.s.battle.result, c.s.battle.result, 'seed ' + seed);
+    assert.deepEqual(a.units('B1').map((u) => u.id), c.units('B1').map((u) => u.id), 'seed ' + seed);
+    assert.deepEqual(a.s.stats, c.s.stats, 'seed ' + seed);
+  }
+});
+
+test('held battle: retreat removes the round\'s casualties first, then moves the survivors', () => {
+  let retreated = 0;
+  for (let seed = 1; seed <= 8; seed++) {
+    const g = heldBattle(seed, 8);
+    const b = g.s.battle;
+    g.battleRoll();
+    g.battleRoll();
+    if (b.need !== 'decision' || b.ending) continue;
+    const opts = g.retreatOptions();
+    assert.ok(opts.length && opts.every((id) => id === 'A1' || id === 'A2'), 'back where they came from');
+    const live = g.survivors('A').map((u) => u.id);
+    const sovietsLeft = g.survivors('D').length;
+    assert.ok(g.battleRetreat(opts[0]).ok);
+    assert.ok(b.over && b.retreated);
+    assert.equal(soviets(g), sovietsLeft);
+    for (const id of live) assert.equal(g.whereIs(id), opts[0]);
+    assert.equal(germans(g), 0);
+    retreated++;
+  }
+  assert.ok(retreated > 0);
+});
+
+test('a battle saved mid-round by the earlier page still loads', () => {
+  const g = heldBattle(3, 3);
+  const st = JSON.parse(JSON.stringify(g.s));
+  Object.assign(st.battle, { step: 'fire', held: true, need: 'casualties' });
+  const h = new E.Game(map, scenario({ setup: Object.assign(scenario().setup, { B1: { owner: 'Soviet Union', units: { 'Soviet Union': { infantry: 3 } } } }) }), st);
+  assert.equal(h.s.battle.step, 'fireA');
+  assert.equal(h.s.battle.need, 'roll');
+  assert.ok(!('held' in h.s.battle));
+  h.autoResolve();
+  assert.ok(h.s.battle.over);
+});
