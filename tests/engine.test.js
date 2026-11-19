@@ -503,3 +503,76 @@ test('a battle saved mid-round by the earlier page still loads', () => {
   h.autoResolve();
   assert.ok(h.s.battle.over);
 });
+
+// ---- units that cannot fight back (transports, AA guns) are destroyed rather than rolled at
+function attackB1(seed, b1Units, movers) {
+  const g = newGame({ setup: Object.assign(scenario().setup, { B1: { owner: 'Soviet Union', units: { 'Soviet Union': b1Units } } }) }, seed);
+  g.s.uiHold = true;
+  g.nextPhase();
+  for (const [from, type] of movers) g.move(from, ids(g, from, type), 'B1');
+  g.nextPhase();
+  assert.ok(g.startBattle('B1').ok);
+  return g;
+}
+
+test('AA guns alone are destroyed without a roll; the attacker takes the territory', () => {
+  const g = attackB1(5, { aaa: 2 }, [['A1', 'tank']]);
+  const b = g.s.battle;
+  assert.ok(b.over, 'decided before any dice');
+  assert.equal(b.result, 'attacker');
+  assert.equal(g.s.stats.Axis.n, 0, 'nobody rolled');
+  assert.equal(g.units('B1').filter((u) => u.t === 'aaa').length, 0);
+  assert.equal(g.s.terr.B1.o, 'Germany');
+  assert.equal(g.s.losses.Allies, 2 * g.R.units.aaa.cost, 'their value counts in the IPC exchange');
+});
+
+test('AA guns alone still fire at attacking aircraft first, then are destroyed without the attacker rolling', () => {
+  const g = attackB1(5, { aaa: 1 }, [['A1', 'tank'], ['A1', 'fighter']]);
+  const b = g.s.battle;
+  assert.ok(!b.over, 'the AA shot comes first');
+  g.battleRoll();
+  assert.equal(b.dice.D.length, 1, 'one AA shot at the fighter');
+  assert.equal(b.dice.A.length, 0);
+  g.battleRoll();
+  assert.equal(b.dice.A.length, 0, 'no attacker dice against a gun that cannot fight back');
+  assert.equal(b.need, 'decision');
+  assert.ok(b.ending);
+  g.battleContinue();
+  assert.ok(b.over);
+  assert.equal(b.result, 'attacker');
+});
+
+test('defenders left with only AA guns are destroyed at the end of the round, not rolled at round after round', () => {
+  let checked = 0;
+  for (let seed = 1; seed <= 30 && checked < 3; seed++) {
+    const g = attackB1(seed, { infantry: 1, aaa: 1 }, [['A1', 'tank'], ['A2', 'tank']]);
+    const b = g.s.battle;
+    g.battleRoll();
+    if (!b.picks.D || b.picks.D.length !== 1) continue; // want exactly one hit...
+    assert.ok(g.battleAssign('D', ids(g, 'B1', 'infantry')).ok); // ...taken by the infantry, leaving the gun
+    g.battleRoll();
+    assert.ok(b.ending, 'the gun alone cannot fight back, so the battle is decided');
+    assert.equal(b.autoLost.length, 1, 'shown as lost before the round is settled');
+    const gun = b.autoLost[0];
+    g.battleContinue();
+    assert.ok(b.over && b.result === 'attacker');
+    assert.ok(!g.unit(gun));
+    assert.equal(b.round, 1);
+    checked++;
+  }
+  assert.ok(checked > 0);
+});
+
+test('transports alone are sunk without a roll', () => {
+  const g = newGame({ setup: Object.assign(scenario().setup, { S1: { units: { Germany: { destroyer: 1 } } }, S2: { units: { 'Soviet Union': { transport: 2 } } } }) }, 4);
+  g.s.uiHold = true;
+  g.nextPhase();
+  assert.ok(g.move('S1', ids(g, 'S1', 'destroyer'), 'S2').ok);
+  g.nextPhase();
+  assert.ok(g.startBattle('S2').ok);
+  const b = g.s.battle;
+  assert.ok(b.over);
+  assert.equal(b.result, 'attacker');
+  assert.equal(g.units('S2').filter((u) => u.t === 'transport').length, 0);
+  assert.equal(g.s.stats.Axis.n, 0);
+});
