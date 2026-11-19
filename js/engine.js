@@ -255,6 +255,12 @@
       this.B = new Board(map, scenario);
       this.R = Rules.get(scenario.ruleset);
       this.s = state;
+      const b = state && state.battle;
+      if (b && !b.over) {
+        // battles saved before the round was split into attacker and defender fire
+        if (b.step === 'fire') b.step = 'fireA';
+        if (b.held) { delete b.held; if (b.need === 'casualties') b.need = 'roll'; }
+      }
     }
 
     static create(map, scenario, opts) {
@@ -1164,8 +1170,8 @@
         if (this.R.bombardLimitedByLanders) ships = ships.slice(0, landers);
         b.bombard = ships.map((u) => u.id);
       }
-      // With uiHold, battles the player is part of pause after each roll with casualties chosen
-      // (b.held) until battleCommit(), so the page can show the dice and the hits first.
+      // With uiHold, battles the player is part of advance one roll at a time, and casualties stay on
+      // show (changeable) until the next action: see battleRoll.
       b.hold = !!this.s.uiHold && (this.isHuman(p) || this.units(id).some((u) => this.isEnemy(u.o, p) && this.isHuman(u.o)));
       this.s.battle = b;
       // empty landing (sea battle already won): capture straight away
@@ -1201,12 +1207,12 @@
       return this._side(side).filter((u) => !this.def(u).infrastructure);
     }
     _hasDestroyer(units) { return units.some((u) => this.def(u).antiSub); }
-    _canHit(firing, target) {
-      // can any unit of `firing` damage any of `target`?
+    _canHit(firing, target, role) {
+      // can any unit of `firing` (role 'A' attacks, 'D' defends) damage any of `target`?
       const destroyer = this._hasDestroyer(firing);
       for (const f of firing) {
         const fd = this.def(f);
-        const v = this._fireValue(f, firing, firing === this._side('A') ? 'A' : 'D');
+        const v = this._fireValue(f, firing, role);
         if (v <= 0) continue;
         for (const t of target) {
           const td = this.def(t);
@@ -1260,167 +1266,202 @@
     _total(h) { return h ? h.any + h.notAir + h.notSub + (h.airOnly || 0) : 0; }
 
     /**
-     * Roll the next step of the current battle. Steps in a round:
-     *   aa (round 1) -> bombard (round 1) -> subs (first strike) -> fire -> end of round
-     * After a step that needs casualties, b.need = 'casualties' until both sides assign.
+     * Roll the next step of the current battle. Steps in a round, in the order of the rule book:
+     *   aa (round 1) -> bombard (round 1) -> subs (surprise strike) -> fireA (attacker) -> fireD (defender)
+     *   -> end of round (the attacker presses on or retreats)
+     * Without hold, one call runs the whole round, stopping only for a person's casualty choice
+     * (b.need = 'casualties').
+     * With hold (a person is in the battle, see startBattle), one call runs the next step that rolls dice
+     * and stops there. Its casualties get default picks (b.picks) that stay on show, and can be changed
+     * with battleAssign, until the next action locks them in. After the defender fires, the round waits
+     * for the attacker's decision with every casualty of the round still on show (b.need = 'decision').
      */
     battleRoll() {
       const b = this.s.battle;
       if (!b) return { ok: false, error: 'No battle' };
       if (b.need !== 'roll') return { ok: false, error: 'Waiting for ' + b.need };
-      b.dice = { A: [], D: [] };
-      b.lines = [];
-      if (b.step === 'start' || b.step === 'decide') { b.round++; b.step = b.round === 1 ? 'aa' : 'subs'; }
+      this._lockIn();
+      if (b.step === 'start' || b.step === 'decide') {
+        b.round++;
+        b.step = b.round === 1 ? 'aa' : 'subs';
+        b.dice = { A: [], D: [] };
+        b.lines = [];
+        b.roundDead = [];
+      }
       b.rollNo = (b.rollNo || 0) + 1;
       this._runSteps();
       return { ok: true };
     }
     _runSteps() {
       const b = this.s.battle;
-      const R = this.R;
-      while (true) {
-        if (b.step === 'aa') {
-          b.step = 'bombard';
-          if (b.sea) continue;
-          const guns = this._side('D').filter((u) => this.def(u).aa);
-          const air = this._side('A').filter((u) => this.def(u).domain === 'air');
-          if (!guns.length || !air.length) continue;
-          let shots = 0;
-          for (const g of guns) shots += this.def(g).aa.maxShots;
-          shots = Math.min(shots, air.length);
-          const team = this._teamOf('D');
-          let n = 0;
-          const dice = [];
-          for (let i = 0; i < shots; i++) {
-            const r = this.roll(team, this.def(guns[0]).aa.hit);
-            dice.push({ id: guns[i % guns.length].id, t: guns[i % guns.length].t, v: 1, die: r.die, hit: r.hit });
-            if (r.hit) n++;
-          }
-          b.dice.D = b.dice.D.concat(dice);
-          b.lines.push(`AA fire: ${n} hit${n === 1 ? '' : 's'} from ${shots} shot${shots === 1 ? '' : 's'}`);
-          if (n) { b.pend.A = { any: 0, notAir: 0, notSub: 0, airOnly: n }; b.kind = 'aa'; return this._askCasualties(); }
-          continue;
-        }
-        if (b.step === 'bombard') {
-          b.step = 'subs';
-          if (b.sea || !b.bombard.length) continue;
-          const ships = b.bombard.map((id) => this.unit(id)).filter(Boolean);
-          const shot = this._fire(ships, 'A', { bombard: true });
-          b.dice.A = b.dice.A.concat(shot.dice);
-          const n = this._total(shot.hits);
-          b.lines.push(`Shore bombardment: ${n} hit${n === 1 ? '' : 's'}`);
-          if (n) { b.pend.D = shot.hits; b.kind = 'bombard'; return this._askCasualties(); }
-          continue;
-        }
-        if (b.step === 'subs') {
-          b.step = 'fire';
-          const A = this._side('A'), D = this._side('D');
-          const aSubs = A.filter((u) => this.def(u).sub);
-          const dSubs = D.filter((u) => this.def(u).sub);
-          b.fired = {};
-          const aFirst = aSubs.length && !this._hasDestroyer(D);
-          const dFirst = dSubs.length && !this._hasDestroyer(A);
-          if (!aFirst && !dFirst) continue;
-          let any = false;
-          if (aFirst) {
-            const shot = this._fire(aSubs, 'A');
-            b.dice.A = b.dice.A.concat(shot.dice);
-            for (const u of aSubs) b.fired[u.id] = 1;
-            if (this._total(shot.hits)) { b.pend.D = shot.hits; any = true; }
-          }
-          if (dFirst) {
-            const shot = this._fire(dSubs, 'D');
-            b.dice.D = b.dice.D.concat(shot.dice);
-            for (const u of dSubs) b.fired[u.id] = 1;
-            if (this._total(shot.hits)) { b.pend.A = shot.hits; any = true; }
-          }
-          b.lines.push('Submarine surprise strike');
-          if (any) { b.kind = 'subs'; return this._askCasualties(); }
-          continue;
-        }
-        if (b.step === 'fire') {
-          b.step = 'endRound';
-          const A = this._side('A').filter((u) => !b.fired[u.id]);
-          const D = this._side('D').filter((u) => !b.fired[u.id] && !this.def(u).aa);
-          const sa = this._fire(A, 'A');
-          const sd = this._fire(D.concat(this._side('D').filter((u) => b.doomed.includes(u.id) && !b.fired[u.id] && !D.includes(u))), 'D');
-          b.dice.A = b.dice.A.concat(sa.dice);
-          b.dice.D = b.dice.D.concat(sd.dice);
-          const na = this._total(sa.hits), nd = this._total(sd.hits);
-          b.lines.push(`Attacker scores ${na} hit${na === 1 ? '' : 's'}, defender ${nd}`);
-          if (na) b.pend.D = sa.hits;
-          if (nd) b.pend.A = sd.hits;
-          if (na || nd) { b.kind = 'fire'; return this._askCasualties(); }
-          continue;
-        }
-        if (b.step === 'endRound') {
-          this._endRound();
+      for (let guard = 0; guard < 20; guard++) {
+        const st = b.step;
+        if (st === 'endRound') return this._endRound();
+        let rolled = false;
+        if (st === 'aa') { b.step = 'bombard'; rolled = this._stepAA(); }
+        else if (st === 'bombard') { b.step = 'subs'; rolled = this._stepBombard(); }
+        else if (st === 'subs') { b.step = 'fireA'; rolled = this._stepSubs(); }
+        else if (st === 'fireA') { b.step = 'fireD'; rolled = this._stepFire('A'); }
+        else if (st === 'fireD') { b.step = 'endRound'; rolled = this._stepFire('D'); }
+        else return;
+        if (!rolled) continue;
+        if (b.hold) {
+          this._askCasualties();
+          if (b.step === 'endRound') return this._endRound();
+          b.need = 'roll';
           return;
         }
-        return;
+        if (b.pend.A || b.pend.D) {
+          if (!this._askCasualties()) { b.need = 'casualties'; return; }
+          this._lockIn();
+        }
       }
     }
+    _tag(dice, k) { for (const d of dice) d.k = k; return dice; }
+    /** Opening fire, round 1: AA guns shoot at attacking aircraft (hits are removed at once). */
+    _stepAA() {
+      const b = this.s.battle;
+      if (b.sea) return false;
+      const guns = this._side('D').filter((u) => this.def(u).aa);
+      const air = this._side('A').filter((u) => this.def(u).domain === 'air');
+      if (!guns.length || !air.length) return false;
+      let shots = 0;
+      for (const g of guns) shots += this.def(g).aa.maxShots;
+      shots = Math.min(shots, air.length);
+      const team = this._teamOf('D');
+      let n = 0;
+      const dice = [];
+      for (let i = 0; i < shots; i++) {
+        const r = this.roll(team, this.def(guns[0]).aa.hit);
+        dice.push({ id: guns[i % guns.length].id, t: guns[i % guns.length].t, v: 1, die: r.die, hit: r.hit, k: 'aa' });
+        if (r.hit) n++;
+      }
+      b.dice.D = b.dice.D.concat(dice);
+      b.lines.push(`AA fire: ${n} hit${n === 1 ? '' : 's'} from ${shots} shot${shots === 1 ? '' : 's'}`);
+      b.kind = 'aa';
+      if (n) b.pend.A = { any: 0, notAir: 0, notSub: 0, airOnly: n };
+      return true;
+    }
+    /** Opening fire, round 1 of an amphibious assault: ships bombard (casualties still fire back this round). */
+    _stepBombard() {
+      const b = this.s.battle;
+      if (b.sea || !b.bombard.length) return false;
+      const ships = b.bombard.map((id) => this.unit(id)).filter(Boolean);
+      if (!ships.length) return false;
+      const shot = this._fire(ships, 'A', { bombard: true });
+      b.dice.A = b.dice.A.concat(this._tag(shot.dice, 'bombard'));
+      const n = this._total(shot.hits);
+      b.lines.push(`Shore bombardment: ${n} hit${n === 1 ? '' : 's'}`);
+      b.kind = 'bombard';
+      if (n) b.pend.D = shot.hits;
+      return true;
+    }
+    /** Submarine surprise strike, each round, by subs the enemy has no destroyer against (hits are removed at once). */
+    _stepSubs() {
+      const b = this.s.battle;
+      const A = this._side('A'), D = this._side('D');
+      const aSubs = A.filter((u) => this.def(u).sub);
+      const dSubs = D.filter((u) => this.def(u).sub);
+      b.fired = {};
+      const aFirst = aSubs.length && !this._hasDestroyer(D);
+      const dFirst = dSubs.length && !this._hasDestroyer(A);
+      if (!aFirst && !dFirst) return false;
+      if (aFirst) {
+        const shot = this._fire(aSubs, 'A');
+        b.dice.A = b.dice.A.concat(this._tag(shot.dice, 'subs'));
+        for (const u of aSubs) b.fired[u.id] = 1;
+        if (this._total(shot.hits)) b.pend.D = shot.hits;
+      }
+      if (dFirst) {
+        const shot = this._fire(dSubs, 'D');
+        b.dice.D = b.dice.D.concat(this._tag(shot.dice, 'subs'));
+        for (const u of dSubs) b.fired[u.id] = 1;
+        if (this._total(shot.hits)) b.pend.A = shot.hits;
+      }
+      b.lines.push('Submarine surprise strike');
+      b.kind = 'subs';
+      return true;
+    }
+    /** General fire: the attacker's units, then the defender's (the defender's casualties fire back). */
+    _stepFire(side) {
+      const b = this.s.battle;
+      // nothing left on one side (AA fire or a surprise strike cleared it): no more dice this round
+      if (!this._side('A').length || !this._hittable('D').length) { b.step = 'endRound'; return false; }
+      const units = this._side(side).filter((u) => !b.fired[u.id] && !(side === 'D' && this.def(u).aa));
+      const shot = this._fire(units, side);
+      b.dice[side] = b.dice[side].concat(shot.dice);
+      const n = this._total(shot.hits);
+      b.lines.push(`${side === 'A' ? 'Attacker' : 'Defender'} scores ${n} hit${n === 1 ? '' : 's'}`);
+      b.kind = 'fire';
+      if (n) b.pend[side === 'A' ? 'D' : 'A'] = shot.hits;
+      return true;
+    }
     _defenselessOpt() { return { defenseless: this.R.transportsDefenseless, round: this.s.battle.round }; }
+    _candidates(side) {
+      const b = this.s.battle;
+      return this._hittable(side).filter((u) => !b.doomed.includes(u.id) || this.def(u).hp > 1);
+    }
+    /** Default picks for the pending hits (always with hold). True when every side with hits has picks. */
     _askCasualties() {
       const b = this.s.battle;
       b.picks = { A: null, D: null };
       for (const side of ['A', 'D']) {
         const h = b.pend[side];
         if (!h) continue;
-        const units = this._hittable(side).filter((u) => !b.doomed.includes(u.id) || this.def(u).hp > 1);
+        const units = this._candidates(side);
         const n = maxAssignable(this.R, units, h, this._defenselessOpt());
         if (n === 0) { b.pend[side] = null; continue; }
         const owner = side === 'A' ? b.att : (units[0] && units[0].o);
-        if (!owner || this.s.powers[owner].ai || this.s.autoCasualties) {
+        if (b.hold || !owner || this.s.powers[owner].ai || this.s.autoCasualties) {
           b.picks[side] = autoPicks(this.R, units, h, side, this._defenselessOpt());
         }
       }
-      if ((!b.pend.A || b.picks.A) && (!b.pend.D || b.picks.D)) {
-        if (b.hold) { b.held = true; b.need = 'casualties'; return; }
-        return this._applyCasualties();
-      }
-      b.need = 'casualties';
+      return (!b.pend.A || !!b.picks.A) && (!b.pend.D || !!b.picks.D);
     }
     /** For the UI: units the side may choose from and the default picks. */
     casualtyChoice(side) {
       const b = this.s.battle;
       if (!b || !b.pend[side]) return null;
-      const units = this._hittable(side).filter((u) => !b.doomed.includes(u.id) || this.def(u).hp > 1);
+      const units = this._candidates(side);
       return {
         units, hits: b.pend[side], need: maxAssignable(this.R, units, b.pend[side], this._defenselessOpt()),
         auto: autoPicks(this.R, units, b.pend[side], side, this._defenselessOpt()),
-        kind: b.kind,
+        kind: b.kind, picks: b.picks[side],
       };
     }
+    /** Choose casualties: when asked (b.need = 'casualties'), or with hold any time before they are locked in. */
     battleAssign(side, picks) {
       const b = this.s.battle;
-      if (!b || b.need !== 'casualties' || !b.pend[side]) return { ok: false, error: 'No casualties to choose' };
+      if (!b || b.over || !b.pend[side]) return { ok: false, error: 'No casualties to choose' };
       const ch = this.casualtyChoice(side);
       const err = validatePicks(this.R, ch.units, ch.hits, picks, this._defenselessOpt());
       if (err) return { ok: false, error: err };
       b.picks[side] = picks.slice();
-      if ((!b.pend.A || b.picks.A) && (!b.pend.D || b.picks.D)) {
-        if (b.hold) b.held = true;
-        else this._applyCasualties();
+      if (b.need === 'casualties' && (!b.pend.A || b.picks.A) && (!b.pend.D || b.picks.D)) {
+        this._lockIn();
+        b.need = 'roll';
+        this._runSteps();
       }
       return { ok: true };
     }
-    /** Apply casualties that are chosen but held for display (see b.hold). */
-    battleCommit() {
+    /**
+     * Apply the chosen casualties. Hits from AA fire and surprise strikes remove units at once; other
+     * casualties are doomed: they still fire this round and go when the round is settled.
+     */
+    _lockIn() {
       const b = this.s.battle;
-      if (!b || !b.held) return { ok: false, error: 'Nothing to apply' };
-      b.held = false;
-      this._applyCasualties();
-      return { ok: true };
-    }
-    _applyCasualties() {
-      const b = this.s.battle;
+      if (!b || (!b.pend.A && !b.pend.D)) return;
+      for (const side of ['A', 'D']) {
+        if (b.pend[side] && !b.picks[side]) { const ch = this.casualtyChoice(side); b.picks[side] = ch.auto; }
+      }
       const immediate = b.kind === 'aa' || b.kind === 'subs';
       for (const side of ['A', 'D']) {
         const picks = b.picks[side];
-        if (!picks) continue;
+        if (!picks || !picks.length) continue;
         const cnt = {};
         for (const id of picks) cnt[id] = (cnt[id] || 0) + 1;
+        const names = {};
+        for (const id of picks) { const u = this.unit(+id); if (u) names[u.t] = (names[u.t] || 0) + 1; }
         for (const id of Object.keys(cnt)) {
           const u = this.unit(+id);
           if (!u) continue;
@@ -1430,14 +1471,10 @@
             else if (!b.doomed.includes(u.id)) b.doomed.push(u.id);
           }
         }
-        const names = {};
-        for (const id of picks) { const u = this.unit(+id); if (u) names[u.t] = (names[u.t] || 0) + 1; }
         b.lines.push(`${side === 'A' ? 'Attacker' : 'Defender'} loses ${Object.keys(names).map((k) => names[k] + ' ' + this.R.units[k].short).join(', ')}`);
       }
       b.pend = { A: null, D: null };
       b.picks = { A: null, D: null };
-      b.need = 'roll';
-      this._runSteps();
     }
     /** IPC value of destroyed units, per team (for the result text). */
     _recordLoss(u) {
@@ -1462,40 +1499,79 @@
         b.lost = b.lost || { A: {}, D: {} };
         const side = u.o === b.att ? 'A' : 'D';
         b.lost[side][u.t] = (b.lost[side][u.t] || 0) + 1;
+        // kept for showing the round's casualties until the next round starts
+        if (b.roundDead && !u.tr) b.roundDead.push({ id: u.id, t: u.t, o: u.o, h: u.h || 0, side });
       }
     }
     _endRound() {
       const b = this.s.battle;
+      b.step = 'decide';
+      if (b.hold) {
+        // the round's casualties stay on show until the attacker decides (battleContinue, battleRetreat)
+        b.need = 'decision';
+        b.settled = false;
+        b.ending = this._wouldEnd();
+        return;
+      }
+      this._settle();
+    }
+    /** End of round: remove the casualties and see whether the battle is over. True if it ended. */
+    _settle() {
+      const b = this.s.battle;
+      this._lockIn();
       for (const id of b.doomed) { const u = this.unit(id); if (u) this._kill(u); }
       b.doomed = [];
       b.fired = {};
       b.bombard = [];
+      b.settled = true;
+      b.ending = false;
       // defenceless transports with nothing else left are sunk
       for (const side of ['A', 'D']) {
         const mine = this._side(side);
-        const other = this._side(side === 'A' ? 'D' : 'A');
-        if (this.R.transportsDefenseless && mine.length && mine.every((u) => this.def(u).transport) &&
-            other.some((u) => (side === 'A' ? this.def(u).def : this.def(u).att) > 0 && !this.def(u).sub && this.def(u).domain !== 'land')) {
+        if (this._defenceless(mine, this._side(side === 'A' ? 'D' : 'A'), side)) {
           for (const u of mine.slice()) this._kill(u);
           b.lines.push(`${side === 'A' ? 'Attacking' : 'Defending'} transports are sunk`);
         }
       }
-      const A = this._side('A'), D = this._hittable('D');
-      if (!A.length || !D.length) return this._endBattle();
-      const aCan = this._canHit(A, D), dCan = this._canHit(this._side('D'), A);
-      if (!aCan && !dCan) { b.lines.push('Neither side can harm the other'); return this._endBattle(); }
-      if (!aCan) {
-        // attacker can only take losses; it may still retreat
+      const over = this._roundOver(this._side('A'), this._side('D'));
+      if (over) {
+        if (over === 'stalemate') b.lines.push('Neither side can harm the other');
+        this._endBattle();
+        return true;
       }
       b.step = 'decide';
       b.need = 'decision';
-      if (this.s.powers[b.att].ai || this.s.autoBattle) b.need = 'decision';
+      return false;
+    }
+    _defenceless(mine, other, side) {
+      return !!(this.R.transportsDefenseless && mine.length && mine.every((u) => this.def(u).transport) &&
+        other.some((u) => (side === 'A' ? this.def(u).def : this.def(u).att) > 0 && !this.def(u).sub && this.def(u).domain !== 'land'));
+    }
+    _roundOver(A, Dall) {
+      const D = Dall.filter((u) => !this.def(u).infrastructure);
+      if (!A.length || !D.length) return 'empty';
+      if (!this._canHit(A, D, 'A') && !this._canHit(Dall, A, 'D')) return 'stalemate';
+      return null;
+    }
+    /** Units on a side that live through the casualties chosen so far (for decisions made before they go). */
+    survivors(side) {
+      const b = this.s.battle;
+      if (!b) return [];
+      const hits = {};
+      for (const id of b.picks[side] || []) hits[id] = (hits[id] || 0) + 1;
+      return this._side(side).filter((u) => !b.doomed.includes(u.id) && (u.h || 0) + (hits[u.id] || 0) < hp(this.def(u)));
+    }
+    /** Whether settling the round would end the battle (with hold, before the casualties are removed). */
+    _wouldEnd() {
+      const A = this.survivors('A'), D = this.survivors('D');
+      if (this._defenceless(A, D, 'A') || this._defenceless(D, A, 'D')) return true;
+      return !!this._roundOver(A, D);
     }
     retreatOptions() {
       const b = this.s.battle;
       if (!b || b.need !== 'decision') return [];
       const p = b.att;
-      const A = this._side('A');
+      const A = this.survivors('A');
       const set = new Set();
       for (const u of A) {
         const d = this.def(u);
@@ -1504,12 +1580,21 @@
           if (b.sea ? !this.enemies(u.prev, p).some((e) => this.blocksShips(e)) : this.friendlyOwner(u.prev, p)) set.add(u.prev);
         }
       }
-      if (!set.size && A.every((u) => this.def(u).domain === 'air')) set.add(b.id); // air-only: break off
+      if (!set.size && A.length && A.every((u) => this.def(u).domain === 'air')) set.add(b.id); // air-only: break off
       return [...set];
     }
+    /** With hold: remove the round's casualties now, ahead of the decision (e.g. before choosing where to retreat). */
+    battleSettle() {
+      const b = this.s.battle;
+      if (!b || b.need !== 'decision') return { ok: false, error: 'No decision pending' };
+      if (!b.settled) this._settle();
+      return { ok: true, over: !!b.over };
+    }
+    /** Press the attack: the round's casualties go and the next round starts (or the battle ends if it is over). */
     battleContinue() {
       const b = this.s.battle;
       if (!b || b.need !== 'decision') return { ok: false, error: 'No decision pending' };
+      if (!b.settled && this._settle()) return { ok: true };
       b.need = 'roll';
       return this.battleRoll();
     }
@@ -1517,6 +1602,7 @@
       const b = this.s.battle;
       if (!b || b.need !== 'decision') return { ok: false, error: 'No decision pending' };
       if (!this.retreatOptions().includes(to)) return { ok: false, error: 'Cannot retreat there' };
+      if (!b.settled && this._settle()) return { ok: true };
       const A = this._side('A');
       let left = 0;
       for (const u of A) {
@@ -1530,6 +1616,7 @@
       }
       b.lines.push(`Attacker retreats${to !== b.id ? ' to ' + this.B.name(to) : ''}`);
       this.log(`${b.att} retreats from ${this.B.name(b.id)}`);
+      b.retreatedTo = to;
       if (left) { b.need = 'roll'; return this.battleRoll(); }
       b.retreated = true;
       return this._endBattle();
@@ -1538,6 +1625,7 @@
     battleSubmerge(side) {
       const b = this.s.battle;
       if (!b || b.need !== 'decision') return { ok: false, error: 'Only between rounds' };
+      if (!b.settled && this._settle()) return { ok: true };
       const enemy = this._side(side === 'A' ? 'D' : 'A');
       if (this._hasDestroyer(enemy)) return { ok: false, error: 'An enemy destroyer prevents submerging' };
       const subs = this._side(side).filter((u) => this.def(u).sub);
@@ -1631,8 +1719,7 @@
         const b = this.s.battle;
         if (b.need === 'roll') this.battleRoll();
         else if (b.need === 'casualties') {
-          if (b.held) this.battleCommit();
-          else for (const side of ['A', 'D']) if (b.pend[side] && !b.picks[side]) this.battleAssign(side, this.casualtyChoice(side).auto);
+          for (const side of ['A', 'D']) if (b.pend[side] && !b.picks[side]) this.battleAssign(side, this.casualtyChoice(side).auto);
         } else if (b.need === 'decision') {
           const d = decide ? decide(this) : null;
           if (d && d.retreat) this.battleRetreat(d.retreat);

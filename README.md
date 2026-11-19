@@ -75,12 +75,23 @@ changes and push them.
 - **Battles:**
   - With several battles you pick each one from the list, and the page returns to the
     list after each. A single battle opens by itself.
-  - When you roll, the dice grow in from their own spots. The units about to be hit
-    shake briefly with a "−n" badge, then the hits are applied, cheapest units first.
-  - Rolling again shrinks the old dice away first.
-  - **Let me choose my casualties** (remembered per browser) switches to picking losses
-    yourself.
-  - Between rounds you can continue, retreat, submerge subs, or "fight to the end".
+  - A round follows the rule book. **Roll dice**: your dice grow in, then the defender's
+    casualties are marked ✕ with a brief shake. They stay on show and still fire back.
+    After a short pause the defender rolls, and your casualties are marked the same way.
+  - Both sides' dice and every casualty of the round stay on show. You can tap your units
+    to lose different ones (tap a marked unit to keep it; tap another to lose it instead).
+  - Then **Press the attack** (the casualties shrink away and the next round is rolled),
+    **Retreat**, or, if the battle is decided, **End of battle**. **Submerge subs** appears
+    when your submarines can dive.
+  - **Retreat** closes the battle window and outlines, with arrows, where your units can go.
+    Click one on the map and every unit that can retreat goes there together. Nothing else
+    can be done until then, apart from going back to the battle.
+  - When the computer attacks you, it rolls first and your casualties are marked. Change
+    them if you like, then **Roll for defense**. After your roll it pauses briefly and then
+    presses on or retreats.
+  - Opening fire (AA guns, shore bombardment, submarine surprise strikes) is shown the same
+    way, labelled by the dice. It pauses for you only when you have a choice of casualties.
+  - Reloading mid-battle resumes at the same step with the same dice.
   - Animations are skipped for players who ask their system for reduced motion.
 - The page is light by default; the ◐ button switches to dark mode, and the choice is
   remembered.
@@ -136,16 +147,21 @@ refreshes `puzzles/index.json`.
 | Tool | Key | Click | Shift-click | Right-click |
 |---|---|---|---|---|
 | Select | <kbd>S</kbd> | inspect/edit a territory in the right panel | | |
-| Playable | <kbd>P</kbd> | toggle in/out of play | add it **and all neighbours** | remove |
+| Playable | <kbd>P</kbd> | toggle in/out of play; a unit icon removes one of those units (a transport takes the cargo that no longer fits) | add it **and all neighbours** | remove |
 | Owner | <kbd>O</kbd> | set owner to the brush power (Alt: map default) | | neutral |
 | Units | <kbd>U</kbd>, <kbd>1</kbd>–<kbd>9</kbd> pick a unit | +1 (Ctrl: clear) | +5 | −1 |
 | Move | <kbd>M</kbd> | unit icon: pick that unit (again: one fewer; other icon: add it); territory: pick everything, or drop the picked units here | | cancel |
-| Objective | <kbd>J</kbd> | toggle territory in the chosen objective | | |
+| Objective | <kbd>J</kbd> | toggle territory in the chosen objective | | remove from it |
 
 Toolbar shortcuts in Playable mode: **+ Neighbours** grows the area by one ring,
 **+ Seas** adds sea zones that touch two or more playable coasts. Making a territory
 playable fills in its map owner and any factory. Powers are added automatically when
-you use them. Undo and redo: <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd>.
+you use them. Taking a territory out of play also takes it out of any objective. Only the
+Select tool selects; switching tools clears the selection. Undo and redo:
+<kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd>.
+
+If the draft cannot be opened at start-up (usually because its map is missing), the page
+starts a new puzzle and keeps the draft; **Files** offers to open it once the map is back.
 
 **Tabs:**
 
@@ -291,7 +307,10 @@ it makes no multi-turn plans.
 Search it, open a map, pick one of its games (starting setups), and **Import**. The tool
 reads the map's text files straight from `raw.githubusercontent.com/triplea-maps/…`:
 `map.yml`, the game XML, `polygons.txt`, `centers.txt` and `map.properties`. It writes
-`maps/<id>.json` and adds it to `maps/index.json`. From a terminal:
+`maps/<id>.json` and adds it to `maps/index.json`. Without the server (for example on
+GitHub Pages) the map file downloads for you to add to `maps/` and `maps/index.json`, and a
+copy is kept in the browser (IndexedDB), so you can build and play-test puzzles on it
+straight away. From a terminal:
 
 ```sh
 node tools/triplea_fetch.js list "1942"                       # search the catalogue

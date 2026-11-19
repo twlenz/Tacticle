@@ -2,11 +2,13 @@
 (function () {
   'use strict';
   const E = window.TacticleEngine, Rules = window.TacticleRules, D = window.TacticleDaily, I = window.TacticleIcons, TA = window.TacticleTripleA, GEN = window.TacticleGen;
+  const LM = window.TacticleLocalMaps;
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const store = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* full */ } },
+    del(k) { try { localStorage.removeItem(k); } catch (e) { /* blocked */ } },
   };
   const TABS = [['scenario', 'Scenario'], ['powers', 'Powers'], ['objectives', 'Objectives'], ['generate', 'Generate'], ['test', 'Test'], ['schedule', 'Schedule'], ['files', 'Files']];
   const TOOLS = [['select', 'Select', 'S'], ['playable', 'Playable', 'P'], ['owner', 'Owner', 'O'], ['units', 'Units', 'U'], ['move', 'Move', 'M'], ['objective', 'Objective', 'J']];
@@ -23,14 +25,49 @@
     await refreshPuzzles();
     try { A.schedule = await getJSON('schedule.json'); } catch (e) { A.schedule = { epoch: D.today(), days: {} }; }
     A.schedule.days = A.schedule.days || {};
-    const draft = store.get('tacticle:authorDraft');
-    A.sc = draft && draft.sc ? draft.sc : newScenario((A.maps[0] || {}).id);
-    A.savedJSON = draft ? draft.savedJSON : null;
-    await useMap(A.sc.map, true);
+    // maps imported in this browser (no server to save them to) are listed too
+    if (LM && !A.server) for (const m of await LM.list()) if (!A.maps.some((x) => x.id === m.id)) A.maps.push({ id: m.id, name: m.name, file: `maps/${m.id}.json`, local: true });
     wire();
-    renderAll();
+    const draft = store.get('tacticle:authorDraft');
+    let problem = null;
+    if (draft && draft.sc && typeof draft.sc === 'object') {
+      try {
+        A.savedJSON = draft.savedJSON || null;
+        await useMap(draft.sc.map, Object.assign(newScenario(draft.sc.map), draft.sc), true);
+        renderAll();
+      } catch (e) {
+        // keep the draft so nothing is lost, and start fresh instead of failing to load
+        console.error(e);
+        problem = e.message;
+        store.set('tacticle:authorDraftUnopened', draft);
+        A.sc = null;
+      }
+    }
+    if (!A.sc) {
+      A.savedJSON = null;
+      const first = (A.maps.find((m) => !m.local) || A.maps[0] || {}).id || 'world1942';
+      await useMap(first, newScenario(first), true);
+      renderAll();
+    }
     if (!A.sc.playable.length) A.mv.setFocus(null);
-    toast(A.server ? 'Connected to the local server: Save writes into puzzles/ and schedule.json' : 'No local server: Save downloads files (or connect a folder in Files)', 4000);
+    if (problem) toast(`Your last draft could not be opened, so this is a new puzzle. ${problem}`, 9000);
+    else toast(A.server ? 'Connected to the local server: Save writes into puzzles/ and schedule.json' : 'No local server: Save downloads files (or connect a folder in Files)', 4000);
+  }
+  /** Last resort: say what went wrong on the page rather than leaving it blank. */
+  function showFatal(e) {
+    console.error(e);
+    const box = document.createElement('div');
+    box.className = 'fatal';
+    box.innerHTML = `<b>The authoring tool could not start.</b><p>${esc((e && e.message) || e)}</p><button id="fatalReset">Start over</button><p class="hint">Starting over sets aside the unsaved draft in this browser. Saved puzzles are not touched.</p>`;
+    document.body.appendChild(box);
+    $('fatalReset').onclick = () => {
+      try {
+        const d = localStorage.getItem('tacticle:authorDraft');
+        if (d) localStorage.setItem('tacticle:authorDraftUnopened', d);
+        localStorage.removeItem('tacticle:authorDraft');
+      } catch (x) { /* storage blocked */ }
+      location.reload();
+    };
   }
   async function getJSON(url) {
     const r = await fetch(url, { cache: 'no-store' });
@@ -50,18 +87,51 @@
       powers: {}, turnOrder: [], setup: {}, objectives: [{ type: 'capture', territories: [] }],
     };
   }
-  async function useMap(id, initial) {
+  /** The map from this site, or the copy kept in this browser for maps imported without a server. */
+  async function fetchMap(id) {
     const known = A.maps.find((m) => m.id === id);
-    const entry = known && /^maps\/[a-z0-9][a-z0-9_-]{0,63}\.json$/i.test(known.file) ? known : { file: `maps/${String(id).replace(/[^a-z0-9_-]/gi, '')}.json` };
-    const map = await getJSON(entry.file);
+    const file = known && /^maps\/[a-z0-9][a-z0-9_-]{0,63}\.json$/i.test(known.file) ? known.file : `maps/${String(id).replace(/[^a-z0-9_-]/gi, '')}.json`;
+    let map = known && known.local && LM ? await LM.get(id) : null;
+    if (!map) {
+      try { map = await getJSON(file); } catch (e) { map = LM ? await LM.get(id) : null; }
+    }
+    if (!map) throw new Error(`The map “${id}” is not on this site (${file}) and no copy of it is kept in this browser. Add the map file to maps/ and maps/index.json, or import it again.`);
+    if (!Array.isArray(map.territories) || !map.territories.length) throw new Error(`${file} is not a Tacticle map`);
+    return map;
+  }
+  /**
+   * Switch to a map together with the scenario that belongs on it. Nothing changes if the map cannot be
+   * loaded, so a missing map can never leave a scenario pointing at territories that are not there.
+   */
+  async function useMap(id, sc, initial, mapObj) {
+    const map = mapObj || await fetchMap(id);
     A.map = map;
     A.T = {};
     for (const t of map.territories) A.T[t.id] = t;
+    A.sc = tidy(sc || A.sc);
+    A.sc.map = map.id;
+    A.selected = null;
+    A.msel = null;
     if (A.mv) A.mv.destroy();
-    A.mv = new window.TacticleMapView($('map'), map, { onClick, onContext, onHover, onDblClick: (id) => { if (id) { A.selected = id; renderAll(); } } });
+    A.mv = new window.TacticleMapView($('map'), map, { onClick, onContext, onHover });
     A.mv.setFocus(A.sc.playable.length ? A.sc.playable : null);
-    if (!A.brush.power) A.brush.power = (map.powers[0] || {}).id;
+    if (!A.brush.power || !(map.powers || []).some((p) => p.id === A.brush.power)) A.brush.power = ((map.powers || [])[0] || {}).id;
     if (!initial) renderAll();
+  }
+  /** Drop anything the current map does not have, so an old draft or a re-imported map cannot break the editor. */
+  function tidy(sc) {
+    const base = newScenario(A.map.id);
+    for (const k of Object.keys(base)) if (sc[k] == null) sc[k] = base[k];
+    sc.playable = [...new Set((Array.isArray(sc.playable) ? sc.playable : []).filter((id) => A.T[id]))];
+    if (typeof sc.setup !== 'object') sc.setup = {};
+    for (const id of Object.keys(sc.setup)) if (!A.T[id] || !sc.setup[id] || typeof sc.setup[id] !== 'object') delete sc.setup[id];
+    sc.objectives = (Array.isArray(sc.objectives) ? sc.objectives : []).filter((o) => o && typeof o === 'object');
+    if (!sc.objectives.length) sc.objectives = [{ type: 'capture', territories: [] }];
+    for (const o of sc.objectives) o.territories = (Array.isArray(o.territories) ? o.territories : []).filter((id) => A.T[id]);
+    if (typeof sc.powers !== 'object' || Array.isArray(sc.powers)) sc.powers = {};
+    sc.turnOrder = (Array.isArray(sc.turnOrder) ? sc.turnOrder : []).filter((p) => sc.powers[p]);
+    for (const p of Object.keys(sc.powers)) if (!sc.turnOrder.includes(p)) sc.turnOrder.push(p);
+    return sc;
   }
 
   // ------------------------------------------------------------------ scenario helpers
@@ -123,8 +193,36 @@
         const has = Object.values(st.units).some((u) => u.factory);
         if (!has && !(A.sc.setup[id].noFactory)) { st.units[o] = st.units[o] || {}; st.units[o].factory = 1; }
       }
-    } else set.delete(id);
+    } else {
+      set.delete(id);
+      // an objective must be playable, and units cannot leave a territory that is gone
+      const dropped = [];
+      A.sc.objectives.forEach((o, i) => { const j = o.territories.indexOf(id); if (j >= 0) { o.territories.splice(j, 1); dropped.push(i + 1); } });
+      if (dropped.length) toast(`${A.T[id].name} left objective ${dropped.map((n) => '#' + n).join(', ')}`);
+      if (A.msel && A.msel.from === id) A.msel = null;
+    }
     A.sc.playable = [...set];
+  }
+  /** Removes one unit shown by a chip; a transport takes the cargo that no longer fits with it. */
+  function removeOne(id, chip) {
+    edit(() => {
+      addUnit(id, chip.o, chip.t, -1);
+      if (chip.t !== 'transport') return;
+      const us = ((A.sc.setup[id] || {}).units || {})[chip.o] || {};
+      const cost = (k) => (R().units[k].transportCost || 3);
+      const cap = (us.transport || 0) * ((R().units.transport || {}).capacity || 5);
+      const land = Rules.UNIT_ORDER.filter((k) => us[k] && R().units[k] && R().units[k].domain === 'land').reverse();
+      let need = land.reduce((a, k) => a + us[k] * cost(k), 0);
+      for (const k of land) {
+        while (need > cap && us[k]) { addUnit(id, chip.o, k, -1); need -= cost(k); }
+      }
+    });
+  }
+  function setTool(t) {
+    if (A.tool !== t) A.selected = null; // a selection belongs to the tool that made it
+    A.tool = t;
+    A.msel = null;
+    renderAll();
   }
   function objectiveIdsOf(id) {
     return A.sc.objectives.map((o, i) => (o.territories.includes(id) ? i : -1)).filter((i) => i >= 0);
@@ -136,21 +234,15 @@
     if (A.hist.length > 150) A.hist.shift();
     A.fut = [];
   }
-  function undo() {
-    if (!A.hist.length) return;
+  function undo() { step(A.hist, A.fut); }
+  function redo() { step(A.fut, A.hist); }
+  function step(from, to) {
+    if (!from.length) return;
     A.msel = null;
-    A.fut.push(JSON.stringify(A.sc));
-    const prevMap = A.sc.map;
-    A.sc = JSON.parse(A.hist.pop());
-    if (A.sc.map !== prevMap) useMap(A.sc.map); else renderAll();
-  }
-  function redo() {
-    if (!A.fut.length) return;
-    A.msel = null;
-    A.hist.push(JSON.stringify(A.sc));
-    const prevMap = A.sc.map;
-    A.sc = JSON.parse(A.fut.pop());
-    if (A.sc.map !== prevMap) useMap(A.sc.map); else renderAll();
+    const next = JSON.parse(from.pop());
+    to.push(JSON.stringify(A.sc));
+    if (next.map === A.sc.map) { A.sc = next; renderAll(); return; }
+    useMap(next.map, next).catch((e) => { from.push(JSON.stringify(next)); to.pop(); toast(e.message, 6000); });
   }
   function draft() { store.set('tacticle:authorDraft', { sc: A.sc, savedJSON: A.savedJSON }); }
   function dirty() { return JSON.stringify(pruned(A.sc)) !== A.savedJSON; }
@@ -229,6 +321,7 @@
         if (chip) moveChip(id, chip); else moveTerritory(id);
         return;
       case 'playable':
+        if (chip && A.sc.playable.includes(id)) { removeOne(id, chip); return; }
         edit(() => {
           const on = !A.sc.playable.includes(id);
           if (ev && ev.shiftKey) {
@@ -277,7 +370,10 @@
     if (A.tool === 'units') edit(() => addUnit(id, A.brush.unit === 'factory' ? (ownerOf(id) || A.brush.power) : A.brush.power, A.brush.unit, -1));
     else if (A.tool === 'owner') edit(() => setOwner(id, null));
     else if (A.tool === 'playable') edit(() => setPlayable(id, false));
-    else { A.selected = id; renderAll(); }
+    else if (A.tool === 'objective') {
+      const o = A.sc.objectives[A.brush.obj];
+      if (o && o.territories.includes(id)) edit(() => o.territories.splice(o.territories.indexOf(id), 1));
+    } else if (A.tool === 'select') { A.selected = id; renderAll(); }
   }
   function onHover(id, ev) {
     const tip = $('tip');
@@ -358,14 +454,14 @@
     const hint = {
       select: 'Click a territory to inspect and edit it.',
       move: A.msel ? `${mselTotal()} selected. Click where they go (right-click or Esc cancels). Icon clicks: one fewer, or add another type.` : 'Click a unit icon to pick those units (again: one fewer; another icon: add it), or the territory for everything. Then click where they go.',
-      playable: 'Click toggles. Shift-click adds a territory and all its neighbours. Right-click removes.',
+      playable: 'Click toggles. Click a unit icon to remove one. Shift-click adds a territory and all its neighbours. Right-click removes.',
       owner: 'Click sets the owner. Right-click makes it neutral. Alt-click restores the map owner.',
       units: 'Click +1, Shift +5, right-click −1, Ctrl-click clears. Keys 1–9 pick a unit.',
-      objective: 'Click toggles a territory in the chosen objective.',
+      objective: 'Click toggles a territory in the chosen objective. Right-click removes.',
     }[A.tool];
     h.push(`<div class="tgroup" style="padding:4px 8px;font-size:12.5px;color:var(--muted)">${hint}</div>`);
     $('toolbar').innerHTML = h.join('');
-    $('toolbar').querySelectorAll('[data-tool]').forEach((b) => b.onclick = () => { A.tool = b.dataset.tool; A.msel = null; renderAll(); });
+    $('toolbar').querySelectorAll('[data-tool]').forEach((b) => b.onclick = () => setTool(b.dataset.tool));
     $('toolbar').querySelectorAll('[data-unit]').forEach((b) => b.onclick = () => { A.brush.unit = b.dataset.unit; renderToolbar(); });
     const bp = $('brushPower'); if (bp) bp.onchange = () => { A.brush.power = bp.value; renderToolbar(); };
     const bo = $('brushObj'); if (bo) bo.onchange = () => { A.brush.obj = +bo.value; renderAll(); };
@@ -377,7 +473,7 @@
       const play = new Set(A.sc.playable);
       for (const t of A.map.territories) if (t.type === 'sea' && t.adj.filter((y) => play.has(y) && A.T[y].type === 'land').length >= 2) setPlayable(t.id, true);
     }));
-    on('tbClr', () => { if (confirm('Remove every territory from play?')) edit(() => { A.sc.playable = []; }); });
+    on('tbClr', () => { if (confirm('Remove every territory from play?')) edit(() => { A.sc.playable = []; A.sc.objectives.forEach((o) => { o.territories = []; }); A.selected = null; A.msel = null; }); });
   }
 
   // ------------------------------------------------------------------ inspector
@@ -517,10 +613,11 @@
     bindInput(el, '#sDiff', (e) => upd(() => { sc.difficulty = e.value; }));
     bindInput(el, '#sMap', (e) => {
       if (A.sc.playable.length && !confirm('Switching maps clears the playable area, owners and units. Continue?')) { renderTab(); return; }
-      commit();
       const keep = { title: sc.title, id: sc.id, ruleset: sc.ruleset, description: sc.description, author: sc.author };
-      A.sc = Object.assign(newScenario(e.value), keep);
-      useMap(e.value);
+      const before = JSON.stringify(A.sc);
+      useMap(e.value, Object.assign(newScenario(e.value), keep))
+        .then(() => { A.hist.push(before); A.fut = []; renderAll(); })
+        .catch((err) => { toast(err.message, 6000); renderTab(); });
     });
     bindInput(el, '#sRules', (e) => upd(() => { sc.ruleset = e.value; }));
     bindInput(el, '#sTurns', (e) => upd(() => { sc.maxTurns = Math.max(1, Math.min(20, +e.value || 1)); }));
@@ -599,13 +696,13 @@
     el.querySelectorAll('[data-otype]').forEach((s) => s.onchange = () => edit(() => { sc.objectives[+s.dataset.otype].type = s.value; }));
     el.querySelectorAll('[data-opick]').forEach((b) => b.onclick = (e) => {
       if (e.target.closest('button, select, input')) return;
-      A.brush.obj = +b.dataset.opick; A.tool = 'objective'; renderAll();
+      A.brush.obj = +b.dataset.opick; setTool('objective');
     });
     el.querySelectorAll('[data-odel]').forEach((b) => b.onclick = () => edit(() => { sc.objectives.splice(+b.dataset.odel, 1); A.brush.obj = 0; }));
     el.querySelectorAll('[data-orm]').forEach((b) => b.onclick = () => edit(() => { const [i, id] = b.dataset.orm.split('|'); sc.objectives[+i].territories = sc.objectives[+i].territories.filter((x) => x !== id); }));
     const need = $('oNeed');
     if (need) need.onchange = () => edit(() => { if (+need.value > 0) sc.objectivesNeeded = +need.value; else delete sc.objectivesNeeded; });
-    $('oAdd').onclick = () => edit(() => { sc.objectives.push({ type: 'capture', territories: [] }); A.brush.obj = sc.objectives.length - 1; A.tool = 'objective'; });
+    $('oAdd').onclick = () => edit(() => { sc.objectives.push({ type: 'capture', territories: [] }); A.brush.obj = sc.objectives.length - 1; if (A.tool !== 'objective') A.selected = null; A.tool = 'objective'; });
   }
 
   function tabGenerate(el) {
@@ -743,6 +840,7 @@
     el.innerHTML = `<div class="actions"><button id="fNew">New</button><button id="fSaveAs">Save as…</button><button id="fDl">Download JSON</button><label class="small" style="border:1px solid var(--line);border-radius:8px;padding:3px 8px;cursor:pointer">Open JSON…<input type="file" id="fOpen" accept=".json" hidden></label></div>
       <p class="hint">${A.server ? 'Saving writes <code>puzzles/&lt;id&gt;.json</code> through the local server.' : A.dir ? 'Saving writes into the connected folder.' : 'No local server. Run <code>node tools/serve.js</code> in the repository, or connect the repository folder (Chrome/Edge), or download files and copy them into <code>puzzles/</code>.'}</p>
       ${!A.server && window.showDirectoryPicker ? `<div class="actions"><button id="fDir">${A.dir ? 'Folder connected ✓' : 'Connect repository folder…'}</button></div>` : ''}
+      ${unopenedHtml()}
       <div class="h">Saved puzzles (${A.puzzles.length})</div>
       <div class="list plist">${A.puzzles.map((p) => `<div class="urow ${p.id === A.sc.id ? 'cur' : ''}"><span class="nm">${esc(p.title || p.id)}<small>${esc(p.id)} · ${esc(p.map || '')} · ${esc(p.ruleset || '')} · ${p.maxTurns || '?'} turns${Object.values(A.schedule.days).includes(p.file) ? ' · scheduled' : ''}</small></span><button class="small" data-load="${esc(p.file)}">Open</button>${A.server ? `<button class="small" data-delp="${esc(p.id)}">✕</button>` : ''}</div>`).join('') || '<p class="hint">None yet.</p>'}</div>`;
     $('fNew').onclick = () => { if (dirty() && !confirm('Discard unsaved changes?')) return; commit(); loadScenario(newScenario(A.map.id), false); A.savedJSON = null; renderAll(); };
@@ -752,10 +850,19 @@
       const f = e.target.files[0]; if (!f) return;
       try { const sc = JSON.parse(await f.text()); loadScenario(sc, true); } catch (err) { toast('Not a scenario: ' + err.message); }
     };
+    const fu = $('fUnopened');
+    if (fu) {
+      fu.onclick = async () => {
+        if (dirty() && !confirm('Discard unsaved changes?')) return;
+        const d = store.get('tacticle:authorDraftUnopened');
+        if (d && d.sc && await loadScenario(d.sc, true)) { store.del('tacticle:authorDraftUnopened'); renderAll(); }
+      };
+      $('fUnopenedX').onclick = () => { store.del('tacticle:authorDraftUnopened'); renderTab(); };
+    }
     const fd = $('fDir'); if (fd) fd.onclick = async () => { try { A.dir = await window.showDirectoryPicker({ mode: 'readwrite' }); toast('Folder connected'); renderTab(); } catch (e) { /* cancelled */ } };
     el.querySelectorAll('[data-load]').forEach((b) => b.onclick = async () => {
       if (dirty() && !confirm('Discard unsaved changes?')) return;
-      try { const sc = await getJSON(b.dataset.load); loadScenario(sc, false); A.savedJSON = JSON.stringify(pruned(A.sc)); renderAll(); } catch (e) { toast(e.message); }
+      try { await loadScenario(await getJSON(b.dataset.load), false); } catch (e) { toast(e.message); }
     });
     el.querySelectorAll('[data-delp]').forEach((b) => b.onclick = async () => {
       if (!confirm(`Delete puzzle ${b.dataset.delp}? Scheduled days that use it will be cleared.`)) return;
@@ -767,19 +874,29 @@
     });
   }
 
+  /** A draft set aside at start-up because its map was missing; it can be reopened once the map is back. */
+  function unopenedHtml() {
+    const d = store.get('tacticle:authorDraftUnopened');
+    if (!d || !d.sc) return '';
+    return `<div class="msg warn">An unsaved draft, “${esc(d.sc.title || d.sc.id || 'Untitled')}” on the map ${esc(d.sc.map)}, could not be opened. Once its map is available (import it again, or add it to maps/), open it here.
+      <div class="actions"><button class="small" id="fUnopened">Open that draft</button><button class="small" id="fUnopenedX">Discard it</button></div></div>`;
+  }
+  /** Resolves true once the scenario is open, false if its map could not be loaded (nothing changes then). */
   async function loadScenario(sc, markDirty) {
     commit();
     sc = Object.assign(newScenario(sc.map), sc);
     sc.setup = sc.setup || {};
     sc.objectives = sc.objectives && sc.objectives.length ? sc.objectives : [{ type: 'capture', territories: [] }];
     const mapChanged = !A.map || sc.map !== A.map.id;
-    A.sc = sc;
+    if (mapChanged) {
+      try { await useMap(sc.map, sc, true); } catch (e) { A.hist.pop(); toast(e.message, 6000); return false; }
+    } else A.sc = tidy(sc);
     A.selected = null;
     A.brush.obj = 0;
-    if (mapChanged) await useMap(sc.map);
-    A.mv.setFocus(sc.playable.length ? sc.playable : null);
-    if (!markDirty) A.savedJSON = JSON.stringify(pruned(sc));
+    A.mv.setFocus(A.sc.playable.length ? A.sc.playable : null);
+    if (!markDirty) A.savedJSON = JSON.stringify(pruned(A.sc));
     renderAll();
+    return true;
   }
 
   // ------------------------------------------------------------------ saving
@@ -943,24 +1060,18 @@
       A.maps = j.maps;
     } else {
       download(id + '.json', text);
-      A.maps.push({ id, name: map.name, file: 'maps/' + id + '.json' });
-      toast('Downloaded; copy it into maps/ and add it to maps/index.json', 4000);
+      let kept = false;
+      if (LM) try { await LM.put(map); kept = true; } catch (e) { /* private window or storage full */ }
+      if (!A.maps.some((m) => m.id === id)) A.maps.push({ id, name: map.name, file: 'maps/' + id + '.json', local: kept });
+      toast(kept ? 'Downloaded, and kept in this browser so you can build on it now. To publish puzzles on it, copy the file into maps/ and add it to maps/index.json.' : 'Downloaded; copy it into maps/ and add it to maps/index.json', 6000);
     }
     dialog(`<h2>Imported “${esc(map.name)}”</h2><p>${map.territories.length} territories, ${map.powers.length} powers${A.server ? `, saved as <code>maps/${esc(id)}.json</code>` : ''}.</p>${map.warnings.length ? '<p class="hint">' + map.warnings.slice(0, 6).map(esc).join('<br>') + '</p>' : ''}<div class="actions"><button data-close>Close</button><button class="primary" id="taUse">Start a puzzle on it</button></div>`);
     $('taUse').onclick = () => {
       if (dirty() && !confirm('Start a new puzzle on this map? Unsaved changes to the current one will be lost.')) return;
-      closeDialog(); commit(); A.sc = newScenario(id);
-      if (A.server) useMap(id); else useMapObject(map);
+      closeDialog(); commit();
+      A.savedJSON = null;
+      useMap(id, newScenario(id), false, map).catch((e) => { A.hist.pop(); toast(e.message, 6000); });
     };
-  }
-  function useMapObject(map) {
-    A.map = map;
-    A.T = {};
-    for (const t of map.territories) A.T[t.id] = t;
-    if (A.mv) A.mv.destroy();
-    A.mv = new window.TacticleMapView($('map'), map, { onClick, onContext, onHover });
-    A.mv.setFocus(null);
-    renderAll();
   }
 
   // ------------------------------------------------------------------ worker jobs
@@ -1009,7 +1120,7 @@
     $('zfit').onclick = () => A.mv.setFocus(A.sc.playable.length ? A.sc.playable : null);
     $('zworld').onclick = () => A.mv.setFocus(null);
     $('modal').addEventListener('click', (e) => { if (e.target === $('modal')) closeDialog(); });
-    window.addEventListener('beforeunload', (e) => { if (dirty() || A.schedDirty) { e.preventDefault(); e.returnValue = ''; } });
+    window.addEventListener('beforeunload', (e) => { if ((A.sc && dirty()) || A.schedDirty) { e.preventDefault(); e.returnValue = ''; } });
     document.addEventListener('keydown', (e) => {
       const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement && document.activeElement.tagName);
       if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); return; }
@@ -1019,16 +1130,16 @@
       if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); return; }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const tool = TOOLS.find((t) => t[2].toLowerCase() === e.key.toLowerCase());
-      if (tool) { A.tool = tool[0]; A.msel = null; renderAll(); return; }
+      if (tool) { setTool(tool[0]); return; }
       if (/^[1-9]$/.test(e.key)) {
         const list = Rules.UNIT_ORDER.filter((t) => R().units[t]);
         const u = list[+e.key - 1];
-        if (u) { A.brush.unit = u; A.tool = 'units'; renderAll(); }
+        if (u) { A.brush.unit = u; setTool('units'); }
       }
       if (e.key === 'Escape') { A.selected = null; A.msel = null; closeDialog(); renderAll(); }
     });
   }
 
   window.TacticleAuthor = { A, save, loadScenario, renderAll };
-  boot();
+  boot().catch(showFatal);
 })();

@@ -12,7 +12,7 @@
   };
   const S = {
     map: null, sc: null, g: null, ai: null, mv: null, date: null, number: null, key: null, test: false,
-    sel: null, dest: {}, undo: [], busy: false, fast: false, placeType: null, picks: {}, waitAck: null,
+    sel: null, dest: {}, undo: [], busy: false, fast: false, placeType: null, edit: null, anim: {}, retreat: null,
   };
 
   // ------------------------------------------------------------------ boot
@@ -87,7 +87,12 @@
       const m = (idx.maps || []).find((x) => x.id === id);
       if (m && /^maps\/[a-z0-9][a-z0-9_-]{0,63}\.json$/i.test(m.file)) file = m.file;
     } catch (e) { /* default path */ }
-    return getJSON(file);
+    try { return await getJSON(file); } catch (e) {
+      // a play test may run on a map imported in the authoring tool and kept only in this browser
+      const local = S.test && window.TacticleLocalMaps ? await window.TacticleLocalMaps.get(id) : null;
+      if (local) return local;
+      throw e;
+    }
   }
 
   // ---------------------------------------------------------------- daily game vs free play
@@ -109,10 +114,9 @@
       save();
     }
     S.g.s.uiHold = true;
-    S.chooseOwn = store.get('tacticle:chooseCasualties') === true;
-    S.g.s.autoCasualties = !S.chooseOwn;
+    S.g.s.autoCasualties = true;
     S.ai = new TAI(S.g);
-    S.sel = null; S.dest = {}; S.unload = {}; S.placeType = null; S.picks = {};
+    S.sel = null; S.dest = {}; S.unload = {}; S.placeType = null; S.edit = null; S.anim = {}; S.retreat = null;
     $('puzzleNo').textContent = (S.puzzleLabel || '') + (S.mode === 'free' ? ' · free play' : '');
   }
   async function enterFreePlay(fresh) {
@@ -187,7 +191,7 @@
   function humanTurn() { const g = G(); return g.phase !== 'gameOver' && !g.s.powers[g.current()].ai; }
   function color(p) { return (S.map.powers.find((x) => x.id === p) || {}).color || '#888'; }
   function uname(t) { return (G().R.units[t] || {}).name || t; }
-  function canUndo() { return humanTurn() && S.undo.length > 0 && ['combatMove', 'noncombatMove', 'place'].includes(G().phase) && !G().s.battle; }
+  function canUndo() { return humanTurn() && S.undo.length > 0 && ['combatMove', 'noncombatMove', 'place'].includes(G().phase) && !G().s.battle && !S.retreat; }
   function toast(msg, ms) {
     const t = $('toast');
     t.textContent = msg;
@@ -290,6 +294,11 @@
   }
 
   function onClick(id, ev, chip) {
+    if (S.retreat) {
+      if (id && S.retreat.opts.includes(id)) doRetreat(id);
+      else toast('Choose one of the highlighted territories to retreat to');
+      return;
+    }
     if (!id || S.busy) { if (!S.busy) clearSel(); return; }
     const g = G();
     if (!humanTurn()) return;
@@ -419,6 +428,7 @@
     for (const id of Object.keys(S.dest)) hl[id] = S.dest[id];
     for (const id of Object.keys(S.unload || {})) if (!hl[id]) hl[id] = S.unload[id];
     if (g.phase === 'combat') for (const id of g.s.battles) hl[id] = 'battle';
+    if (S.retreat) for (const id of S.retreat.opts) hl[id] = 'move';
     if (g.phase === 'place' && S.placeType && humanTurn()) for (const id of g.placeTargets(S.placeType)) hl[id] = 'place';
     const objectives = {};
     for (const o of S.sc.objectives || []) for (const id of o.territories || []) objectives[id] = o.type;
@@ -447,6 +457,9 @@
     if (g.phase === 'gameOver') {
       parts.push(`<div class="h">Result</div><p><b>${g.s.result.won ? '🏆 Victory' : '💀 Defeat'}</b> — ${esc(g.s.result.reason)}</p><div class="actions"><button class="primary" id="pResult">Share result</button>${!S.test && S.mode === 'daily' ? '<button id="pFree">Free play</button>' : ''}</div>`);
       if (S.test) parts.push('<div class="actions"><button id="pRestart">Restart test</button></div>');
+    } else if (S.retreat) {
+      const from = S.mv.T[S.retreat.from].name;
+      parts.push(`<div class="h">Retreat from ${esc(from)}</div><p>Click a highlighted territory on the map. Every unit that can retreat goes there together${G().units(S.retreat.from).some((u) => u.o === G().s.battle.att && u.amph) ? '; units that landed from the sea cannot retreat and fight on' : ''}.</p><div class="actions"><button id="pRetBack">Back to the battle</button></div>`);
     } else if (!humanTurn()) {
       parts.push(`<div class="h">${esc(p)}'s turn</div><p class="hint">The computer is moving…</p>`);
     } else {
@@ -546,6 +559,7 @@
       computeDest(); render();
     });
     q('[data-fight]').forEach((b) => b.onclick = () => fight(b.dataset.fight));
+    const rb = $('pRetBack'); if (rb) rb.onclick = cancelRetreat;
     q('[data-ptype]').forEach((b) => b.onclick = () => { S.placeType = b.dataset.ptype; render(); });
     const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
     on('pUndo', undo);
@@ -610,12 +624,8 @@
   function continueFlow() {
     const g = G();
     if (g.phase === 'gameOver') { render(); showResult(); return; }
-    if (g.s.battle && g.s.battle.held && !S.animating) {
-      // reloaded while hits were on show: finish applying them
-      openBattle();
-      animateBattle().then(afterBattleAction);
-      return;
-    }
+    if (S.retreat) { render(); return; }
+    if (g.s.battle && g.s.battle.hold) { openBattle(); driveBattle(); return; }
     if (g.s.battle) { openBattle(); if (!g.s.powers[g.s.battle.att].ai) return; }
     if (humanTurn()) {
       const pw = g.s.powers[g.current()];
@@ -643,15 +653,13 @@
         if (G() !== g) return; // the game was switched (free play / reset)
         if (g.phase === 'gameOver') break;
         const b = g.s.battle;
-        if (b && b.over && humanInvolved(b) && !S.fast) {
+        if (b && b.hold) {
+          // a battle the person is in: its own pace, and it waits for them where they act
           openBattle();
-          await new Promise((res) => { S.waitAck = res; });
+          if (await driveBattle()) break;
+          continue;
         }
         if (!b && humanTurn()) break;
-        if (b && !b.over && humanInvolved(b)) {
-          if (b.held) { openBattle(); await animateBattle(); continue; }
-          if (b.need === 'roll' && g.s.powers[b.att].ai && S.battleOpen) await shrinkDice();
-        }
         const p = g.current();
         banner.classList.add('on');
         $('bannerText').textContent = `${p} is moving…`;
@@ -662,8 +670,7 @@
           S.mv.arrows([{ path: [a.from, a.to], cls: 'enemy' }]);
           $('bannerText').textContent = `${p}: ${S.mv.T[a.from].name} → ${S.mv.T[a.to].name}`;
         }
-        if (g.s.battle && humanInvolved(g.s.battle)) openBattle();
-        else if (a.type === 'battleEnd' && $('modal').classList.contains('open') && S.battleOpen) closeModal();
+        if (g.s.battle && g.s.battle.hold) openBattle();
         render();
         const wait = S.fast ? 0 : a.type === 'move' ? 550 : a.type === 'battleRoll' ? 420 : a.type === 'place' ? 200 : a.type === 'phase' ? 250 : 120;
         if (wait) await sleep(wait);
@@ -675,17 +682,19 @@
       S.mv.arrows([]);
     }
     render();
+    if (G() !== g) return;
+    if (g.s.battle && g.s.battle.hold) { openBattle(); return; } // waiting for the person
     if (g.s.battle && !g.s.battle.over) openBattle();
     else if (g.phase === 'gameOver') showResult();
     else continueFlow();
   }
-  function humanInvolved(b) {
-    const g = G();
-    if (!g.s.powers[b.att].ai) return true;
-    return g.units(b.id).some((u) => !g.s.powers[u.o].ai) || (b.lostD && Object.keys(b.lostD).length) || (b.lost && b.lost.D && Object.keys(b.lost.D).length && humanTeam() !== g.team(b.att));
-  }
-
   // ------------------------------------------------------------------ battles
+  // A battle the person is in (b.hold) runs one roll at a time, in the rule book's order:
+  //   attacker rolls -> defender's casualties are marked (they still fire back) -> defender rolls ->
+  //   attacker's casualties are marked -> the round's dice and casualties stay on show while the attacker
+  //   presses the attack (casualties removed, next round rolled), retreats (on the map), or ends the battle.
+  // The person rolls their own dice; the computer's steps run by themselves with short pauses (driveBattle).
+  const PAUSE = { roll: 700, defend: 950, decide: 1300 };
   function fight(id) {
     const g = G();
     if (g.s.battle) { openBattle(); return; }
@@ -694,194 +703,399 @@
     S.undo = [];
     save();
     openBattle();
+    driveBattle();
   }
   function openBattle() {
+    if (S.retreat) return;
     S.battleOpen = true;
     S.modalClosable = false;
     $('modal').classList.add('open');
     renderBattle();
   }
-  function bunits(list, side, pickable, hitIds) {
+  function isHumanPower(p) { return !!p && !!G().s.powers[p] && !G().s.powers[p].ai; }
+  function defOwnerOf(b) {
     const g = G();
-    const groups = {};
-    for (const u of list) {
-      const k = u.t + '|' + (u.h || 0);
-      if (!groups[k]) groups[k] = { t: u.t, h: u.h || 0, o: u.o, ids: [] };
-      groups[k].ids.push(u.id);
+    const d = g._side('D');
+    return (d[0] && d[0].o) || (b.roundDead || []).filter((x) => x.side === 'D').map((x) => x.o)[0] || g.s.terr[b.id].o || '—';
+  }
+  /** The person's side with pending casualties ('A'/'D'), if any. */
+  function humanHitSide(b) {
+    const g = G();
+    for (const side of ['A', 'D']) {
+      if (!b.pend[side]) continue;
+      const owner = side === 'A' ? b.att : (g.casualtyChoice(side).units[0] || {}).o;
+      if (isHumanPower(owner)) return side;
     }
+    return null;
+  }
+  /** Whether the hits leave a real choice of casualties (more hit points that could take them than hits). */
+  function hasChoice(side) {
+    const g = G();
+    const ch = g.casualtyChoice(side);
+    if (!ch) return false;
+    const h = ch.hits;
+    const air = (u) => g.def(u).domain === 'air';
+    const able = ch.units.filter((u) => (h.airOnly && !(h.any || h.notAir || h.notSub) ? air(u) : h.notAir && !(h.any || h.notSub || h.airOnly) ? !air(u) : true));
+    return able.reduce((a, u) => a + (g.def(u).hp || 1) - (u.h || 0), 0) > ch.need;
+  }
+  /** The side whose pending casualties the person may still change, if any. */
+  function humanPickSide(b) {
+    const side = humanHitSide(b);
+    return side && hasChoice(side) ? side : null;
+  }
+  /** What happens next in the current battle, and whether it waits for the person. */
+  function battleNext() {
+    const g = G();
     const b = g.s.battle;
-    return Object.values(groups).map((gr) => {
+    if (!b) return null;
+    const humanA = isHumanPower(b.att);
+    if (b.over) return { human: true, act: 'over' };
+    if (b.need === 'casualties') return { human: false, act: 'assign', pause: 0 };
+    if (b.need === 'decision') {
+      if (b.ending) return { human: true, act: 'end' };
+      return humanA ? { human: true, act: 'decide' } : { human: false, act: 'botDecide', pause: PAUSE.decide };
+    }
+    if (b.need !== 'roll') return { human: true, act: 'wait' };
+    if (b.step === 'start' || b.step === 'decide') return humanA ? { human: true, act: 'roll' } : { human: false, act: 'roll', pause: PAUSE.roll };
+    if (b.step === 'fireD' && g._side('D').some((u) => isHumanPower(u.o))) return { human: true, act: 'defend' };
+    if (humanPickSide(b)) return { human: true, act: 'continue' };
+    return { human: false, act: 'roll', pause: PAUSE.defend };
+  }
+  /** Run the computer's part of the battle. Resolves true when it stops for the person. */
+  async function driveBattle() {
+    if (S.driving) return true;
+    S.driving = true;
+    try {
+      for (let i = 0; i < 400; i++) {
+        const g = G();
+        const b = g.s.battle;
+        if (!b || S.retreat) return !!b;
+        const nx = battleNext();
+        if (nx.human) { renderBattle(); return true; }
+        if (!S.battleOpen) openBattle();
+        await sleep(S.fast ? 0 : nx.pause);
+        if (G() !== g || g.s.battle !== b) return false;
+        S.animating = true;
+        try {
+          if (nx.act === 'assign') {
+            for (const side of ['A', 'D']) if (b.pend[side] && !b.picks[side]) g.battleAssign(side, g.casualtyChoice(side).auto);
+          } else if (nx.act === 'botDecide') {
+            const to = S.ai.battleDecision();
+            await removeCasualties();
+            if (to) g.battleRetreat(to);
+            else g.battleContinue();
+            save();
+            // pressing on rolls the next round; so does a retreat that leaves sea-landed units fighting
+            if (!g.s.battle.over) await showRoll();
+          } else {
+            g.battleRoll();
+            save();
+            await showRoll();
+          }
+        } finally { S.animating = false; }
+        save();
+        render();
+      }
+    } finally { S.driving = false; }
+    return false;
+  }
+  // ---- animation: a roll's dice grow in, then its casualties are marked with a shake
+  async function showRoll() {
+    S.anim = { hideMarks: true };
+    renderBattle();
+    await sleep(S.fast ? 0 : 560);
+    const b = G().s.battle;
+    S.anim = { shake: new Set([...(b && b.picks.A) || [], ...(b && b.picks.D) || []]) };
+    renderBattle();
+    await sleep(S.fast ? 0 : 560);
+    S.anim = {};
+    renderBattle();
+  }
+  // ---- the round's casualties and dice shrink away before they are removed
+  async function removeCasualties() {
+    S.anim = { leaving: true };
+    renderBattle();
+    await sleep(S.fast ? 0 : 380);
+    S.anim = {};
+  }
+  /** The person's casualty picks must be complete before the battle moves on. */
+  function picksReady() {
+    if (!S.edit) return true;
+    const ch = G().casualtyChoice(S.edit.side);
+    if (!ch || S.edit.picks.length === ch.need) return true;
+    toast(`Mark ${ch.need - S.edit.picks.length} more casualt${ch.need - S.edit.picks.length === 1 ? 'y' : 'ies'} first`);
+    return false;
+  }
+  async function battleAct(act) {
+    const g = G();
+    const b = g.s.battle;
+    if (!b || S.animating || S.driving) return;
+    if (act === 'over') { finishBattle(); return; }
+    if (!picksReady()) return;
+    if (act === 'retreat') { startRetreat(); return; }
+    S.animating = true;
+    try {
+      if (act === 'press' || act === 'end') {
+        await removeCasualties();
+        g.battleContinue();
+        save();
+        if (act === 'press' && !g.s.battle.over) await showRoll();
+      } else if (act === 'submerge') {
+        await removeCasualties();
+        const r = g.battleSubmerge('A');
+        if (!r.ok) toast(r.error);
+        save();
+      } else {
+        g.battleRoll();
+        save();
+        await showRoll();
+      }
+    } finally { S.animating = false; }
+    S.edit = null;
+    render();
+    if (act === 'end' || (g.s.battle && g.s.battle.over && act === 'press')) { finishBattle(); return; }
+    renderBattle();
+    driveBattle();
+  }
+  /** Close a finished battle and carry on (next battle, the computer's turn, ...). */
+  function finishBattle() {
+    const g = G();
+    const b = g.s.battle;
+    if (b && b.over) {
+      if (b.retreated && b.retreatedTo && b.retreatedTo !== b.id && !isHumanPower(b.att)) toast(`${b.att} retreats to ${S.mv.T[b.retreatedTo].name}`);
+      g.closeBattle();
+    }
+    S.edit = null;
+    S.anim = {};
+    save();
+    closeModal();
+    render();
+    continueFlow();
+  }
+  // ---- retreat: pick the territory on the map; nothing else can be done until the units have gone
+  async function startRetreat() {
+    const g = G();
+    const b = g.s.battle;
+    S.animating = true;
+    try {
+      await removeCasualties();
+      g.battleSettle();
+      save();
+    } finally { S.animating = false; }
+    if (g.s.battle.over) { render(); renderBattle(); return; }
+    const opts = g.retreatOptions();
+    if (!opts.length) { toast('There is nowhere to retreat to'); renderBattle(); return; }
+    if (opts.length === 1 && opts[0] === b.id) {
+      // aircraft only: they break off here and fly home in noncombat move
+      g.battleRetreat(b.id);
+      save();
+      toast('Your aircraft break off. Land them in noncombat move.', 3500);
+      finishBattle();
+      return;
+    }
+    S.retreat = { from: b.id, opts };
+    closeModal();
+    S.mv.setFocus([b.id, ...opts], 0.15);
+    S.mv.arrows(opts.map((to) => ({ path: [b.id, to] })));
+    render();
+  }
+  function doRetreat(id) {
+    const g = G();
+    const r = g.battleRetreat(id);
+    if (!r.ok) { toast(r.error); return; }
+    S.retreat = null;
+    S.mv.arrows([]);
+    save();
+    const b = g.s.battle;
+    if (b && !b.over) {
+      // units that landed from the sea cannot retreat: they fight on
+      toast('Your units that landed from the sea fight on', 3000);
+      render();
+      openBattle();
+      S.animating = true;
+      showRoll().then(() => { S.animating = false; render(); renderBattle(); driveBattle(); });
+      return;
+    }
+    toast(`Retreated to ${S.mv.T[id].name}`);
+    finishBattle();
+  }
+  function cancelRetreat() {
+    S.retreat = null;
+    S.mv.arrows([]);
+    render();
+    openBattle();
+  }
+
+  // ---- the battle window
+  function battleUnits(side) {
+    const g = G();
+    const b = g.s.battle;
+    const anim = S.anim || {};
+    const editing = S.edit && S.edit.side === side;
+    const picks = editing ? S.edit.picks : (b.picks[side] || []);
+    const cnt = {};
+    if (!anim.hideMarks) for (const id of picks) cnt[id] = (cnt[id] || 0) + 1;
+    const ch = editing ? g.casualtyChoice(side) : null;
+    const cand = new Set(ch ? ch.units.map((u) => u.id) : []);
+    const groups = {};
+    const add = (u, st, pend, pickable) => {
+      const key = [u.t, u.h || 0, st, pend, pickable ? 1 : 0].join('|');
+      if (!groups[key]) groups[key] = { t: u.t, h: u.h || 0, o: u.o, st, pend, pickable, ids: [] };
+      groups[key].ids.push(u.id);
+    };
+    for (const u of g._side(side)) {
+      const left = (g.def(u).hp || 1) - (u.h || 0);
+      let st = 'ok', pend = 0;
+      if (b.doomed.includes(u.id)) st = 'cas';
+      else if (cnt[u.id]) { pend = 1; st = cnt[u.id] >= left ? 'cas' : 'dmg'; }
+      add(u, st, pend, editing && cand.has(u.id) && !b.doomed.includes(u.id));
+    }
+    for (const u of (b.roundDead || []).filter((x) => x.side === side)) add(u, 'cas', 0, false);
+    const order = Rules.UNIT_ORDER;
+    const list = Object.values(groups).sort((x, y) => (x.st === 'ok' ? 0 : 1) - (y.st === 'ok' ? 0 : 1) || order.indexOf(x.t) - order.indexOf(y.t));
+    return list.map((gr) => {
       const d = g.def(gr.t);
       const val = side === 'A' ? d.att : d.def;
-      const picked = pickable ? (S.picks[side] || []).filter((id) => gr.ids.includes(id)).length : 0;
-      const doomed = b ? gr.ids.filter((id) => b.doomed.includes(id)).length : 0;
-      const hits = hitIds ? hitIds.filter((id) => gr.ids.includes(id)).length : 0;
-      const minus = picked || hits;
-      return `<div class="bunit ${pickable ? 'pick' : ''} ${picked ? 'picked' : ''} ${hits ? 'shake' : ''} ${doomed === gr.ids.length ? 'dead' : ''}" style="background:${color(gr.o)}" title="${esc(d.name)}${gr.h ? ' (damaged)' : ''}" ${pickable ? `data-pick="${side}|${gr.t}|${gr.h}"` : ''}>
-        ${I.svg(gr.t, 28, '#fff')}<span class="v">${val}</span><span class="n">${gr.ids.length}</span>${minus ? `<span class="x">−${minus}</span>` : ''}${gr.h ? '<span class="x" style="left:auto;right:-5px;top:-5px;background:#ff8800">dmg</span>' : ''}</div>`;
+      const shake = anim.shake && gr.ids.some((id) => anim.shake.has(id));
+      const leaving = anim.leaving && gr.st === 'cas';
+      const cls = ['bunit', gr.st !== 'ok' ? gr.st : '', gr.pickable ? 'pick' : '', shake ? 'shake' : '', leaving ? 'leaving' : ''].join(' ');
+      const title = `${d.name}${gr.h ? ' (damaged)' : ''}${gr.st === 'cas' ? ': casualty' : gr.st === 'dmg' ? ': takes a hit' : ''}`;
+      return `<div class="${cls}" style="background:${color(gr.o)}" title="${esc(title)}" ${gr.pickable ? `data-pick="${side}|${gr.t}|${gr.h}|${gr.pend}" role="button" tabindex="0"` : ''}>
+        ${I.svg(gr.t, 28, '#fff')}<span class="v">${val}</span><span class="n">${gr.ids.length}</span>${gr.st === 'dmg' ? '<span class="x">−1</span>' : ''}${gr.h && gr.st !== 'cas' ? '<span class="x" style="left:auto;right:-5px;top:-5px;background:#ff8800">dmg</span>' : ''}</div>`;
     }).join('');
+  }
+  function battleDice(b, side) {
+    const key = `${b.id}:${b.round}`;
+    if (!S.diceSeen || S.diceSeen.key !== key) S.diceSeen = { key, A: 0, D: 0 };
+    const seen = S.diceSeen[side];
+    const names = { aa: 'AA', bombard: 'Bombard', subs: 'Subs', fire: 'Fire' };
+    let prev = null;
+    const html = (b.dice[side] || []).map((d, i) => {
+      const k = d.k || 'fire';
+      const sep = k !== prev && (k !== 'fire' || prev) ? `<span class="dsep">${names[k]}</span>` : '';
+      prev = k;
+      const fresh = i >= seen;
+      return `${sep}<span class="die ${d.hit ? 'hit' : ''} ${fresh ? 'new' : ''}" ${fresh ? `style="animation-delay:${Math.min(260, (i - seen) * 26)}ms"` : ''} title="${esc(uname(d.t))} hits on ${d.v} or less">${d.die}</span>`;
+    }).join('');
+    S.diceSeen[side] = (b.dice[side] || []).length;
+    return html;
   }
   function renderBattle() {
     const g = G();
     const b = g.s.battle;
     if (!b) { closeModal(); return; }
+    if (!S.battleOpen) return;
     const t = S.mv.T[b.id];
-    const A = g._side('A');
-    const Dd = g._side('D');
-    const defOwner = (Dd[0] && Dd[0].o) || g.s.terr[b.id].o || '—';
     const att = b.att;
-    const humanA = !g.s.powers[att].ai;
-    const held = b.need === 'casualties' && b.held;
-    const needA = !held && b.need === 'casualties' && b.pend.A && !b.picks.A && humanA;
-    const needD = !held && b.need === 'casualties' && b.pend.D && !b.picks.D && Dd.length && !g.s.powers[Dd[0].o].ai;
-    const shakeA = held && S.shaking ? b.picks.A : null;
-    const shakeD = held && S.shaking ? b.picks.D : null;
-    for (const side of ['A', 'D']) {
-      if ((side === 'A' ? needA : needD) && !S.picks[side + 'init']) {
-        const ch = g.casualtyChoice(side);
-        S.picks[side] = ch ? ch.auto.slice() : [];
-        S.picks[side + 'init'] = true;
-      }
-    }
-    // dice added since the last render grow in; everything else is drawn still
-    if (S.diceRoll !== b.rollNo) { S.diceRoll = b.rollNo; S.diceSeen = { A: 0, D: 0 }; }
-    const seen = S.diceSeen || { A: 0, D: 0 };
-    const dice = (arr, side) => arr.map((d, i) => {
-      const fresh = i >= seen[side];
-      return `<span class="die ${d.hit ? 'hit' : ''} ${fresh ? 'new' : ''}" ${fresh ? `style="animation-delay:${Math.min(220, (i - seen[side]) * 22)}ms"` : ''} title="${esc(uname(d.t))} needs ${d.v} or less">${d.die}</span>`;
-    }).join('');
-    S.diceSeen = { A: (b.dice.A || []).length, D: (b.dice.D || []).length };
+    const defOwner = defOwnerOf(b);
+    const nx = S.animating || S.driving && !(battleNext() || {}).human ? null : battleNext();
+    const act = nx && nx.human ? nx.act : null;
+    // the person's own casualties can be changed until the battle moves on
+    const editSide = act && act !== 'over' ? humanPickSide(b) : null;
+    const editKey = editSide ? `${b.id}:${b.rollNo}:${editSide}` : null;
+    if (!editSide) S.edit = null;
+    else if (!S.edit || S.edit.key !== editKey) S.edit = { side: editSide, key: editKey, picks: (b.picks[editSide] || []).slice() };
+    const anim = S.anim || {};
     const h = [];
-    h.push(`<div class="battle"><h2>⚔️ ${esc(t.name)}</h2><p class="hint">Round ${Math.max(1, b.round)}${b.sea ? ' · sea battle' : ''}${b.bombard && b.bombard.length ? ' · shore bombardment ready' : ''}</p>`);
+    h.push(`<div class="battle"><h2>⚔️ ${esc(t.name)}</h2><p class="hint">Round ${Math.max(1, b.round)}${b.sea ? ' · sea battle' : ''}${b.round === 0 && b.bombard && b.bombard.length ? ' · ships ready to bombard' : ''}</p>`);
     h.push('<div class="sides">');
-    h.push(`<div><div class="side-h"><span class="swatch" style="background:${color(att)}"></span>Attacker · ${esc(att)}</div><div class="units">${bunits(A, 'A', needA, shakeA)}</div><div class="dice">${dice(b.dice.A || [], 'A')}</div></div>`);
-    h.push(`<div><div class="side-h"><span class="swatch" style="background:${color(defOwner)}"></span>Defender · ${esc(defOwner)}</div><div class="units">${bunits(Dd, 'D', needD, shakeD)}</div><div class="dice">${dice(b.dice.D || [], 'D')}</div></div>`);
+    h.push(`<div><div class="side-h"><span class="swatch" style="background:${color(att)}"></span>Attacker · ${esc(att)}${isHumanPower(att) ? ' (you)' : ''}</div><div class="units">${battleUnits('A')}</div><div class="dice ${anim.leaving ? 'out' : ''}">${battleDice(b, 'A')}</div></div>`);
+    h.push(`<div><div class="side-h"><span class="swatch" style="background:${color(defOwner)}"></span>Defender · ${esc(defOwner)}${isHumanPower(defOwner) ? ' (you)' : ''}</div><div class="units">${battleUnits('D')}</div><div class="dice ${anim.leaving ? 'out' : ''}">${battleDice(b, 'D')}</div></div>`);
     h.push('</div>');
     if (b.lines && b.lines.length) h.push('<ul class="blines">' + b.lines.map((l) => `<li>${esc(l)}</li>`).join('') + '</ul>');
     const btns = [];
-    if (held || S.animating) {
-      h.push('<p class="hint" style="min-height:1.4em">&nbsp;</p>');
-    } else if (b.over) {
-      const r = b.result === 'attacker' ? `${att} wins` : b.result === 'defender' ? `${defOwner} holds` : 'No winner';
-      h.push(`<p><b>${esc(r)}.</b></p>`);
-      btns.push('<button class="primary" id="bClose">Continue</button>');
-    } else if (needA || needD) {
-      const side = needA ? 'A' : 'D';
-      const ch = g.casualtyChoice(side);
-      const kind = ch.kind === 'aa' ? ' (aircraft only)' : ch.kind === 'subs' ? ' (submarine hits cannot hit aircraft)' : '';
-      h.push(`<p class="picknote">Choose ${ch.need} casualt${ch.need === 1 ? 'y' : 'ies'}${kind}: tap your units to mark or unmark them.</p>`);
-      h.push(`<p class="hint">Picked ${(S.picks[side] || []).length} of ${ch.need}. Battleships take a hit before sinking.</p>`);
-      btns.push(`<button id="bReset">Reset to default</button><button class="primary" id="bConfirm" data-side="${side}">Confirm casualties</button>`);
-    } else if (b.need === 'roll' && humanA) {
-      btns.push('<button id="bAuto">Fight to the end</button><button class="primary" id="bRoll">Roll dice 🎲</button>');
-    } else if (b.need === 'decision' && humanA) {
+    let note = '';
+    const hitSide = act && act !== 'over' ? humanHitSide(b) : null;
+    if (hitSide && !S.edit) {
+      const n = g.casualtyChoice(hitSide).need;
+      note = `<p class="picknote">${n === 1 ? 'Your marked unit is lost' : `All ${n} of your marked units are lost`}${hitSide === 'D' && b.kind !== 'aa' && b.kind !== 'subs' ? ', but they still fire back this round' : ''}.</p>`;
+    }
+    if (S.edit) {
+      const ch = g.casualtyChoice(S.edit.side);
+      const left = ch.need - S.edit.picks.length;
+      const kind = ch.kind === 'aa' ? ' AA fire only hits aircraft.' : ch.kind === 'subs' ? ' Submarine hits cannot hit aircraft.' : '';
+      const fireBack = S.edit.side === 'D' && ch.kind !== 'aa' && ch.kind !== 'subs' ? ' They still fire back this round.' : '';
+      note = `<p class="picknote">Your casualties are marked ✕.${fireBack} Tap one of your units to lose it instead, or a marked one to keep it.${kind}${left > 0 ? ` <b>Mark ${left} more.</b>` : ''}</p>`;
+    }
+    const ready = !S.edit || g.casualtyChoice(S.edit.side).need === S.edit.picks.length;
+    const dis = ready ? '' : 'disabled';
+    if (!act) {
+      h.push(`<p class="hint bstate">${S.animating ? '&nbsp;' : waitText(b, att, defOwner)}</p>`);
+    } else if (act === 'over') {
+      const r = b.result === 'attacker' ? `${att} wins` : b.retreated ? `${att} retreated` : b.result === 'defender' ? `${defOwner} holds` : 'No winner';
+      h.push(`<p class="bstate"><b>${esc(r)}.</b></p>`);
+      btns.push('<button class="primary" data-act="over">End of battle</button>');
+    } else if (act === 'roll') {
+      btns.push('<button class="primary" data-act="roll">Roll dice 🎲</button>');
+    } else if (act === 'defend') {
+      h.push(note || '<p class="hint bstate">Your turn to fire back.</p>');
+      btns.push(`<button class="primary" data-act="defend" ${dis}>Roll for defense 🎲</button>`);
+    } else if (act === 'continue') {
+      h.push(note);
+      btns.push(`<button class="primary" data-act="continue" ${dis}>Continue 🎲</button>`);
+    } else if (act === 'end') {
+      const A = g.survivors('A'), D = g.survivors('D').filter((u) => !g.def(u).infrastructure);
+      const r = A.length && !D.length ? `${att} wins` : !A.length && D.length ? `${defOwner} holds` : !A.length ? 'Both sides are wiped out' : 'Neither side can harm the other';
+      h.push(`<p class="bstate"><b>${esc(r)}.</b></p>`);
+      h.push(note);
+      btns.push(`<button class="primary" data-act="end" ${dis}>End of battle</button>`);
+    } else if (act === 'decide') {
+      h.push(note);
       const opts = g.retreatOptions();
-      const enemyDestroyer = Dd.some((u) => g.def(u).antiSub);
-      const subs = A.some((u) => g.def(u).sub) && !enemyDestroyer;
-      if (opts.length) btns.push(`<select id="bRetTo">${opts.map((id) => `<option value="${id}">${id === b.id ? 'Break off' : 'Retreat to ' + esc(S.mv.T[id].name)}</option>`).join('')}</select><button id="bRetreat">Retreat</button>`);
-      if (subs) btns.push('<button id="bSub">Submerge subs</button>');
-      btns.push('<button id="bAuto">Fight to the end</button><button class="primary" id="bCont">Next round 🎲</button>');
-    } else {
-      h.push('<p class="hint">…</p>');
+      const subs = g.survivors('A').some((u) => g.def(u).sub) && !g.survivors('D').some((u) => g.def(u).antiSub);
+      if (opts.length) btns.push(`<button data-act="retreat" ${dis}>Retreat</button>`);
+      if (subs) btns.push(`<button data-act="submerge" ${dis}>Submerge subs</button>`);
+      btns.push(`<button class="primary" data-act="press" ${dis}>Press the attack 🎲</button>`);
     }
     h.push(`<div class="actions">${btns.join('')}</div>`);
-    if (!b.over) h.push(`<label class="chk hint" style="margin-top:10px"><input type="checkbox" id="bChoose" ${S.chooseOwn ? 'checked' : ''}> Let me choose my casualties</label>`);
     h.push('</div>');
     $('dialog').innerHTML = h.join('');
-    const ch = $('bChoose');
-    if (ch) ch.onchange = () => { S.chooseOwn = ch.checked; store.set('tacticle:chooseCasualties', S.chooseOwn); g.s.autoCasualties = !S.chooseOwn; save(); };
-    const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
-    $('dialog').querySelectorAll('[data-pick]').forEach((el) => el.onclick = () => togglePick(el.dataset.pick));
-    on('bRoll', () => rollWith(() => g.battleRoll()));
-    on('bCont', () => rollWith(() => g.battleContinue()));
-    on('bAuto', () => { g.autoResolve(); afterBattleAction(); });
-    on('bRetreat', () => { g.battleRetreat($('bRetTo').value); afterBattleAction(); });
-    on('bSub', () => { const r = g.battleSubmerge('A'); if (!r.ok) toast(r.error); afterBattleAction(); });
-    on('bReset', () => { const side = needA ? 'A' : 'D'; S.picks[side] = g.casualtyChoice(side).auto.slice(); renderBattle(); });
-    on('bConfirm', (e) => {
-      const side = e.currentTarget.dataset.side;
-      const r = g.battleAssign(side, S.picks[side]);
-      if (!r.ok) { toast(r.error); return; }
-      S.picks = {};
-      animateBattle().then(afterBattleAction);
+    $('dialog').querySelectorAll('[data-pick]').forEach((el) => {
+      el.onclick = () => togglePick(el.dataset.pick);
+      el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePick(el.dataset.pick); } };
     });
-    on('bClose', () => {
-      if (S.waitAck) { const f = S.waitAck; S.waitAck = null; closeModal(); f(); return; }
-      g.closeBattle();
-      save();
-      closeModal();
-      render();
-      continueFlow();
-    });
+    $('dialog').querySelectorAll('[data-act]').forEach((el) => el.onclick = () => battleAct(el.dataset.act));
   }
+  /** While the computer's part of the battle runs: what comes next. */
+  function waitText(b, att, defOwner) {
+    const you = isHumanPower(att);
+    if (b.need === 'decision') return `${esc(att)} decides whether to press the attack…`;
+    if (b.step === 'start' || b.step === 'decide') return `${esc(att)} is attacking…`;
+    if (b.step === 'fireD') return you ? `${esc(defOwner)} fires back…` : `${esc(defOwner)} fires back…`;
+    return you ? 'Your units fire next…' : `${esc(att)} fires next…`;
+  }
+  /** Tap a unit group: mark one more of it as a casualty (swapping out another pick when all are used), or unmark one. */
   function togglePick(key) {
+    if (!S.edit || S.animating) return;
     const g = G();
-    const [side, t, h] = key.split('|');
+    const [side, t, h, pend] = key.split('|');
     const ch = g.casualtyChoice(side);
+    if (!ch) return;
+    const picks = S.edit.picks;
     const ids = ch.units.filter((u) => u.t === t && String(u.h || 0) === h).map((u) => u.id);
-    const picks = S.picks[side] || [];
-    const hpOf = (id) => (g.def(t).hp || 1) - (ch.units.find((u) => u.id === id).h || 0);
-    // add one more hit to this group if room, otherwise clear the group
-    const used = picks.filter((id) => ids.includes(id)).length;
-    const room = ids.reduce((a, id) => a + hpOf(id), 0);
-    if (picks.length < ch.need && used < room) {
-      // next id: spread first hits before second hits
+    if (pend === '1') {
+      for (let i = picks.length - 1; i >= 0; i--) if (ids.includes(picks[i])) { picks.splice(i, 1); break; }
+    } else {
+      const hpOf = (id) => (g.def(t).hp || 1) - (ch.units.find((u) => u.id === id).h || 0);
       const cnt = {};
       for (const id of picks) cnt[id] = (cnt[id] || 0) + 1;
-      const next = ids.slice().sort((a, b) => (cnt[a] || 0) - (cnt[b] || 0)).find((id) => (cnt[id] || 0) < hpOf(id));
-      picks.push(next);
-    } else {
-      S.picks[side] = picks.filter((id) => !ids.includes(id));
-      renderBattle();
-      return;
-    }
-    S.picks[side] = picks;
-    renderBattle();
-  }
-  // ---- battle animation: dice grow in, hit units shake, then the hits are applied
-  async function shrinkDice() {
-    const boxes = [...$('dialog').querySelectorAll('.dice')];
-    if (!boxes.some((x) => x.children.length)) return;
-    boxes.forEach((x) => x.classList.add('out'));
-    await sleep(S.fast ? 0 : 150);
-  }
-  async function animateBattle() {
-    if (S.animating) return;
-    S.animating = true;
-    try {
-      for (let i = 0; i < 30; i++) {
-        renderBattle();
-        await sleep(S.fast ? 0 : 380);
-        const b = G().s.battle;
-        if (!b || b.over || !(b.need === 'casualties' && b.held)) break;
-        S.shaking = true;
-        renderBattle();
-        await sleep(S.fast ? 0 : 480);
-        S.shaking = false;
-        G().battleCommit();
-        save();
+      // spread first hits before second hits (battleships)
+      const next = ids.slice().sort((a, c) => (cnt[a] || 0) - (cnt[c] || 0)).find((id) => (cnt[id] || 0) < hpOf(id));
+      if (next == null) return;
+      if (picks.length >= ch.need) {
+        let i = picks.length - 1;
+        while (i >= 0 && ids.includes(picks[i])) i--;
+        if (i < 0) return;
+        picks.splice(i, 1);
       }
-    } finally {
-      S.animating = false;
-      S.shaking = false;
+      picks.push(next);
     }
-  }
-  async function rollWith(fn) {
-    if (S.animating) return;
-    await shrinkDice();
-    fn();
-    save();
-    await animateBattle();
-    afterBattleAction();
-  }
-  function afterBattleAction() {
-    S.picks = {};
-    save();
-    render();
+    if (picks.length === ch.need) {
+      const r = g.battleAssign(side, picks);
+      if (!r.ok) { toast(r.error); S.edit.picks = (g.s.battle.picks[side] || []).slice(); }
+      else save();
+    }
     renderBattle();
-    if (S.busy) return;
-    const b = G().s.battle;
-    if (b && G().s.powers[b.att].ai) runAI();
   }
   function closeModal() {
     $('modal').classList.remove('open');
@@ -935,7 +1149,7 @@
       <ol class="hint" style="padding-left:18px">
         <li><b>Buy</b> units with IPCs. They appear at your factories at the end of the turn.</li>
         <li><b>Combat move</b>: tap your units, then a highlighted territory. Red outline = attack.</li>
-        <li><b>Battles</b>: roll each round, choose your casualties, keep going or retreat.</li>
+        <li><b>Battles</b>: you roll, then the defender. Hits are marked ✕ and stay until the round ends (defenders still fire back). Tap your units to change which are lost, then press the attack or retreat.</li>
         <li><b>Noncombat move</b>: units that did not fight may reposition; aircraft must land.</li>
         <li><b>Place</b> the units you bought, then end your turn. You collect income from your territories.</li>
       </ol>

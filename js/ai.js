@@ -120,9 +120,9 @@
       }
       if (b.need === 'decision') {
         if (!attackerAI) return null;
-        const opts = g.retreatOptions();
-        if (opts.length && this._shouldRetreat()) {
-          g.battleRetreat(opts.includes(b.id) ? b.id : opts[0]);
+        const to = this.battleDecision();
+        if (to) {
+          g.battleRetreat(to);
           return { type: 'retreat', id: b.id };
         }
         g.battleContinue();
@@ -130,11 +130,21 @@
       }
       return null;
     }
+    /** At the end of a round: where the attacking computer retreats to, or null to press the attack. */
+    battleDecision() {
+      const g = this.g;
+      const b = g.s.battle;
+      if (!b || b.need !== 'decision' || b.ending) return null;
+      const opts = g.retreatOptions();
+      if (!opts.length || !this._shouldRetreat()) return null;
+      return opts.includes(b.id) ? b.id : opts[0];
+    }
 
     _shouldRetreat() {
       const g = this.g;
       const b = g.s.battle;
-      const A = g._side('A'), D = g._side('D');
+      // the units that live through this round's casualties (with hold they are still on the board)
+      const A = g.survivors('A'), D = g.survivors('D');
       const odds = E.simulate(count(A), count(D), { sea: b.sea, ruleset: g.R.id, trials: 40, seed: g.s.rng ^ 0x5bd1 });
       const bonus = this._objBonus(b.id, this._situation());
       if (bonus >= 60) return odds.win < 0.03; // the game depends on it: fight on
