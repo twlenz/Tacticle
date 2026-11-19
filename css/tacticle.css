@@ -17,8 +17,8 @@
   --neutral: #a39a85; --border: #0b0b0b; --label: #fff; --label-halo: #000c; --shadow: 0 6px 24px #0008; --obj-label: #ffd23f;
   color-scheme: dark;
 }
-:root[data-theme="dark"] .tmap .tz.land { stroke: #0b0b0b; stroke-width: .8; }
-:root[data-theme="dark"] .tmap .decor { stroke: #8cc3e480; stroke-width: .6; }
+:root[data-theme="dark"] .tmap .tz.land { stroke: #0b0b0b; stroke-width: 1.2px; }
+:root[data-theme="dark"] .tmap .decor { stroke: #8cc3e480; stroke-width: .7px; }
 :root[data-theme="dark"] .tmap .tz.land.inactive { stroke: #8cc3e455; }
 :root[data-theme="dark"] .tmap .tlabel.sea { fill: #cfe8f7; stroke: #0b2638cc; }
 * { box-sizing: border-box; }
@@ -64,12 +64,15 @@ button.small { padding: 3px 8px; font-size: 13px; }
 /* map */
 .tmap { width: 100%; height: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none; }
 .tmap .ocean { fill: var(--ocean); }
-.tmap .tz.sea { fill: var(--sea); stroke: var(--sea-line); stroke-width: .7; }
+/* borders keep the same on-screen width at any zoom (non-scaling strokes, widths in screen px),
+   so they stay visible on finely drawn maps and when zoomed out */
+.tmap .tz, .tmap .decor, .tmap .lake { vector-effect: non-scaling-stroke; }
+.tmap .tz.sea { fill: var(--sea); stroke: var(--sea-line); stroke-width: 1px; }
 .tmap .tz.sea.inactive { fill: var(--inactive-sea); stroke: none; }
-.tmap .tz.land { stroke: var(--border); stroke-width: .6; stroke-linejoin: round; }
-.tmap .tz.land.inactive { fill: url(#tm-hatch); stroke: #0002; }
-.tmap .decor { fill: var(--decor); stroke: #0002; stroke-width: .4; }
-.tmap .lake { fill: var(--lake); stroke: var(--sea-line); stroke-width: .3; pointer-events: none; }
+.tmap .tz.land { stroke: var(--border); stroke-width: 1.1px; stroke-linejoin: round; }
+.tmap .tz.land.inactive { fill: url(#tm-hatch); stroke: #0003; stroke-width: .7px; }
+.tmap .decor { fill: var(--decor); stroke: #0003; stroke-width: .6px; }
+.tmap .lake { fill: var(--lake); stroke: var(--sea-line); stroke-width: .6px; pointer-events: none; }
 /* no CSS filters on map shapes: mobile browsers can fail to draw filtered large SVG paths,
    and a tap leaves :hover stuck. Highlight on hover only where there is a real mouse. */
 @media (hover: hover) and (pointer: fine) { .tmap .tz.land:not(.inactive):hover { fill-opacity: .82; } .tmap .tz.sea:not(.inactive):hover { fill-opacity: .8; } }
