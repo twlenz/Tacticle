@@ -1174,11 +1174,16 @@
       // show (changeable) until the next action: see battleRoll.
       b.hold = !!this.s.uiHold && (this.isHuman(p) || this.units(id).some((u) => this.isEnemy(u.o, p) && this.isHuman(u.o)));
       this.s.battle = b;
+      b.roundDead = [];
       // empty landing (sea battle already won): capture straight away
       if (!this._side('D').length) {
         this._endBattle();
         return { ok: true };
       }
+      // defenders that cannot fight back at all are destroyed without a roll; AA guns first get their
+      // shot at attacking aircraft (that happens in the first round)
+      const aaShot = !sea && this._side('D').some((u) => this.def(u).aa) && this._side('A').some((u) => this.def(u).domain === 'air');
+      if (!aaShot && this._destroyHelpless() && this._roundOver(this._side('A'), this._side('D'))) this._endBattle();
       return { ok: true };
     }
     _side(side) {
@@ -1385,6 +1390,8 @@
     /** General fire: the attacker's units, then the defender's (the defender's casualties fire back). */
     _stepFire(side) {
       const b = this.s.battle;
+      // after opening fire: a side left with nothing that can fight back is destroyed, no dice needed
+      if (side === 'A') this._destroyHelpless();
       // nothing left on one side (AA fire or a surprise strike cleared it): no more dice this round
       if (!this._side('A').length || !this._hittable('D').length) { b.step = 'endRound'; return false; }
       const units = this._side(side).filter((u) => !b.fired[u.id] && !(side === 'D' && this.def(u).aa));
@@ -1437,6 +1444,7 @@
       const err = validatePicks(this.R, ch.units, ch.hits, picks, this._defenselessOpt());
       if (err) return { ok: false, error: err };
       b.picks[side] = picks.slice();
+      if (b.hold && b.need === 'decision' && !b.settled) b.ending = this._wouldEnd();
       if (b.need === 'casualties' && (!b.pend.A || b.picks.A) && (!b.pend.D || b.picks.D)) {
         this._lockIn();
         b.need = 'roll';
@@ -1525,14 +1533,8 @@
       b.bombard = [];
       b.settled = true;
       b.ending = false;
-      // defenceless transports with nothing else left are sunk
-      for (const side of ['A', 'D']) {
-        const mine = this._side(side);
-        if (this._defenceless(mine, this._side(side === 'A' ? 'D' : 'A'), side)) {
-          for (const u of mine.slice()) this._kill(u);
-          b.lines.push(`${side === 'A' ? 'Attacking' : 'Defending'} transports are sunk`);
-        }
-      }
+      b.autoLost = [];
+      this._destroyHelpless();
       const over = this._roundOver(this._side('A'), this._side('D'));
       if (over) {
         if (over === 'stalemate') b.lines.push('Neither side can harm the other');
@@ -1543,9 +1545,35 @@
       b.need = 'decision';
       return false;
     }
-    _defenceless(mine, other, side) {
-      return !!(this.R.transportsDefenseless && mine.length && mine.every((u) => this.def(u).transport) &&
-        other.some((u) => (side === 'A' ? this.def(u).def : this.def(u).att) > 0 && !this.def(u).sub && this.def(u).domain !== 'land'));
+    /** A unit that cannot fight back at all: a defenceless transport, or an AA gun outside its shot at aircraft. */
+    _helpless(u, side) {
+      const d = this.def(u);
+      return (side === 'A' ? d.att : d.def) <= 0 && ((d.transport && this.R.transportsDefenseless) || !!d.aa);
+    }
+    /**
+     * When every unit left on a side is helpless, the ones the enemy could hit are destroyed outright
+     * instead of being rolled at until a die happens to hit them. Returns those units.
+     */
+    _helplessVictims(mine, other, side) {
+      if (!mine.length || !mine.every((u) => this._helpless(u, side))) return [];
+      const role = side === 'A' ? 'D' : 'A';
+      return mine.filter((u) => this._canHit(other, [u], role));
+    }
+    /** Destroy helpless sides (see _helplessVictims). True if any unit was removed. */
+    _destroyHelpless() {
+      const b = this.s.battle;
+      let any = false;
+      for (const side of ['A', 'D']) {
+        const alive = (x) => !b.doomed.includes(x.id);
+        const victims = this._helplessVictims(this._side(side).filter(alive), this._side(side === 'A' ? 'D' : 'A').filter(alive), side);
+        if (!victims.length) continue;
+        const names = {};
+        for (const u of victims) names[u.t] = (names[u.t] || 0) + 1;
+        for (const u of victims) this._kill(u);
+        b.lines.push(`${side === 'A' ? 'Attacking' : 'Defending'} ${Object.keys(names).map((k) => names[k] + ' ' + this.R.units[k].short).join(', ')} cannot fight back and ${victims.length === 1 ? 'is' : 'are'} destroyed`);
+        any = true;
+      }
+      return any;
     }
     _roundOver(A, Dall) {
       const D = Dall.filter((u) => !this.def(u).infrastructure);
@@ -1561,10 +1589,18 @@
       for (const id of b.picks[side] || []) hits[id] = (hits[id] || 0) + 1;
       return this._side(side).filter((u) => !b.doomed.includes(u.id) && (u.h || 0) + (hits[u.id] || 0) < hp(this.def(u)));
     }
-    /** Whether settling the round would end the battle (with hold, before the casualties are removed). */
+    /**
+     * Whether settling the round would end the battle (with hold, before the casualties are removed).
+     * Also notes in b.autoLost the helpless units that settling will destroy, so they can be shown as lost.
+     */
     _wouldEnd() {
-      const A = this.survivors('A'), D = this.survivors('D');
-      if (this._defenceless(A, D, 'A') || this._defenceless(D, A, 'D')) return true;
+      const b = this.s.battle;
+      let A = this.survivors('A'), D = this.survivors('D');
+      const lostA = this._helplessVictims(A, D, 'A');
+      A = A.filter((u) => !lostA.includes(u));
+      const lostD = this._helplessVictims(D, A, 'D');
+      D = D.filter((u) => !lostD.includes(u));
+      b.autoLost = lostA.concat(lostD).map((u) => u.id);
       return !!this._roundOver(A, D);
     }
     retreatOptions() {

@@ -927,6 +927,10 @@
   }
 
   // ---- the battle window
+  /**
+   * A side's units, one chip per type. Casualties keep their chip: it is outlined in red with a "−n" count
+   * until the round is settled. While they are removed, the lost ones get a chip of their own that shrinks away.
+   */
   function battleUnits(side) {
     const g = G();
     const b = g.s.battle;
@@ -935,33 +939,40 @@
     const picks = editing ? S.edit.picks : (b.picks[side] || []);
     const cnt = {};
     if (!anim.hideMarks) for (const id of picks) cnt[id] = (cnt[id] || 0) + 1;
+    const auto = new Set(anim.hideMarks ? [] : (b.autoLost || []));
     const ch = editing ? g.casualtyChoice(side) : null;
     const cand = new Set(ch ? ch.units.map((u) => u.id) : []);
     const groups = {};
-    const add = (u, st, pend, pickable) => {
-      const key = [u.t, u.h || 0, st, pend, pickable ? 1 : 0].join('|');
-      if (!groups[key]) groups[key] = { t: u.t, h: u.h || 0, o: u.o, st, pend, pickable, ids: [] };
-      groups[key].ids.push(u.id);
+    S.pickGroups = S.pickGroups || {};
+    const add = (u, minus, dies, damaged) => {
+      const leaving = !!anim.leaving && dies;
+      const key = `${u.t}|${damaged ? 1 : 0}|${leaving ? 1 : 0}`;
+      if (!groups[key]) groups[key] = { key, t: u.t, o: u.o, damaged, leaving, ids: [], minus: 0, pickable: false };
+      const gr = groups[key];
+      gr.ids.push(u.id);
+      gr.minus += minus;
+      if (editing && cand.has(u.id) && !b.doomed.includes(u.id)) gr.pickable = true;
     };
     for (const u of g._side(side)) {
       const left = (g.def(u).hp || 1) - (u.h || 0);
-      let st = 'ok', pend = 0;
-      if (b.doomed.includes(u.id)) st = 'cas';
-      else if (cnt[u.id]) { pend = 1; st = cnt[u.id] >= left ? 'cas' : 'dmg'; }
-      add(u, st, pend, editing && cand.has(u.id) && !b.doomed.includes(u.id));
+      const doomed = b.doomed.includes(u.id) || auto.has(u.id);
+      const hits = cnt[u.id] || 0;
+      const dies = doomed || hits >= left;
+      add(u, dies ? 1 : hits, dies, !dies && (u.h || 0) > 0);
     }
-    for (const u of (b.roundDead || []).filter((x) => x.side === side)) add(u, 'cas', 0, false);
+    for (const u of (b.roundDead || []).filter((x) => x.side === side)) add(u, 1, true, false);
     const order = Rules.UNIT_ORDER;
-    const list = Object.values(groups).sort((x, y) => (x.st === 'ok' ? 0 : 1) - (y.st === 'ok' ? 0 : 1) || order.indexOf(x.t) - order.indexOf(y.t));
-    return list.map((gr) => {
+    return Object.values(groups).sort((x, y) => order.indexOf(x.t) - order.indexOf(y.t) || (x.leaving ? 1 : 0) - (y.leaving ? 1 : 0)).map((gr) => {
       const d = g.def(gr.t);
       const val = side === 'A' ? d.att : d.def;
       const shake = anim.shake && gr.ids.some((id) => anim.shake.has(id));
-      const leaving = anim.leaving && gr.st === 'cas';
-      const cls = ['bunit', gr.st !== 'ok' ? gr.st : '', gr.pickable ? 'pick' : '', shake ? 'shake' : '', leaving ? 'leaving' : ''].join(' ');
-      const title = `${d.name}${gr.h ? ' (damaged)' : ''}${gr.st === 'cas' ? ': casualty' : gr.st === 'dmg' ? ': takes a hit' : ''}`;
-      return `<div class="${cls}" style="background:${color(gr.o)}" title="${esc(title)}" ${gr.pickable ? `data-pick="${side}|${gr.t}|${gr.h}|${gr.pend}" role="button" tabindex="0"` : ''}>
-        ${I.svg(gr.t, 28, '#fff')}<span class="v">${val}</span><span class="n">${gr.ids.length}</span>${gr.st === 'dmg' ? '<span class="x">−1</span>' : ''}${gr.h && gr.st !== 'cas' ? '<span class="x" style="left:auto;right:-5px;top:-5px;background:#ff8800">dmg</span>' : ''}</div>`;
+      const hit = gr.minus > 0 || gr.leaving;
+      const cls = ['bunit', hit ? 'hit' : '', gr.pickable ? 'pick' : '', shake ? 'shake' : '', gr.leaving ? 'leaving' : ''].join(' ');
+      const pk = `${side}|${gr.key}`;
+      if (gr.pickable) S.pickGroups[pk] = gr.ids;
+      const title = `${d.name}${gr.damaged ? ' (damaged)' : ''}${gr.minus ? `: ${gr.minus} lost` : ''}`;
+      return `<div class="${cls}" style="background:${color(gr.o)}" title="${esc(title)}" ${gr.pickable ? `data-pick="${esc(pk)}" role="button" tabindex="0"` : ''}>
+        ${I.svg(gr.t, 28, '#fff')}<span class="v">${val}</span><span class="n">${gr.ids.length}</span>${gr.minus && !gr.leaving ? `<span class="x">−${gr.minus}</span>` : ''}${gr.damaged ? '<span class="x" style="left:auto;right:-5px;top:-5px;background:#ff8800">dmg</span>' : ''}</div>`;
     }).join('');
   }
   function battleDice(b, side) {
@@ -985,6 +996,7 @@
     const b = g.s.battle;
     if (!b) { closeModal(); return; }
     if (!S.battleOpen) return;
+    S.pickGroups = {};
     const t = S.mv.T[b.id];
     const att = b.att;
     const defOwner = defOwnerOf(b);
@@ -1015,7 +1027,7 @@
       const left = ch.need - S.edit.picks.length;
       const kind = ch.kind === 'aa' ? ' AA fire only hits aircraft.' : ch.kind === 'subs' ? ' Submarine hits cannot hit aircraft.' : '';
       const fireBack = S.edit.side === 'D' && ch.kind !== 'aa' && ch.kind !== 'subs' ? ' They still fire back this round.' : '';
-      note = `<p class="picknote">Your casualties are marked ✕.${fireBack} Tap one of your units to lose it instead, or a marked one to keep it.${kind}${left > 0 ? ` <b>Mark ${left} more.</b>` : ''}</p>`;
+      note = `<p class="picknote">Your casualties are outlined in red.${fireBack} Tap a unit to lose one of those instead.${kind}${left > 0 ? ` <b>Mark ${left} more.</b>` : ''}</p>`;
     }
     const ready = !S.edit || g.casualtyChoice(S.edit.side).need === S.edit.picks.length;
     const dis = ready ? '' : 'disabled';
@@ -1064,31 +1076,35 @@
     if (b.step === 'fireD') return you ? `${esc(defOwner)} fires back…` : `${esc(defOwner)} fires back…`;
     return you ? 'Your units fire next…' : `${esc(att)} fires next…`;
   }
-  /** Tap a unit group: mark one more of it as a casualty (swapping out another pick when all are used), or unmark one. */
+  /**
+   * Tap a unit type: lose one more of it, instead of the most recent other pick when all hits are used.
+   * Tapping a type whose units are all marked unmarks one (then tap the type to lose instead).
+   */
   function togglePick(key) {
     if (!S.edit || S.animating) return;
     const g = G();
-    const [side, t, h, pend] = key.split('|');
+    const side = key.split('|')[0];
     const ch = g.casualtyChoice(side);
     if (!ch) return;
+    const group = new Set((S.pickGroups || {})[key] || []);
+    const units = ch.units.filter((u) => group.has(u.id));
+    if (!units.length) return;
     const picks = S.edit.picks;
-    const ids = ch.units.filter((u) => u.t === t && String(u.h || 0) === h).map((u) => u.id);
-    if (pend === '1') {
-      for (let i = picks.length - 1; i >= 0; i--) if (ids.includes(picks[i])) { picks.splice(i, 1); break; }
+    const cnt = {};
+    for (const id of picks) cnt[id] = (cnt[id] || 0) + 1;
+    const hpOf = (u) => (g.def(u).hp || 1) - (u.h || 0);
+    // spread first hits before second hits (battleships)
+    const next = units.slice().sort((a, c) => (cnt[a.id] || 0) - (cnt[c.id] || 0)).find((u) => (cnt[u.id] || 0) < hpOf(u));
+    if (!next) {
+      for (let i = picks.length - 1; i >= 0; i--) if (group.has(picks[i])) { picks.splice(i, 1); break; }
     } else {
-      const hpOf = (id) => (g.def(t).hp || 1) - (ch.units.find((u) => u.id === id).h || 0);
-      const cnt = {};
-      for (const id of picks) cnt[id] = (cnt[id] || 0) + 1;
-      // spread first hits before second hits (battleships)
-      const next = ids.slice().sort((a, c) => (cnt[a] || 0) - (cnt[c] || 0)).find((id) => (cnt[id] || 0) < hpOf(id));
-      if (next == null) return;
       if (picks.length >= ch.need) {
         let i = picks.length - 1;
-        while (i >= 0 && ids.includes(picks[i])) i--;
+        while (i >= 0 && group.has(picks[i])) i--;
         if (i < 0) return;
         picks.splice(i, 1);
       }
-      picks.push(next);
+      picks.push(next.id);
     }
     if (picks.length === ch.need) {
       const r = g.battleAssign(side, picks);
@@ -1149,7 +1165,7 @@
       <ol class="hint" style="padding-left:18px">
         <li><b>Buy</b> units with IPCs. They appear at your factories at the end of the turn.</li>
         <li><b>Combat move</b>: tap your units, then a highlighted territory. Red outline = attack.</li>
-        <li><b>Battles</b>: you roll, then the defender. Hits are marked ✕ and stay until the round ends (defenders still fire back). Tap your units to change which are lost, then press the attack or retreat.</li>
+        <li><b>Battles</b>: you roll, then the defender. Hits are outlined in red and stay until the round ends (defenders still fire back). Tap your units to change which are lost, then press the attack or retreat.</li>
         <li><b>Noncombat move</b>: units that did not fight may reposition; aircraft must land.</li>
         <li><b>Place</b> the units you bought, then end your turn. You collect income from your territories.</li>
       </ol>

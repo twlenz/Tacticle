@@ -76,10 +76,13 @@ changes and push them.
   - With several battles you pick each one from the list, and the page returns to the
     list after each. A single battle opens by itself.
   - A round follows the rule book. **Roll dice**: your dice grow in, then the defender's
-    casualties are marked ✕ with a brief shake. They stay on show and still fire back.
+    casualties are outlined in red with a "−n" count and a brief shake. They stay on show and still fire back.
     After a short pause the defender rolls, and your casualties are marked the same way.
-  - Both sides' dice and every casualty of the round stay on show. You can tap your units
-    to lose different ones (tap a marked unit to keep it; tap another to lose it instead).
+  - Both sides' dice and every casualty of the round stay on show. Tap one of your unit
+    types to lose one of those instead of another (tapping a fully marked type unmarks one).
+  - Units that cannot fight back at all (transports, AA guns) are destroyed outright once
+    nothing else is left on their side and the enemy can hit them, instead of being rolled
+    at until a die hits. AA guns still get their shot at attacking aircraft first.
   - Then **Press the attack** (the casualties shrink away and the next round is rolled),
     **Retreat**, or, if the battle is decided, **End of battle**. **Submerge subs** appears
     when your submarines can dive.
