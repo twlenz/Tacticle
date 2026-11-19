@@ -75,6 +75,11 @@ changes and push them.
 - **Battles:**
   - With several battles you pick each one from the list, and the page returns to the
     list after each. A single battle opens by itself.
+  - The battle window is laid out like the battle board: one row per combat value, 1 at the
+    top, the attacker's units on the left and the defender's on the right, and units that
+    cannot fire in a "–" row at the bottom. Infantry supported by artillery sit in the 2 row.
+    Each die sits in the row of the value it was rolled at, so hits are easy to read off.
+    On small screens the buttons stay pinned to the bottom of the window.
   - A round follows the rule book. **Roll dice**: your dice grow in, then the defender's
     casualties are outlined in red with a "−n" count and a brief shake. They stay on show and still fire back.
     After a short pause the defender rolls, and your casualties are marked the same way.

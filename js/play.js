@@ -926,10 +926,27 @@
     openBattle();
   }
 
-  // ---- the battle window
+  // ---- the battle window: laid out like the battle board, one row per combat value
+  /** The value a unit rolls at in this battle: attack (with artillery support) or defence. 0 = cannot roll. */
+  function battleValues(side) {
+    const g = G();
+    const units = g._side(side);
+    const out = {};
+    let support = 0;
+    if (side === 'A') for (const u of units) support += g.def(u).supports || 0;
+    // which infantry get the support is arbitrary; lowest ids first keeps the rows steady
+    for (const u of units.slice().sort((a, c) => a.id - c.id)) {
+      const d = g.def(u);
+      let v = side === 'A' ? d.att : d.def;
+      if (side === 'A' && d.supportable && support > 0 && v > 0) { v++; support--; }
+      out[u.id] = v;
+    }
+    return out;
+  }
   /**
-   * A side's units, one chip per type. Casualties keep their chip: it is outlined in red with a "−n" count
-   * until the round is settled. While they are removed, the lost ones get a chip of their own that shrinks away.
+   * A side's unit chips by row (value). One chip per type in a row. Casualties keep their chip: it is
+   * outlined in red with a "−n" count until the round is settled. While they are removed, the lost ones
+   * get a chip of their own that shrinks away.
    */
   function battleUnits(side) {
     const g = G();
@@ -942,15 +959,16 @@
     const auto = new Set(anim.hideMarks ? [] : (b.autoLost || []));
     const ch = editing ? g.casualtyChoice(side) : null;
     const cand = new Set(ch ? ch.units.map((u) => u.id) : []);
+    const vals = battleValues(side);
     const groups = {};
-    S.pickGroups = S.pickGroups || {};
-    const add = (u, minus, dies, damaged) => {
+    const add = (u, v, minus, dies, damaged) => {
       const leaving = !!anim.leaving && dies;
-      const key = `${u.t}|${damaged ? 1 : 0}|${leaving ? 1 : 0}`;
-      if (!groups[key]) groups[key] = { key, t: u.t, o: u.o, damaged, leaving, ids: [], minus: 0, pickable: false };
+      const key = `${v}|${u.t}|${damaged ? 1 : 0}|${leaving ? 1 : 0}`;
+      if (!groups[key]) groups[key] = { key, v, t: u.t, o: u.o, damaged, leaving, ids: [], minus: 0, lost: 0, pickable: false };
       const gr = groups[key];
       gr.ids.push(u.id);
       gr.minus += minus;
+      if (dies) gr.lost++;
       if (editing && cand.has(u.id) && !b.doomed.includes(u.id)) gr.pickable = true;
     };
     for (const u of g._side(side)) {
@@ -958,38 +976,57 @@
       const doomed = b.doomed.includes(u.id) || auto.has(u.id);
       const hits = cnt[u.id] || 0;
       const dies = doomed || hits >= left;
-      add(u, dies ? 1 : hits, dies, !dies && (u.h || 0) > 0);
+      add(u, vals[u.id], dies ? 1 : hits, dies, !dies && (u.h || 0) > 0);
     }
-    for (const u of (b.roundDead || []).filter((x) => x.side === side)) add(u, 1, true, false);
+    for (const u of (b.roundDead || []).filter((x) => x.side === side)) {
+      const d = g.def(u.t);
+      add(u, side === 'A' ? d.att : d.def, 1, true, false);
+    }
     const order = Rules.UNIT_ORDER;
-    return Object.values(groups).sort((x, y) => order.indexOf(x.t) - order.indexOf(y.t) || (x.leaving ? 1 : 0) - (y.leaving ? 1 : 0)).map((gr) => {
+    const rows = {};
+    for (const gr of Object.values(groups).sort((x, y) => order.indexOf(x.t) - order.indexOf(y.t) || (x.leaving ? 1 : 0) - (y.leaving ? 1 : 0))) {
       const d = g.def(gr.t);
-      const val = side === 'A' ? d.att : d.def;
       const shake = anim.shake && gr.ids.some((id) => anim.shake.has(id));
       const hit = gr.minus > 0 || gr.leaving;
       const cls = ['bunit', hit ? 'hit' : '', gr.pickable ? 'pick' : '', shake ? 'shake' : '', gr.leaving ? 'leaving' : ''].join(' ');
       const pk = `${side}|${gr.key}`;
       if (gr.pickable) S.pickGroups[pk] = gr.ids;
-      const title = `${d.name}${gr.damaged ? ' (damaged)' : ''}${gr.minus ? `: ${gr.minus} lost` : ''}`;
-      return `<div class="${cls}" style="background:${color(gr.o)}" title="${esc(title)}" ${gr.pickable ? `data-pick="${esc(pk)}" role="button" tabindex="0"` : ''}>
-        ${I.svg(gr.t, 28, '#fff')}<span class="v">${val}</span><span class="n">${gr.ids.length}</span>${gr.minus && !gr.leaving ? `<span class="x">−${gr.minus}</span>` : ''}${gr.damaged ? '<span class="x" style="left:auto;right:-5px;top:-5px;background:#ff8800">dmg</span>' : ''}</div>`;
-    }).join('');
+      const supported = side === 'A' && d.supportable && gr.v > d.att;
+      const title = `${d.name}${supported ? ' (supported by artillery)' : ''}${gr.damaged ? ' (damaged)' : ''}${gr.v > 0 ? `: hits on ${gr.v} or less` : ': cannot fire'}${gr.lost ? ` · ${gr.lost} lost` : ''}${gr.minus > gr.lost ? ` · ${gr.minus - gr.lost} take${gr.minus - gr.lost === 1 ? 's' : ''} a hit` : ''}`;
+      (rows[gr.v] = rows[gr.v] || []).push(`<div class="${cls}" style="background:${color(gr.o)}" title="${esc(title)}" ${gr.pickable ? `data-pick="${esc(pk)}" role="button" tabindex="0"` : ''}>
+        ${I.svg(gr.t, 28, '#fff')}<span class="n">${gr.ids.length}</span>${gr.minus && !gr.leaving ? `<span class="x">−${gr.minus}</span>` : ''}${gr.damaged ? '<span class="x" style="left:auto;right:-5px;top:-5px;background:#ff8800">dmg</span>' : ''}</div>`);
+    }
+    return rows;
   }
+  /** A side's dice this round by row: each die sits in the row of the value it was rolled at. */
   function battleDice(b, side) {
     const key = `${b.id}:${b.round}`;
     if (!S.diceSeen || S.diceSeen.key !== key) S.diceSeen = { key, A: 0, D: 0 };
     const seen = S.diceSeen[side];
     const names = { aa: 'AA', bombard: 'Bombard', subs: 'Subs', fire: 'Fire' };
-    let prev = null;
-    const html = (b.dice[side] || []).map((d, i) => {
+    const rows = {}, prev = {};
+    (b.dice[side] || []).forEach((d, i) => {
       const k = d.k || 'fire';
-      const sep = k !== prev && (k !== 'fire' || prev) ? `<span class="dsep">${names[k]}</span>` : '';
-      prev = k;
+      const sep = k !== prev[d.v] && (k !== 'fire' || prev[d.v]) ? `<span class="dsep">${names[k]}</span>` : '';
+      prev[d.v] = k;
       const fresh = i >= seen;
-      return `${sep}<span class="die ${d.hit ? 'hit' : ''} ${fresh ? 'new' : ''}" ${fresh ? `style="animation-delay:${Math.min(260, (i - seen) * 26)}ms"` : ''} title="${esc(uname(d.t))} hits on ${d.v} or less">${d.die}</span>`;
-    }).join('');
+      (rows[d.v] = rows[d.v] || []).push(`${sep}<span class="die ${d.hit ? 'hit' : ''} ${fresh ? 'new' : ''}" ${fresh ? `style="animation-delay:${Math.min(260, (i - seen) * 26)}ms"` : ''} title="${esc(uname(d.t))} hits on ${d.v} or less">${d.die}</span>`);
+    });
     S.diceSeen[side] = (b.dice[side] || []).length;
-    return html;
+    return rows;
+  }
+  /** Attacker on the left, defender on the right, rows from 1 down to the highest value; units that cannot fire last. */
+  function battleBoard(b, att, defOwner) {
+    const anim = S.anim || {};
+    const units = { A: battleUnits('A'), D: battleUnits('D') };
+    const dice = { A: battleDice(b, 'A'), D: battleDice(b, 'D') };
+    const vals = new Set();
+    for (const side of ['A', 'D']) for (const m of [units[side], dice[side]]) for (const v of Object.keys(m)) vals.add(+v);
+    const rows = [...vals].sort((x, y) => (x === 0) - (y === 0) || x - y);
+    const head = (p, role) => `<div class="bhead ${role}"><span class="swatch" style="background:${color(p)}"></span>${role === 'a' ? 'Attacker' : 'Defender'} · ${esc(p)}${isHumanPower(p) ? ' (you)' : ''}</div>`;
+    const cell = (side, v) => `<div class="bcell ${side === 'A' ? 'a' : 'd'}"><div class="units">${(units[side][v] || []).join('')}</div>${dice[side][v] ? `<div class="dice ${anim.leaving ? 'out' : ''}">${dice[side][v].join('')}</div>` : ''}</div>`;
+    return `<div class="board">${head(att, 'a')}<div class="bhead mid"></div>${head(defOwner, 'd')}` +
+      rows.map((v) => `${cell('A', v)}<div class="bval" title="${v ? `Hits on a roll of ${v} or less` : 'Cannot fire'}">${v || '–'}</div>${cell('D', v)}`).join('') + '</div>';
   }
   function renderBattle() {
     const g = G();
@@ -1007,13 +1044,9 @@
     const editKey = editSide ? `${b.id}:${b.rollNo}:${editSide}` : null;
     if (!editSide) S.edit = null;
     else if (!S.edit || S.edit.key !== editKey) S.edit = { side: editSide, key: editKey, picks: (b.picks[editSide] || []).slice() };
-    const anim = S.anim || {};
     const h = [];
     h.push(`<div class="battle"><h2>⚔️ ${esc(t.name)}</h2><p class="hint">Round ${Math.max(1, b.round)}${b.sea ? ' · sea battle' : ''}${b.round === 0 && b.bombard && b.bombard.length ? ' · ships ready to bombard' : ''}</p>`);
-    h.push('<div class="sides">');
-    h.push(`<div><div class="side-h"><span class="swatch" style="background:${color(att)}"></span>Attacker · ${esc(att)}${isHumanPower(att) ? ' (you)' : ''}</div><div class="units">${battleUnits('A')}</div><div class="dice ${anim.leaving ? 'out' : ''}">${battleDice(b, 'A')}</div></div>`);
-    h.push(`<div><div class="side-h"><span class="swatch" style="background:${color(defOwner)}"></span>Defender · ${esc(defOwner)}${isHumanPower(defOwner) ? ' (you)' : ''}</div><div class="units">${battleUnits('D')}</div><div class="dice ${anim.leaving ? 'out' : ''}">${battleDice(b, 'D')}</div></div>`);
-    h.push('</div>');
+    h.push(battleBoard(b, att, defOwner));
     if (b.lines && b.lines.length) h.push('<ul class="blines">' + b.lines.map((l) => `<li>${esc(l)}</li>`).join('') + '</ul>');
     const btns = [];
     let note = '';
