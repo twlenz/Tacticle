@@ -43,7 +43,7 @@
   const RULESETS = {
     1942: {
       id: '1942', name: '1942 Second Edition (default)',
-      summary: 'AAA fires up to 3 shots at aircraft and can be taken as a casualty; transports are defenceless and chosen last; aircraft need a destroyer to hit submarines; subs and transports do not block ships.',
+      summary: 'AAA fires up to 3 shots at aircraft and can be taken as a casualty; transports are defenceless and chosen last; submarines strike first and can submerge unless an enemy destroyer is present, cannot hit aircraft and cannot be hit by aircraft without a friendly destroyer; subs and transports do not block ships; new ships may be placed in a sea zone with enemy warships.',
       units: units(),
       turnOrder: ORDER,
       aaCaptured: false,
@@ -53,6 +53,10 @@
       transportsBlock: false,
       bombardLimitedByLanders: true,
       sbr: 'damage',
+      // 1942 Second Edition rulebook, p. 22: new sea units may enter play in a hostile sea zone (no combat then);
+      // p. 23/30: submarines may end a noncombat move in a hostile sea zone
+      placeInHostileSea: true,
+      subsEnterHostileNoncombat: true,
     },
     1941: {
       id: '1941', name: '1941',
@@ -66,6 +70,10 @@
       transportsBlock: false,
       bombardLimitedByLanders: true,
       sbr: 'damage',
+      // 1942 Second Edition rulebook, p. 22: new sea units may enter play in a hostile sea zone (no combat then);
+      // p. 23/30: submarines may end a noncombat move in a hostile sea zone
+      placeInHostileSea: true,
+      subsEnterHostileNoncombat: true,
     },
     revised: {
       id: 'revised', name: 'Revised',

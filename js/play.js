@@ -509,6 +509,11 @@
       h.push(`<p class="hint">${combat
         ? 'Tap a unit icon to pick those units (tap again to drop one), or tap the territory to pick everything. Then tap where to send them. Moving into enemy territory starts a battle; empty enemy land is captured; tanks can blitz through it.'
         : 'Reposition units that did not fight. Aircraft must end on friendly land held since the start of the turn, or on a carrier.'}</p>`);
+      if (combat) {
+        // ships sharing a sea zone with enemy warships fight there unless they leave (rulebook p. 9)
+        const shared = Object.keys(g.s.terr).filter((id) => S.mv.T[id] && S.mv.T[id].type === 'sea' && g.hostileSurface(id, g.current()) && g.units(id).some((u) => u.o === g.current() && !u.tr && g.def(u).domain === 'sea'));
+        if (shared.length) h.push(`<p class="picknote">Your ships in ${shared.map((id) => esc(S.mv.T[id].name)).join(', ')} share the sea with enemy warships. They fight there unless you move them away.</p>`);
+      }
       if (S.sel) h.push(selPanel());
       h.push(`<div class="actions">${undoBtn}<button class="primary" id="pNext">${combat ? 'Done moving → battles' : 'Done moving →'}</button></div>`);
     } else if (g.phase === 'combat') {
@@ -756,7 +761,10 @@
       return humanA ? { human: true, act: 'decide' } : { human: false, act: 'botDecide', pause: PAUSE.decide };
     }
     if (b.need !== 'roll') return { human: true, act: 'wait' };
-    if (b.step === 'start' || b.step === 'decide') return humanA ? { human: true, act: 'roll' } : { human: false, act: 'roll', pause: PAUSE.roll };
+    const roundStart = b.step === 'start' || b.step === 'decide';
+    // step 2 of a round: defending subs may dive when the attacker has no destroyer
+    if (roundStart && g.subChoicePending('D') && isHumanPower((g._side('D').find((u) => g.def(u).sub) || {}).o)) return { human: true, act: 'dive' };
+    if (roundStart) return humanA ? { human: true, act: 'roll' } : { human: false, act: 'roll', pause: PAUSE.roll };
     if (b.step === 'fireD' && g._side('D').some((u) => isHumanPower(u.o))) return { human: true, act: 'defend' };
     if (humanPickSide(b)) return { human: true, act: 'continue' };
     return { human: false, act: 'roll', pause: PAUSE.defend };
@@ -785,12 +793,9 @@
             if (to) g.battleRetreat(to);
             else g.battleContinue();
             save();
-            // pressing on rolls the next round; so does a retreat that leaves sea-landed units fighting
-            if (!g.s.battle.over) await showRoll();
+            // the next round is rolled on the next pass (after the defender's subs may have dived)
           } else {
-            g.battleRoll();
-            save();
-            await showRoll();
+            await rollStep();
           }
         } finally { S.animating = false; }
         save();
@@ -798,6 +803,19 @@
       }
     } finally { S.driving = false; }
     return false;
+  }
+  /** Roll the next step; at the start of a round the computer's defending subs first decide whether to dive. */
+  async function rollStep() {
+    const g = G();
+    const b = g.s.battle;
+    if (b.step === 'start' || b.step === 'decide') {
+      S.ai.subDecisions();
+      save();
+      if (!g.s.battle || g.s.battle.over || g.s.battle.need !== 'roll') { renderBattle(); return; }
+    }
+    g.battleRoll();
+    save();
+    await showRoll();
   }
   // ---- animation: a roll's dice grow in, then its casualties are marked with a shake
   async function showRoll() {
@@ -839,16 +857,18 @@
         await removeCasualties();
         g.battleContinue();
         save();
-        if (act === 'press' && !g.s.battle.over) await showRoll();
+        if (act === 'press' && !g.s.battle.over) await rollStep();
+      } else if (act === 'dive' || act === 'stay') {
+        const r = act === 'dive' ? g.battleSubmerge('D') : g.battleKeepSubs('D');
+        if (!r.ok) toast(r.error);
+        save();
       } else if (act === 'submerge') {
         await removeCasualties();
         const r = g.battleSubmerge('A');
         if (!r.ok) toast(r.error);
         save();
       } else {
-        g.battleRoll();
-        save();
-        await showRoll();
+        await rollStep();
       }
     } finally { S.animating = false; }
     S.edit = null;
@@ -912,8 +932,7 @@
       toast('Your units that landed from the sea fight on', 3000);
       render();
       openBattle();
-      S.animating = true;
-      showRoll().then(() => { S.animating = false; render(); renderBattle(); driveBattle(); });
+      driveBattle();
       return;
     }
     toast(`Retreated to ${S.mv.T[id].name}`);
@@ -1072,6 +1091,9 @@
       btns.push('<button class="primary" data-act="over">End of battle</button>');
     } else if (act === 'roll') {
       btns.push('<button class="primary" data-act="roll">Roll dice 🎲</button>');
+    } else if (act === 'dive') {
+      h.push(`<p class="picknote">The attacker has no destroyer, so your submarines may dive before ${b.round ? 'the next round' : 'the battle starts'}. Submerged subs leave the battle and stay in the sea zone; otherwise they strike first.</p>`);
+      btns.push('<button data-act="dive">Submerge subs</button><button class="primary" data-act="stay">Keep them fighting</button>');
     } else if (act === 'defend') {
       h.push(note || '<p class="hint bstate">Your turn to fire back.</p>');
       btns.push(`<button class="primary" data-act="defend" ${dis}>Roll for defense 🎲</button>`);
@@ -1087,7 +1109,7 @@
     } else if (act === 'decide') {
       h.push(note);
       const opts = g.retreatOptions();
-      const subs = g.survivors('A').some((u) => g.def(u).sub) && !g.survivors('D').some((u) => g.def(u).antiSub);
+      const subs = g.canSubmerge('A');
       if (opts.length) btns.push(`<button data-act="retreat" ${dis}>Retreat</button>`);
       if (subs) btns.push(`<button data-act="submerge" ${dis}>Submerge subs</button>`);
       btns.push(`<button class="primary" data-act="press" ${dis}>Press the attack 🎲</button>`);

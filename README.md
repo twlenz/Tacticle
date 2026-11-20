@@ -240,10 +240,10 @@ Rule sets are chosen per puzzle. The default is **1942 Second Edition**:
 | Infantry | 3 | 1 | 2 | 1 | attacks at 2 when paired with artillery |
 | Artillery | 4 | 2 | 2 | 1 | supports one infantry |
 | Tank | 6 | 3 | 3 | 2 | blitzes through empty enemy land |
-| AA gun | 5 | 0 | 0 | 1 | before round 1, up to 3 shots (1 per plane) hitting on 1; no combat move; can be a casualty |
+| AA gun | 5 | 0 | 0 | 1 | before round 1, up to 3 shots (1 per plane) hitting on 1; no combat move; can be a casualty; destroyed without combat when no combat units defend with it |
 | Fighter | 10 | 3 | 4 | 4 | lands on carriers |
 | Bomber | 12 | 4 | 1 | 6 | |
-| Submarine | 6 | 2 | 1 | 2 | surprise strike and submerge unless an enemy destroyer is present; can't hit aircraft |
+| Submarine | 6 | 2 | 1 | 2 | surprise strike and submerge unless an enemy destroyer is present; can't hit aircraft; passes enemy ships and may end a noncombat move among them |
 | Destroyer | 8 | 2 | 2 | 2 | cancels submarine abilities; lets its side's aircraft hit subs |
 | Cruiser | 12 | 3 | 3 | 2 | shore bombardment |
 | Carrier | 14 | 1 | 2 | 2 | holds 2 fighters |
@@ -263,6 +263,24 @@ captured this turn; aircraft left without a landing spot are lost),
 capital capture taking the treasury, liberation of allied territory, income, production
 limits, and neutral territories that block movement.
 
+Checked against the 1942 Second Edition rulebook:
+
+- **New ships in a hostile sea zone** (p. 22): new sea units, and fighters on carriers, may be
+  placed in a sea zone adjacent to the factory even when enemy warships are there. No combat
+  happens then. On a later turn, a power whose ships share a sea zone with enemy surface
+  warships must fight there or move away (p. 9). Ships left there are in a battle when combat
+  move ends, and the combat-move panel warns about it.
+- **Submarines** (pp. 16, 30): each round starts with the surprise strike (attacker's subs
+  hit on 2, then defender's on 1; hits are removed before anyone fires back) or submerging.
+  Attacker and defender may both submerge; the player decides with the buttons, the computer
+  dives when its defence is likely lost. Subs can't hit aircraft. An enemy destroyer cancels
+  surprise strike and submerging, and lets aircraft hit subs; whether a destroyer is present
+  is judged when the round starts (p. 17, step 5 note).
+- **Defenceless units** (pp. 17, 25): transports with nothing left to protect them (no combat
+  units, or only combat units that can't hit the enemy, such as subs against aircraft) are
+  destroyed without a roll; attacking transports that can still retreat are not. AA guns
+  without combat units are destroyed without combat, and take no AA shot.
+
 Other rule sets: **1941** (1942 units without AA guns), **Revised** (tanks 5,
 bombers 15, destroyers 3/3 for 12, carriers 1/3 for 16, battleships 24, no cruisers;
 AA guns fire at every plane and are captured; transports defend at 1), and **Classic**
@@ -272,7 +290,8 @@ Simplifications compared with the board games: no strategic bombing raids (bombe
 fight as normal attackers); transports carry only their own power's units; a
 transport can't load in a zone with enemy warships; units loaded during combat movement
 that stay aboard simply remain loaded; unplaced purchases carry over to the next turn;
-only attackers decide on submerging between rounds; and canals (Suez, Panama) open only
+a sea zone that holds only enemy submarines is always attacked when ships end a combat
+move there (the rulebook lets them ignore the subs: move there in noncombat instead); and canals (Suez, Panama) open only
 when their territory is controlled by the mover's team.
 
 ### Computer opponent (`js/ai.js`)
