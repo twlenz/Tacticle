@@ -336,3 +336,24 @@ test('share text: other players\' win rate is the second-to-last line', () => {
   assert.ok(!D.shareText(Object.assign({ others: { won: 0, lost: 0 } }, base)).includes('🌍'), 'no line without other players');
   assert.ok(!D.shareText(Object.assign({ others: null }, base)).includes('🌍'));
 });
+
+test('AI: settings follow the role (the side defending objectives gets the defensive settings)', () => {
+  const capture = E.Game.create(fixtureMap, scenario({ objectives: [{ type: 'capture', territories: ['B2'] }] }), { seed: 1 });
+  const ai = new AI(capture);
+  assert.equal(capture.current(), 'Germany'); // the player's side
+  assert.equal(ai._role(), 'attack');
+  assert.equal(ai.opts.deadZone, AI.DEFAULTS.deadZone);
+  capture.s.turn = 1; // Soviet Union, the computer
+  assert.equal(ai._role(), 'defend');
+  assert.equal(ai.opts.deadZone, AI.ROLES.defend.deadZone);
+  // only "hold" objectives: the player defends, the computer attacks
+  const hold = E.Game.create(fixtureMap, scenario({ objectives: [{ type: 'hold', territories: ['A1'] }] }), { seed: 1 });
+  const ai2 = new AI(hold);
+  assert.equal(ai2._role(), 'defend');
+  hold.s.turn = 1;
+  assert.equal(ai2._role(), 'attack');
+  // a puzzle can keep the earlier opponent
+  assert.deepEqual(AI.opponentOptions({ opponent: 'earlier' }), { roles: false });
+  const old = new AI(capture, AI.opponentOptions({ opponent: 'earlier' }));
+  assert.equal(old.opts.deadZone, AI.DEFAULTS.deadZone);
+});

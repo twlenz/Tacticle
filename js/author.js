@@ -596,6 +596,7 @@
         field('Difficulty label', `<select id="sDiff">${['easy', 'medium', 'hard'].map((d) => `<option ${sc.difficulty === d ? 'selected' : ''}>${d}</option>`).join('')}</select>`) + '</div>',
       field('Map', `<select id="sMap">${A.maps.map((m) => `<option value="${esc(m.id)}" ${m.id === sc.map ? 'selected' : ''}>${esc(m.name)}${m.source ? ' (' + esc(m.source) + ')' : ''}</option>`).join('')}</select>`),
       field('Rules', `<select id="sRules">${Rules.list().map((r) => `<option value="${r.id}" ${r.id === sc.ruleset ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select><div class="hint" style="margin-top:4px">${esc(R().summary)}</div>`),
+      field('Computer opponent', `<select id="sOpp"><option value="">Standard</option><option value="earlier" ${sc.opponent === 'earlier' ? 'selected' : ''}>Earlier, easier (before the November 2026 update)</option></select><div class="hint" style="margin-top:4px">The standard opponent defends objectives more carefully. Puzzles balanced against the earlier one can keep it.</div>`),
       '<div class="two">' + field('Max turns', `<input type="number" min="1" max="20" id="sTurns" value="${sc.maxTurns}">`) +
         field('Win check', `<select id="sWin"><option value="turnEnd" ${sc.winCheck !== 'roundEnd' ? 'selected' : ''}>End of player's turn</option><option value="roundEnd" ${sc.winCheck === 'roundEnd' ? 'selected' : ''}>End of round (after counter-attack)</option></select>`) + '</div>',
       `<label class="chk"><input type="checkbox" id="sIncome" ${sc.income !== false ? 'checked' : ''}> Collect income at the end of each turn</label>`,
@@ -620,6 +621,7 @@
         .catch((err) => { toast(err.message, 6000); renderTab(); });
     });
     bindInput(el, '#sRules', (e) => upd(() => { sc.ruleset = e.value; }));
+    bindInput(el, '#sOpp', (e) => upd(() => { if (e.value === 'earlier') sc.opponent = 'earlier'; else delete sc.opponent; }));
     bindInput(el, '#sTurns', (e) => upd(() => { sc.maxTurns = Math.max(1, Math.min(20, +e.value || 1)); }));
     bindInput(el, '#sWin', (e) => upd(() => { sc.winCheck = e.value; }));
     bindInput(el, '#sIncome', (e) => upd(() => { sc.income = e.checked; }));

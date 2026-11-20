@@ -342,10 +342,48 @@ The objective race changes its priorities:
   objectives on the last turn.
 
 It also plans amphibious landings from loaded transports, retreats from hopeless fights,
-and only counts landing spots that exist (it doesn't plan carrier moves). In 336
-generated puzzles played against the earlier version, the player side's win rate fell
-from 53% to about 51%. It is a fair opponent for small puzzles, not a strong general one:
-it makes no multi-turn plans.
+and only counts landing spots that exist (it doesn't plan carrier moves). It makes no
+multi-turn plans.
+
+**Settings by role.** The strategy has numeric settings (`AI.DEFAULTS` in `js/ai.js`). The
+side defending the objectives (the computer, in capture and clear puzzles) uses settings found
+by a genetic search (`AI.ROLES.defend`):
+- **Attacks:** it attacks only at good odds (about 80%), leaves expensive units out of attacks
+  more readily, and weighs the counterattack on survivors.
+- **Defence:** it keeps 1.6× the threat in threatened territory, stacks objectives to 3× the
+  threat, and pulls units out of "dead zones" (places facing more than 1.8× their defence that
+  the objectives don't need) into the strongest safe stack.
+
+The attacking side keeps the defaults, because these settings make it a poor attacker. A
+puzzle can keep the earlier opponent with `"opponent": "earlier"` (authoring tool, Scenario
+tab).
+
+**How the settings were chosen.** `tools/ai_bench.js` plays a fixed set of scenarios (the
+saved puzzles plus 36 generated ones) with fixed seeds, the player's side and the computer's
+side each with their own settings. Lower player win rates mean a stronger computer.
+- **Baseline:** with both sides on the earlier strategy, the player side won 46.3% of 294 games.
+- **Hand-picked, one at a time:**
+  - dead zones: 40.1%;
+  - a heavier garrison: 41.8%;
+  - leaving units out of attacks more readily: 43.9%;
+  - income awareness, endgame unit value, infantry-only buying, objective odds: no games changed;
+  - all of them combined: 35.7%.
+- **Genetic search** (`tools/ai_evolve.js`, 10 settings, population 10, 8 generations): each
+  candidate played the computer side against the earlier strategy and against the previous
+  champion, on fresh seeds each generation. Its champion reached 34.7%.
+- **Held-out check:** on 60 generated scenarios that neither the search nor the hand-picking
+  saw (360 games), the player side's win rate fell from 57.5% to 50.0% with the evolved
+  settings (z ≈ 3.9), against 52.5% with the hand-picked combination.
+
+The gain on the training scenarios (11–12 points) was larger than on new ones (7–8 points):
+part of it was fitted to those scenarios.
+
+```sh
+node tools/ai_bench.js build                       # scenario set (tools/cache/bench.json)
+node tools/ai_bench.js run --foe '{"roles":false}' # player side's win rate against the earlier computer
+node tools/ai_bench.js compare variants.json       # {"name": {settings}, ...}, each paired against the defaults
+node tools/ai_evolve.js --pop 10 --gens 8          # genetic search; result in tools/cache/evolved.json
+```
 
 ## Maps
 
@@ -424,10 +462,14 @@ js/ai.js                      computer opponent + AI self-play
 js/generator.js               procedural puzzles and variants
 js/mapview.js, js/icons.js    SVG map (pan/zoom/pinch/wrap) and unit icons
 js/daily.js                   dates, puzzle numbers, share text
+js/results.js                 player results via GoatCounter (config.json)
+js/localmaps.js               maps imported in the browser, kept in IndexedDB
 js/triplea.js                 TripleA catalogue reader and map converter
 tools/triplea_fetch.js        TripleA import from the command line
 js/worker.js                  Web Worker for generation and balance checks
 tools/serve.js                static server + save API for the authoring tool
+tools/ai_bench.js             computer-opponent tournament on fixed scenarios and seeds
+tools/ai_evolve.js            genetic search over the opponent's settings
 tools/build_world_map.py      world map builder (+ tools/world_config.py)
 tests/                        node --test suites
 ```

@@ -115,7 +115,7 @@
     }
     S.g.s.uiHold = true;
     S.g.s.autoCasualties = true;
-    S.ai = new TAI(S.g);
+    S.ai = new TAI(S.g, TAI.opponentOptions(S.sc));
     S.sel = null; S.dest = {}; S.unload = {}; S.placeType = null; S.edit = null; S.anim = {}; S.retreat = null;
     $('puzzleNo').textContent = (S.puzzleLabel || '') + (S.mode === 'free' ? ' · free play' : '');
   }
