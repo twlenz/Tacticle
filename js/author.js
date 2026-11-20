@@ -718,7 +718,7 @@
       field('Balance games', `<input type="number" id="gTune" min="0" max="60" value="${g.tune}" title="AI self-play games per tuning step (0 = skip)">`) + '</div>' +
       `<label class="chk"><input type="checkbox" id="gNaval" ${g.naval ? 'checked' : ''}> Include sea zones, fleets and transports</label>
       ${A.map.defaultSetup ? `<label class="chk"><input type="checkbox" id="gMapUnits" ${g.mapUnits !== false ? 'checked' : ''}> Use this map's starting armies (tune the turn limit and reinforcements)</label>` : ''}
-      ${cal ? `<label class="chk"><input type="checkbox" id="gCal" ${g.calibrate ? 'checked' : ''}> Aim for real players: they win ${Math.abs(cal.gap)} points ${cal.gap >= 0 ? 'more' : 'less'} often than the balance check (${cal.players} players, ${cal.puzzles} puzzle${cal.puzzles === 1 ? '' : 's'}; Test tab)</label>` : ''}
+      ${cal && cal.b ? `<label class="chk"><input type="checkbox" id="gCal" ${g.calibrate ? 'checked' : ''}> Aim for real players (${cal.players} players, ${cal.puzzles} puzzle${cal.puzzles === 1 ? '' : 's'}; Test tab): for players to win ${(GEN.DIFFICULTY ? GEN.DIFFICULTY[g.difficulty].band : [0.45, 0.72]).map((x) => Math.round(x * 100) + '%').join('–')}, the balance check aims at ${(GEN.DIFFICULTY ? GEN.DIFFICULTY[g.difficulty].band : [0.45, 0.72]).map((x) => Math.round(100 * window.TacticleResults.simFromReal(cal, x)) + '%').join('–')}</label>` : ''}
       <div class="actions"><button class="primary" id="gNew">Generate new</button><button id="gVar">Variant of current</button></div>
       <div class="bar"><div id="gBar"></div></div><div id="gOut" class="hint"></div>`;
     const read = () => {
@@ -729,7 +729,7 @@
     };
     $('gNew').onclick = async () => {
       read();
-      const opts = Object.assign({}, g, { seed: E.randomSeed(), calibrate: g.calibrate && cal ? cal.gap : 0 });
+      const opts = Object.assign({}, g, { seed: E.randomSeed(), calibration: g.calibrate && cal && cal.b ? { a: cal.a, b: cal.b } : null });
       if (g.theater === '__sel') {
         if (!A.selected) { toast('Select a territory first (Select tool)'); return; }
         opts.theater = 'any'; opts.center = A.selected;
@@ -826,13 +826,14 @@
       rows.push({ id: p.id, title: p.title || p.id, sim, players });
     }
     const cal = RS.calibration(rows, 5);
-    store.set('tacticle:calibration', cal ? Object.assign({ at: D.today() }, cal) : null);
+    const fit = RS.fitCalibration(rows, 5);
+    store.set('tacticle:calibration', fit ? Object.assign({ at: D.today(), gap: cal ? cal.gap : 0 }, fit) : null);
     const pctOf = (t) => { const v = RS.pct(t); return v == null ? '—' : v + '%'; };
     out.innerHTML = `<table class="ptable"><tr><th align="left">Puzzle</th><th>Players</th><th>Won</th><th>Balance check</th></tr>${rows.map((r) => {
       const n = r.players.won + r.players.lost;
       return `<tr><td>${esc(r.title)}</td><td align="center">${n}</td><td align="center">${pctOf(r.players)}</td><td align="center">${r.sim == null ? '—' : Math.round(r.sim * 100) + '%'}</td></tr>`;
     }).join('')}</table>
-      <p class="hint">${cal ? `Players won <b>${Math.abs(cal.gap)} points ${cal.gap >= 0 ? 'more' : 'less'}</b> often than the balance check predicted (${cal.players} players on ${cal.puzzles} puzzle${cal.puzzles === 1 ? '' : 's'} with at least 5 players and a balance check). The Generate tab can aim for that.` : 'Not enough results yet: a puzzle needs at least 5 players and a saved balance check (run one in this tab, or generate the puzzle) to count.'}</p>`;
+      <p class="hint">${cal && fit ? `On average players won <b>${Math.abs(cal.gap)} points ${cal.gap >= 0 ? 'more' : 'less'}</b> often than the balance check predicted (${cal.players} players on ${cal.puzzles} puzzle${cal.puzzles === 1 ? '' : 's'} with at least 5 players and a balance check). The gap is not the same at every rate, so it is fitted as a curve: a balance check of ${[0.2, 0.5, 0.8].map((x) => `${Math.round(x * 100)}% → ${Math.round(100 * RS.realFromSim(fit, x))}%`).join(', ')} for players. The Generate tab can aim for that.` : 'Not enough results yet: a puzzle needs at least 5 players and a saved balance check (run one in this tab, or generate the puzzle) to count.'}</p>`;
   }
   function tabSchedule(el) {
     const sch = A.schedule;

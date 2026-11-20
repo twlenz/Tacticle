@@ -164,9 +164,14 @@ Free play and play tests are never recorded.
   its balance check.
   - The balance check is now saved with the puzzle as `balance.winRate`; generated puzzles
     already carry `generator.winRate`.
-  - The tool works out how many points more (or less) often players win than the computer
-    playing their side, weighted by players, for puzzles with at least 5 players.
-- **Generate tab:** "Aim for real players" shifts the target band by that gap.
+  - The gap is not the same at every rate (a puzzle at 95% can't gain 35 points), so the tool
+    fits a curve in log-odds, `players = σ(a + b·logit(check))`, by maximum likelihood over
+    puzzles with at least 5 players. A mild pull toward "no difference" stops a few puzzles
+    giving a wild curve, and the slope is fitted only from 3 puzzles up.
+  - Example: if players won 85% of a puzzle the check put at 50%, the curve maps a check of
+    5% → 22%, 20% → 58%, 80% → 96% and 95% → 99%.
+- **Generate tab:** "Aim for real players" maps the target band through the inverse curve. For
+  players to win a medium puzzle 45–72% of the time in that example, the check aims at 13–32%.
 - **Privacy and reliability:** GoatCounter keeps no cookies and nothing beyond a page view
   is sent. Anyone could send fake hits, so treat the numbers as a guide. With the code
   empty (the default), nothing is sent or read.

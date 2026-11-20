@@ -357,3 +357,21 @@ test('AI: settings follow the role (the side defending objectives gets the defen
   const old = new AI(capture, AI.opponentOptions({ opponent: 'earlier' }));
   assert.equal(old.opts.deadZone, AI.DEFAULTS.deadZone);
 });
+
+test('results: the calibration curve is fitted in log-odds, so the gap shrinks near 0% and 100%', () => {
+  const RS = require('../js/results.js');
+  const sig = (x) => 1 / (1 + Math.exp(-x));
+  const logit = (p) => Math.log(p / (1 - p));
+  // synthetic puzzles from a known curve: real = σ(1.2 + 0.7·logit(sim))
+  const rows = [0.2, 0.35, 0.5, 0.65, 0.8].map((sim) => { const n = 400, k = Math.round(n * sig(1.2 + 0.7 * logit(sim))); return { players: { won: k, lost: n - k }, sim }; });
+  const fit = RS.fitCalibration(rows, 5);
+  assert.ok(Math.abs(fit.a - 1.2) < 0.1 && Math.abs(fit.b - 0.7) < 0.1, JSON.stringify(fit));
+  assert.ok(Math.abs(RS.simFromReal(fit, RS.realFromSim(fit, 0.3)) - 0.3) < 1e-9, 'the inverse undoes the curve');
+  // one puzzle (85% of players won where the check said 50%): a shift in log-odds only
+  const one = RS.fitCalibration([{ players: { won: 17, lost: 3 }, sim: 0.5 }], 5);
+  assert.equal(one.b, 1);
+  const at = (x) => Math.round(100 * RS.realFromSim(one, x));
+  assert.ok(at(0.5) >= 80 && at(0.5) <= 86, String(at(0.5)));
+  assert.ok(at(0.95) < 100 && at(0.95) - 95 < 5, 'near 100% the gap is small: ' + at(0.95));
+  assert.ok(at(0.1) - 10 > 20, 'at 10% the gap is large: ' + at(0.1));
+});

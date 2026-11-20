@@ -59,6 +59,42 @@
   function without(t, won) {
     return { won: Math.max(0, t.won - (won ? 1 : 0)), lost: Math.max(0, t.lost - (won ? 0 : 1)) };
   }
+  const clampP = (p) => Math.min(0.98, Math.max(0.02, p));
+  const logit = (p) => { const q = clampP(p); return Math.log(q / (1 - q)); };
+  const sig = (x) => 1 / (1 + Math.exp(-x));
+  /**
+   * Fit how real players' win rate depends on the balance check's: real = σ(a + b·logit(sim)), by binomial
+   * maximum likelihood over puzzles (rows as for calibration below). Working in log-odds makes the gap
+   * nonlinear: a puzzle the check puts at 50% can be 85% for players while one at 95% stays below 100%.
+   * A mild pull toward a = 0, b = 1 keeps a few puzzles from producing a wild curve; the slope b is only
+   * fitted from 3 puzzles up (until then the curve is a pure shift in log-odds).
+   */
+  function fitCalibration(rows, min) {
+    const data = rows.filter((r) => r.players && r.sim != null && r.players.won + r.players.lost >= (min || 5))
+      .map((r) => ({ x: logit(r.sim), k: r.players.won, n: r.players.won + r.players.lost }));
+    if (!data.length) return null;
+    let a = 0, b = 1;
+    const lamA = 0.05, lamB = data.length >= 3 ? 1 : 1e6;
+    for (let it = 0; it < 100; it++) {
+      let ga = lamA * a, gb = lamB * (b - 1), haa = lamA, hab = 0, hbb = lamB;
+      for (const d of data) {
+        const p = sig(a + b * d.x);
+        const r = d.n * p - d.k;
+        ga += r; gb += r * d.x;
+        const w = d.n * p * (1 - p) + 1e-9;
+        haa += w; hab += w * d.x; hbb += w * d.x * d.x;
+      }
+      const det = haa * hbb - hab * hab;
+      const da = (hbb * ga - hab * gb) / det, db = (haa * gb - hab * ga) / det;
+      a -= da; b -= db;
+      if (Math.abs(da) + Math.abs(db) < 1e-10) break;
+    }
+    b = Math.max(0.2, Math.min(5, b));
+    return { a: Math.round(a * 1000) / 1000, b: Math.round(b * 1000) / 1000, players: data.reduce((s, d) => s + d.n, 0), puzzles: data.length };
+  }
+  /** Players' expected win rate for a balance-check rate, and the check rate that gives a wanted player rate. */
+  function realFromSim(c, sim) { return sig(c.a + c.b * logit(sim)); }
+  function simFromReal(c, real) { return sig((logit(real) - c.a) / c.b); }
   /**
    * How far real players' win rates sit above (+) or below (−) the balance check's, in points (0–100),
    * weighted by players. rows: [{players:{won,lost}, sim (0–1)}]; puzzles with fewer than `min` players are left out.
@@ -75,5 +111,5 @@
     return w ? { gap: Math.round((100 * sum) / w), players: w, puzzles } : null;
   }
 
-  return { valid, dayPath, puzzlePath, hitUrl, counterUrl, parseCount, count, tally, pct, without, calibration };
+  return { valid, dayPath, puzzlePath, hitUrl, counterUrl, parseCount, count, tally, pct, without, calibration, fitCalibration, realFromSim, simFromReal };
 });
