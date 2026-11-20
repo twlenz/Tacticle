@@ -375,3 +375,24 @@ test('results: the calibration curve is fitted in log-odds, so the gap shrinks n
   assert.ok(at(0.95) < 100 && at(0.95) - 95 < 5, 'near 100% the gap is small: ' + at(0.95));
   assert.ok(at(0.1) - 10 > 20, 'at 10% the gap is large: ' + at(0.1));
 });
+
+test('win-probability model: features, a trained model, and probabilities that follow the objective race', () => {
+  const V = require('../js/value.js');
+  assert.ok(V.model, 'trained weights are in js/value.js');
+  const sc = scenario({ objectives: [{ type: 'capture', territories: ['B2'] }] });
+  const g = E.Game.create(fixtureMap, sc, { seed: 1 });
+  const f = V.features(g);
+  assert.equal(f.length, V.NAMES.length);
+  assert.ok(f.every(Number.isFinite));
+  const p = V.predict(g);
+  assert.ok(p > 0 && p < 1);
+  // pile the player's army next to the objective and empty it: the player's chances go up
+  const h = E.Game.create(fixtureMap, sc, { seed: 1 });
+  h.s.terr.B2.u = h.s.terr.B2.u.filter((u) => u.t === 'factory');
+  for (let i = 0; i < 6; i++) h.s.terr.B1.u.push({ id: 5000 + i, t: 'tank', o: 'Germany', ml: 2, h: 0 });
+  h.s.terr.B1.o = 'Germany';
+  assert.ok(V.predict(h) > p, `${V.predict(h)} > ${p}`);
+  // a finished game is certain
+  h.s.phase = 'gameOver'; h.s.result = { won: false };
+  assert.equal(V.predict(h), 0);
+});

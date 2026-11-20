@@ -16,9 +16,9 @@
  * step() returns null when it is not an AI decision (human turn or human casualty choice).
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./engine.js'));
-  else root.TacticleAI = factory(root.TacticleEngine);
-})(typeof self !== 'undefined' ? self : this, function (E) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./engine.js'), require('./value.js'));
+  else root.TacticleAI = factory(root.TacticleEngine, root.TacticleValue);
+})(typeof self !== 'undefined' ? self : this, function (E, V) {
   'use strict';
 
   class AI {
@@ -31,10 +31,52 @@
       this.planned = null; // phase key the queue was built for
     }
 
-    /** The settings for the side now moving (see AI.ROLES). */
+    /** The settings for the side now moving (see AI.ROLES), plus this turn's policy when lookahead chose one. */
     get opts() {
       const role = this._given.roles === false ? 'none' : this._role();
-      return this._byRole[role] || (this._byRole[role] = Object.assign({}, AI.DEFAULTS, AI.ROLES[role] || {}, this._given));
+      const tp = this._turnPolicy && this._turnPolicy.key === this._turnKey() ? this._turnPolicy : null;
+      const ck = role + (tp ? '|' + tp.k : '');
+      return this._byRole[ck] || (this._byRole[ck] = Object.assign({}, AI.DEFAULTS, AI.ROLES[role] || {}, this._given, tp ? AI.POLICIES[tp.k] : {}));
+    }
+    _turnKey() { return this.g.s.round + '|' + this.g.s.turn; }
+    /**
+     * Lookahead (setting `lookahead: {samples}`): at the start of its turn, play the whole turn on copies of
+     * the game once per candidate policy (AI.POLICIES), with fresh dice so the real rolls stay unknown, score
+     * each resulting position with the win-probability model (js/value.js), and play the real turn with the
+     * policy whose positions scored best for the moving side.
+     */
+    _pickPolicy() {
+      const g = this.g;
+      const la = this._given.lookahead || {};
+      const p = g.current();
+      const forPlayer = g.team(p) === g.humanTeam();
+      const samples = la.samples || 2;
+      const scores = [];
+      for (let k = 0; k < AI.POLICIES.length; k++) {
+        let sum = 0;
+        for (let s = 0; s < samples; s++) {
+          const st = JSON.parse(JSON.stringify(g.s));
+          st.uiHold = false;
+          st.autoCasualties = true;
+          st.rng = (hash(this._turnKey() + ':' + s) ^ Math.imul(g.s.rng | 0, 0x9e3779b1)) >>> 0;
+          const g2 = new E.Game(g.map, g.sc, st);
+          if (Object.prototype.hasOwnProperty.call(g, 'humanTeam')) g2.humanTeam = g.humanTeam;
+          if (Object.prototype.hasOwnProperty.call(g, 'isHuman')) g2.isHuman = g.isHuman;
+          // the policy plays the turn; any power's moves are made by the same AI (the turn is the mover's)
+          for (const q of Object.keys(st.powers)) st.powers[q].ai = true;
+          const given = Object.assign({}, this._given, AI.POLICIES[k]);
+          delete given.lookahead;
+          const a2 = new AI(g2, given);
+          let n = 0;
+          while (g2.phase !== 'gameOver' && g2.current() === p && n++ < 4000) if (!a2.step()) break;
+          const pw = V.predict(g2);
+          sum += forPlayer ? pw : 1 - pw;
+        }
+        scores.push(sum / samples);
+      }
+      let best = 0;
+      for (let k = 1; k < scores.length; k++) if (scores[k] > scores[best] + 1e-9) best = k;
+      this._turnPolicy = { key: this._turnKey(), k: best, scores };
     }
     /**
      * 'defend' for the side keeping the other from its objectives, else 'attack'. In capture and clear
@@ -47,6 +89,43 @@
       const forPlayer = g.team(g.current()) === g.humanTeam();
       return forPlayer === holdOnly ? 'defend' : 'attack';
     }
+    /**
+     * Value moves (setting `valueMoves`): land units move one at a time to wherever the win-probability model
+     * (js/value.js) rates the position best for the moving side, until no single move improves it. Each
+     * candidate is tried by moving the unit in place, scoring, and moving it back.
+     */
+    _valueMoves(doMove, D) {
+      const g = this.g;
+      const p = g.current();
+      const forPlayer = g.team(p) === g.humanTeam();
+      const val = () => { const v = V.predict(g); return forPlayer ? v : 1 - v; };
+      const friendly = [...g.B.playable].filter((id) => g.B.isLand(id) && g.friendlyOwner(id, p) && !g.s.terr[id].conq);
+      let cur = val();
+      for (let iter = 0; iter < 40; iter++) {
+        let best = null;
+        const tried = new Set();
+        for (const from of friendly) {
+          for (const u of g.units(from)) {
+            if (u.o !== p || g.def(u).domain !== 'land' || !g.canUnitMove(u, from)) continue;
+            const sig = from + '|' + u.t + '|' + (u.h || 0);
+            if (tried.has(sig)) continue; // one unit of each kind per territory is enough to try
+            tried.add(sig);
+            for (const to of friendly) {
+              const d = D.land[from][to];
+              if (to === from || d === undefined || d > u.ml) continue;
+              const list = g.s.terr[from].u, i = list.indexOf(u);
+              list.splice(i, 1); g.s.terr[to].u.push(u);
+              const v = val();
+              g.s.terr[to].u.pop(); list.splice(i, 0, u);
+              if (v > cur + 0.002 && (!best || v > best.v)) best = { v, from, to, u };
+            }
+          }
+        }
+        if (!best) break;
+        if (!g.checkMove(best.from, [best.u.id], best.to).ok || !doMove(best.from, [best.u.id], best.to)) break;
+        cur = val();
+      }
+    }
     /** Execute one AI action. Returns a description, or null if nothing for the AI to do. */
     step() {
       const g = this.g;
@@ -58,7 +137,11 @@
       const p = g.current();
       if (!g.s.powers[p].ai) return null;
       const key = `${g.s.round}|${g.s.turn}|${g.phase}`;
-      if (this.planned !== key) { this.queue = this._plan(); this.planned = key; }
+      if (this.planned !== key) {
+        if (this._given.lookahead && V && V.model && g.phase === 'purchase' && (!this._turnPolicy || this._turnPolicy.key !== this._turnKey())) this._pickPolicy();
+        this.queue = this._plan();
+        this.planned = key;
+      }
       while (this.queue.length) {
         const a = this.queue.shift();
         const r = this._do(a);
@@ -651,6 +734,7 @@
         if (r.ok) moves.push({ type: 'shown', from, to, uids });
         return r.ok;
       };
+      if (this.opts.valueMoves && V && V.model) this._valueMoves(doMove, D);
       // need score per friendly land territory
       const need = () => {
         const out = {};
@@ -818,6 +902,14 @@
     defend: { swingOdds: 0.79, objOdds: 1.13, trimSlack: 1.31, garrison: 1.63, counter: 0.47, deadZone: 1.77, objGuard: 3, frontPull: 2.58 },
     attack: {},
   };
+  /** Candidate policies for lookahead (settings on top of the role's). */
+  AI.POLICIES = [
+    {}, // the role's settings
+    { swingOdds: 0.6, objOdds: 1, trimSlack: 0.5, garrison: 1, counter: 0, deadZone: 0, objGuard: 1.5, frontPull: 3 }, // the earlier strategy
+    { swingOdds: 0.45, garrison: 0.7, deadZone: 0, trimSlack: 0.5, counter: 0 }, // aggressive
+    { swingOdds: 0.85, garrison: 2.2, objGuard: 3, deadZone: 1.3, frontPull: 1 }, // fortress
+    { frontPull: 6, deadZone: 2.5, garrison: 1.2, swingOdds: 0.7 }, // forward
+  ];
   AI.VERSION = 2;
   /** Settings a puzzle asks for: "opponent": "earlier" keeps the strategy from before the role settings. */
   AI.opponentOptions = (sc) => (sc && sc.opponent === 'earlier' ? { roles: false } : {});
@@ -870,6 +962,7 @@
     const mine = new Set(humans.map((p) => g.team(p)));
     let guard = 0;
     while (g.phase !== 'gameOver' && guard++ < 20000) {
+      if (opts.onState) opts.onState(g); // e.g. recording positions for the win-probability model
       const who = mine.has(g.team(g.current())) ? ai : foe;
       if (!who.step()) break;
     }

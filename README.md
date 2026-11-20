@@ -383,6 +383,53 @@ side each with their own settings. Lower player win rates mean a stronger comput
 The gain on the training scenarios (11–12 points) was larger than on new ones (7–8 points):
 part of it was fitted to those scenarios.
 
+**Win-probability model** (`js/value.js`, trained by `tools/ai_value.js`). This is a classifier
+that estimates, from any position, the chance that the player's side wins, like a chess
+evaluation bar.
+- **Features:** objectives met and missing, player turns left, units' IPC value and
+  attack/defence for each side, attack within reach of each objective (one and two turns)
+  against its defenders, threat to held objectives, income and money. It also simulates the
+  chance of taking the objectives still needed next turn, and of the enemy retaking those held.
+- **Data:** 19,253 positions from 5,225 self-play games on 209 training scenarios, with random
+  strategy settings for each side so the positions vary.
+- **Quality on 2,861 positions from the 60 held-out scenarios:**
+
+  | Model | Log-loss | Accuracy | AUC |
+  |---|---|---|---|
+  | Constant win rate | 0.749 | 55% | 0.52 |
+  | Objectives and turns only | 0.727 | 56% | 0.64 |
+  | Logistic regression (used) | 0.570 | 69% | 0.78 |
+  | Network, 16 hidden units | 0.575 | 71% | 0.78 |
+
+  The two battle-odds features improved the log-loss from 0.598. The model is somewhat
+  overconfident at the extremes: positions it puts at 90% are won about 81% of the time.
+
+**Using the model to choose actions.** Two settings, both off by default, each measured against
+the GA-tuned opponent (player side's win rate; benchmark / held-out 1 / held-out 2):
+
+| Computer side | Benchmark | Held-out 1 | Held-out 2 |
+|---|---|---|---|
+| GA settings | 34.7% | 43.1% | 54.6% |
+| `valueMoves` | 35.0% | 43.8% | 51.4% |
+| `lookahead` | 34.7% | 43.1% | 55.1% |
+
+- **`valueMoves`:** in noncombat move it moves land units one at a time to wherever the model
+  rates the position best, until no move improves it. Across all three sets it turned 12 games
+  into computer wins and 7 into player wins, so no reliable gain.
+- **`lookahead`:** it plays its turn on copies of the game with each candidate strategy
+  (`AI.POLICIES`), using fresh dice, and plays the one whose resulting positions the model rates
+  best. It changed almost nothing: the candidates often produce identical moves, and the
+  computer usually has only one or two turns.
+- **Conclusion:** the GA-tuned rules already do what the model rewards (stacking objectives,
+  leaving dead zones), so the model adds little on top of them.
+
+```sh
+node tools/ai_value.js pool                      # training scenarios (benchmark set + generated)
+node tools/ai_value.js data --games 25           # self-play positions with outcomes
+node tools/ai_value.js train                     # fit, report held-out quality, write js/value.js
+node tools/ai_bench.js run --foe '{"valueMoves":true}'
+```
+
 ```sh
 node tools/ai_bench.js build                       # scenario set (tools/cache/bench.json)
 node tools/ai_bench.js run --foe '{"roles":false}' # player side's win rate against the earlier computer
@@ -464,6 +511,7 @@ author.html, js/author.js     authoring tool
 js/engine.js                  rules engine (pure, JSON state; browser + Node)
 js/rulesets.js                unit stats and rule switches per edition
 js/ai.js                      computer opponent + AI self-play
+js/value.js                   win-probability model (features + trained weights)
 js/generator.js               procedural puzzles and variants
 js/mapview.js, js/icons.js    SVG map (pan/zoom/pinch/wrap) and unit icons
 js/daily.js                   dates, puzzle numbers, share text
@@ -475,6 +523,7 @@ js/worker.js                  Web Worker for generation and balance checks
 tools/serve.js                static server + save API for the authoring tool
 tools/ai_bench.js             computer-opponent tournament on fixed scenarios and seeds
 tools/ai_evolve.js            genetic search over the opponent's settings
+tools/ai_value.js             win-probability model: self-play data, training, evaluation
 tools/build_world_map.py      world map builder (+ tools/world_config.py)
 tests/                        node --test suites
 ```
