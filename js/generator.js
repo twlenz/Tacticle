@@ -182,7 +182,10 @@
       if (keep) objectives.push({ type: 'hold', territories: [keep] });
     }
     const far = Math.max(1, ...objIds.map((id) => (dPlayer[id] === Infinity ? 2 : dPlayer[id])));
-    const diff = DIFFICULTY[opts.difficulty] || DIFFICULTY.medium;
+    let diff = DIFFICULTY[opts.difficulty] || DIFFICULTY.medium;
+    // calibrate: how many points more often real players win than the balance check (results.js); aim the
+    // self-play target that much lower (or higher) so real players land in the band
+    if (opts.calibrate) diff = Object.assign({}, diff, { band: diff.band.map((x) => Math.min(0.97, Math.max(0.03, x - opts.calibrate / 100))) });
     const maxTurns = opts.maxTurns || Math.min(6, Math.max(2, far + diff.slack + (objIds.length > 1 ? 1 : 0)));
 
     const base = {

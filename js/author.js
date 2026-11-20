@@ -707,6 +707,7 @@
 
   function tabGenerate(el) {
     const g = A.genOpts || (A.genOpts = { theater: 'eastern', size: 9, difficulty: 'medium', naval: false, playerTeam: 'any', tune: 16, ruleset: A.sc.ruleset });
+    const cal = store.get('tacticle:calibration');
     el.innerHTML = `<p class="hint">Builds a puzzle around a front line on the ${esc(A.map.name)} map, then plays it computer-vs-computer and adjusts the armies toward a target win rate. Runs in the background.</p>` +
       field('Theatre', `<select id="gTh">${Object.keys(GEN.THEATERS).map((k) => `<option value="${k}" ${g.theater === k ? 'selected' : ''}>${esc(GEN.THEATERS[k].name)}</option>`).join('')}<option value="__sel" ${g.theater === '__sel' ? 'selected' : ''}>Around the selected territory</option></select>`) +
       '<div class="two">' + field('Land territories', `<input type="number" id="gSize" min="4" max="30" value="${g.size}">`) +
@@ -715,16 +716,18 @@
       field('Balance games', `<input type="number" id="gTune" min="0" max="60" value="${g.tune}" title="AI self-play games per tuning step (0 = skip)">`) + '</div>' +
       `<label class="chk"><input type="checkbox" id="gNaval" ${g.naval ? 'checked' : ''}> Include sea zones, fleets and transports</label>
       ${A.map.defaultSetup ? `<label class="chk"><input type="checkbox" id="gMapUnits" ${g.mapUnits !== false ? 'checked' : ''}> Use this map's starting armies (tune the turn limit and reinforcements)</label>` : ''}
+      ${cal ? `<label class="chk"><input type="checkbox" id="gCal" ${g.calibrate ? 'checked' : ''}> Aim for real players: they win ${Math.abs(cal.gap)} points ${cal.gap >= 0 ? 'more' : 'less'} often than the balance check (${cal.players} players, ${cal.puzzles} puzzle${cal.puzzles === 1 ? '' : 's'}; Test tab)</label>` : ''}
       <div class="actions"><button class="primary" id="gNew">Generate new</button><button id="gVar">Variant of current</button></div>
       <div class="bar"><div id="gBar"></div></div><div id="gOut" class="hint"></div>`;
     const read = () => {
       g.theater = $('gTh').value; g.size = +$('gSize').value || 9; g.difficulty = $('gDiff').value; g.playerTeam = $('gTeam').value;
       g.tune = Math.max(0, +$('gTune').value || 0); g.naval = $('gNaval').checked; g.ruleset = A.sc.ruleset;
       g.mapUnits = $('gMapUnits') ? $('gMapUnits').checked : false;
+      g.calibrate = !!($('gCal') && $('gCal').checked);
     };
     $('gNew').onclick = async () => {
       read();
-      const opts = Object.assign({}, g, { seed: E.randomSeed() });
+      const opts = Object.assign({}, g, { seed: E.randomSeed(), calibrate: g.calibrate && cal ? cal.gap : 0 });
       if (g.theater === '__sel') {
         if (!A.selected) { toast('Select a territory first (Select tool)'); return; }
         opts.theater = 'any'; opts.center = A.selected;
@@ -758,6 +761,8 @@
       <div class="h">Balance check</div><p class="hint">The computer plays your side against the computer opponent. A thoughtful human usually does better than this.</p>
       <div class="row">${field('Games', '<input type="number" id="tGames" value="30" min="5" max="200" style="width:90px">')}</div>
       <div class="actions"><button id="tRun">Run</button></div><div class="bar"><div id="tBar"></div></div><div id="tOut"></div>
+      <div class="h">Player results</div><p class="hint">Daily results reported by players' browsers (needs a GoatCounter site code in <code>config.json</code>), next to each puzzle's balance check, to see how much better or worse people do than the computer.</p>
+      <div class="actions"><button id="tPlayers">Load player results</button></div><div id="tPlayersOut"></div>
       <div class="h">Battle odds</div><p class="hint">Attackers vs defenders as counts, e.g. <code>3 infantry, 1 tank</code>.</p>
       ${field('Attackers', '<input type="text" id="oA" value="3 infantry, 1 artillery, 1 tank">')}${field('Defenders', '<input type="text" id="oD" value="3 infantry">')}
       <label class="chk"><input type="checkbox" id="oSea"> Sea battle</label><div class="actions"><button id="oRun">Calculate</button></div><div id="oOut" class="hint"></div>`;
@@ -774,11 +779,16 @@
       if (!r.ok) { $('tOut').textContent = r.error; return; }
       A.lastSim = r.result;
       const res = r.result;
+      // kept with the puzzle, to compare with how real players do (Player results below)
+      A.sc.balance = { winRate: Math.round((1000 * res.won) / res.games) / 1000, games: res.games, ai: (window.TacticleAI && window.TacticleAI.VERSION) || 1 };
+      draft();
+      renderHeader();
       $('tOut').innerHTML = `<p><b>${Math.round(100 * res.won / res.games)}%</b> of ${res.games} games won by the computer playing your side.</p>
         <p class="hint">Wins by turn: ${Object.keys(res.turns).sort().map((k) => `${k}: ${res.turns[k]}`).join(' · ') || '—'}</p>
         <p class="hint">${Object.keys(res.reasons).map((k) => `${esc(k)} ×${res.reasons[k]}`).join('<br>')}</p>`;
       renderInspector();
     };
+    $('tPlayers').onclick = loadPlayerResults;
     $('oRun').onclick = () => {
       const parse = (s) => { const o = {}; for (const part of s.split(',')) { const m = /(\d+)\s*([a-z]+)/i.exec(part.trim()); if (m) { const t = Object.keys(R().units).find((k) => k.startsWith(m[2].toLowerCase()) || R().units[k].name.toLowerCase().startsWith(m[2].toLowerCase())); if (t) o[t] = (o[t] || 0) + +m[1]; } } return o; };
       const a = parse($('oA').value), d = parse($('oD').value);
@@ -793,6 +803,35 @@
     window.open('index.html?test&fresh', 'tacticle-test');
   }
 
+  /** Real players' results per puzzle (GoatCounter counts, see js/results.js) next to the balance check. */
+  async function loadPlayerResults() {
+    const out = $('tPlayersOut');
+    const RS = window.TacticleResults;
+    let cfg = null;
+    try { cfg = await getJSON('config.json'); } catch (e) { /* none */ }
+    const code = cfg && cfg.results && cfg.results.goatcounter;
+    if (!RS || !RS.valid(code)) {
+      out.innerHTML = '<p class="hint">Not set up. Create a free site at goatcounter.com, turn on “Allow adding visitor counts on your website” in its settings, and put its code in <code>config.json</code> as <code>{"results": {"goatcounter": "yourcode"}}</code>. Results are counted from then on.</p>';
+      return;
+    }
+    out.textContent = 'Loading…';
+    const rows = [];
+    for (const p of A.puzzles) {
+      let sim = null;
+      try { const sc = await getJSON(p.file); sim = sc.balance && sc.balance.winRate != null ? sc.balance.winRate : sc.generator && sc.generator.winRate != null ? sc.generator.winRate : null; } catch (e) { /* missing file */ }
+      let players = null;
+      try { players = await RS.tally(code, p.id, null, (u, o) => fetch(u, o)); } catch (e) { out.innerHTML = `<p class="hint">${esc(e.message)}. Is “Allow adding visitor counts on your website” on in GoatCounter?</p>`; return; }
+      rows.push({ id: p.id, title: p.title || p.id, sim, players });
+    }
+    const cal = RS.calibration(rows, 5);
+    store.set('tacticle:calibration', cal ? Object.assign({ at: D.today() }, cal) : null);
+    const pctOf = (t) => { const v = RS.pct(t); return v == null ? '—' : v + '%'; };
+    out.innerHTML = `<table class="ptable"><tr><th align="left">Puzzle</th><th>Players</th><th>Won</th><th>Balance check</th></tr>${rows.map((r) => {
+      const n = r.players.won + r.players.lost;
+      return `<tr><td>${esc(r.title)}</td><td align="center">${n}</td><td align="center">${pctOf(r.players)}</td><td align="center">${r.sim == null ? '—' : Math.round(r.sim * 100) + '%'}</td></tr>`;
+    }).join('')}</table>
+      <p class="hint">${cal ? `Players won <b>${Math.abs(cal.gap)} points ${cal.gap >= 0 ? 'more' : 'less'}</b> often than the balance check predicted (${cal.players} players on ${cal.puzzles} puzzle${cal.puzzles === 1 ? '' : 's'} with at least 5 players and a balance check). The Generate tab can aim for that.` : 'Not enough results yet: a puzzle needs at least 5 players and a saved balance check (run one in this tab, or generate the puzzle) to count.'}</p>`;
+  }
   function tabSchedule(el) {
     const sch = A.schedule;
     const today = D.today();

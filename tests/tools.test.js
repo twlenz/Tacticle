@@ -303,3 +303,36 @@ test('AI: picks the attack with the better expected IPC swing', () => {
   while (g.phase === 'combatMove' && n++ < 50) ai.step();
   assert.ok(g.s.battles.includes('A2'), 'goes for the bigger expected IPC swing (the artillery)');
 });
+
+// ---- player results (GoatCounter) and the share line
+test('results: paths, counter parsing and calibration', () => {
+  const RS = require('../js/results.js');
+  assert.ok(RS.valid('tacticle') && !RS.valid('') && !RS.valid('Bad Code') && !RS.valid('x.evil.com'));
+  assert.equal(RS.dayPath('2026-11-20', 'karelian-front', 'won'), '/tacticle/2026-11-20/karelian-front/won');
+  assert.equal(RS.puzzlePath('karelian-front', 'lost'), '/tacticle/puzzle/karelian-front/lost');
+  assert.throws(() => RS.dayPath('2026-11-20', '../x', 'won'));
+  assert.equal(RS.counterUrl('tacticle', '/tacticle/puzzle/a/won'), 'https://tacticle.goatcounter.com/counter/%2Ftacticle%2Fpuzzle%2Fa%2Fwon.json');
+  assert.ok(RS.hitUrl('tacticle', '/tacticle/puzzle/a/won').startsWith('https://tacticle.goatcounter.com/count?p=%2Ftacticle%2Fpuzzle%2Fa%2Fwon&'));
+  assert.equal(RS.parseCount({ count: '1,234' }), 1234);
+  assert.equal(RS.parseCount({}), 0);
+  assert.deepEqual(RS.without({ won: 3, lost: 2 }, true), { won: 2, lost: 2 });
+  assert.equal(RS.pct({ won: 17, lost: 3 }), 85);
+  assert.equal(RS.pct({ won: 0, lost: 0 }), null);
+  // 20 players won 85% where the check said 50%; 10 players won 70% where it said 40%; a 3-player puzzle is ignored
+  const cal = RS.calibration([
+    { players: { won: 17, lost: 3 }, sim: 0.5 },
+    { players: { won: 7, lost: 3 }, sim: 0.4 },
+    { players: { won: 3, lost: 0 }, sim: 0.1 },
+    { players: { won: 9, lost: 1 }, sim: null },
+  ], 5);
+  assert.deepEqual(cal, { gap: 33, players: 30, puzzles: 2 });
+});
+
+test('share text: other players\' win rate is the second-to-last line', () => {
+  const base = { number: 4, title: 'T', won: true, turns: 2, maxTurns: 3, objectivesDone: 1, objectivesTotal: 1, luckYou: { dice: 0, diff: 0 }, luckFoe: { dice: 0, diff: 0 }, lossYou: 3, lossFoe: 9, url: 'https://twlenz.github.io/Tacticle/' };
+  const lines = D.shareText(Object.assign({ others: { won: 31, lost: 19 }, today: true }, base)).split('\n');
+  assert.equal(lines[lines.length - 2], '🌍 62% of other players won today');
+  assert.equal(lines[lines.length - 1], 'twlenz.github.io/Tacticle');
+  assert.ok(!D.shareText(Object.assign({ others: { won: 0, lost: 0 } }, base)).includes('🌍'), 'no line without other players');
+  assert.ok(!D.shareText(Object.assign({ others: null }, base)).includes('🌍'));
+});

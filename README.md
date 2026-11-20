@@ -144,6 +144,33 @@ changes and push them.
 - Stats (played, win %, streak, wins by turn count) are kept per browser. Each date counts
   once, however often the page is reloaded.
 
+### Player results (optional)
+
+A static site has no server of its own to count results, so Tacticle can use a free
+[GoatCounter](https://www.goatcounter.com) site:
+
+1. Create a site at goatcounter.com (its code is the `mycode` in `mycode.goatcounter.com`).
+2. In its settings, turn on **Allow adding visitor counts on your website** so counts can be
+   read back.
+3. Put the code in `config.json`: `{ "results": { "goatcounter": "mycode" } }`.
+
+From then on, each finished daily game is recorded once per browser as two hits:
+`/tacticle/<date>/<puzzle id>/won|lost` and `/tacticle/puzzle/<puzzle id>/won|lost`.
+Free play and play tests are never recorded.
+- **Share text:** before recording, the result screen reads the day's counts and adds
+  "🌍 62% of other players won today" as the second-to-last line. The snapshot is kept, so
+  the line doesn't change on reload.
+- **Authoring tool (Test tab → Player results):** lists each puzzle's real win rate next to
+  its balance check.
+  - The balance check is now saved with the puzzle as `balance.winRate`; generated puzzles
+    already carry `generator.winRate`.
+  - The tool works out how many points more (or less) often players win than the computer
+    playing their side, weighted by players, for puzzles with at least 5 players.
+- **Generate tab:** "Aim for real players" shifts the target band by that gap.
+- **Privacy and reliability:** GoatCounter keeps no cookies and nothing beyond a page view
+  is sent. Anyone could send fake hits, so treat the numbers as a guide. With the code
+  empty (the default), nothing is sent or read.
+
 ## Authoring
 
 Run `node tools/serve.js` and open `author.html`. The page autosaves a draft in the
