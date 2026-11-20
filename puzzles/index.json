@@ -34,7 +34,7 @@
       "map": "world_war_ii_classic",
       "ruleset": "1942",
       "maxTurns": 1,
-      "difficulty": "medium"
+      "difficulty": "hard"
     },
     {
       "id": "karelian-front",

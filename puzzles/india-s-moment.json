@@ -7,7 +7,7 @@
   "author": "Tommy",
   "map": "world_war_ii_classic",
   "ruleset": "1942",
-  "difficulty": "medium",
+  "difficulty": "hard",
   "playable": [
     "anglo_sudan_egypt",
     "french_indo_china",
@@ -47,9 +47,10 @@
     "india": {
       "units": {
         "United Kingdom": {
-          "infantry": 2,
+          "infantry": 1,
           "fighter": 1,
-          "tank": 1
+          "tank": 1,
+          "artillery": 1
         }
       },
       "owner": "United Kingdom"
@@ -66,7 +67,8 @@
     "syria_jordan": {
       "units": {
         "United Kingdom": {
-          "infantry": 2
+          "infantry": 1,
+          "artillery": 1
         }
       },
       "owner": "United Kingdom"
@@ -74,7 +76,7 @@
     "kwangtung": {
       "units": {
         "Japan": {
-          "infantry": 2
+          "infantry": 1
         }
       },
       "owner": "Japan"
@@ -99,7 +101,7 @@
     "libya": {
       "units": {
         "Germany": {
-          "infantry": 2
+          "infantry": 1
         }
       },
       "owner": "Germany"
