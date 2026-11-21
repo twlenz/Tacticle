@@ -345,7 +345,8 @@
       const humans = Object.keys(sc.powers || {}).filter((p) => sc.powers[p].controller === 'human');
       if (!humans.length) err('Choose at least one power for the player');
       const teams = new Set(humans.map((p) => sc.powers[p].team));
-      if (teams.size > 1) err('All player powers must be on the same team');
+      // a play test of both sides fixes the player's team instead (sc.playerTeam)
+      if (teams.size > 1 && !sc.playerTeam) err('All player powers must be on the same team');
       const ais = Object.keys(sc.powers || {}).filter((p) => sc.powers[p].controller !== 'human');
       if (!ais.length) warn('There is no computer opponent');
       if (!sc.playable || !sc.playable.length) err('No playable territories');
@@ -398,7 +399,9 @@
     get phase() { return this.s.phase; }
     current() { return this.s.order[this.s.turn]; }
     team(p) { return p && this.s.powers[p] ? this.s.powers[p].team : null; }
+    /** The player's side. A play test can hand control of any side to a person (sc.playerTeam keeps it fixed). */
     humanTeam() {
+      if (this.sc.playerTeam) return this.sc.playerTeam;
       for (const p of Object.keys(this.s.powers)) if (!this.s.powers[p].ai) return this.s.powers[p].team;
       return null;
     }
@@ -610,8 +613,9 @@
     }
     _recordHistory(p) {
       const s = this.s;
-      if (!this.isHuman(p)) return;
-      const humans = s.order.filter((q) => this.isHuman(q));
+      const ht = this.humanTeam();
+      if (this.team(p) !== ht) return;
+      const humans = s.order.filter((q) => this.team(q) === ht);
       if (humans[humans.length - 1] !== p) return;
       s.history.push({ round: s.round, progress: this.progress(), met: this.objectiveStatus().map((o) => o.met) });
     }
@@ -641,7 +645,7 @@
         return finish(false, 'The enemy met its objectives');
       }
       const allOthers = others.reduce((a, o) => a + o.done, 0) >= this.objectivesNeeded();
-      const humanTurnEnd = moment === 'turn' && this.isHuman(p) && this._lastHumanInRound(p);
+      const humanTurnEnd = moment === 'turn' && this.team(p) === ht && this._lastHumanInRound(p);
       // winCheck: 'turnEnd' (end of the player's turn), 'roundEnd' (after the counterattack), or
       // 'turn' (only at the end of the player's turn checkTurn, which also ends the game)
       const last = this.sc.winCheck === 'turn' ? Math.min(s.maxTurns, this.sc.checkTurn || s.maxTurns) : s.maxTurns;
@@ -660,7 +664,8 @@
       return false;
     }
     _lastHumanInRound(p) {
-      const humans = this.s.order.filter((q) => this.isHuman(q));
+      const ht = this.humanTeam();
+      const humans = this.s.order.filter((q) => this.team(q) === ht);
       return humans[humans.length - 1] === p;
     }
 

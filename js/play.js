@@ -48,7 +48,7 @@
       $('status').textContent = '';
       return;
     }
-    $('puzzleNo').textContent = S.test ? 'test' : `#${S.number} · ${S.date}`;
+    $('puzzleNo').textContent = S.test ? 'test' + (S.sc.testAs === 'opponent' ? ' · you play the opponent' : S.sc.testAs === 'both' ? ' · you play both sides' : '') : `#${S.number} · ${S.date}`;
     S.puzzleLabel = $('puzzleNo').textContent;
     document.title = `Tacticle ${S.test ? '(test)' : '#' + S.number}`;
     S.dailyKey = S.key;
@@ -189,6 +189,13 @@
   // ------------------------------------------------------------------ helpers
   const G = () => S.g;
   function humanTurn() { const g = G(); return g.phase !== 'gameOver' && !g.s.powers[g.current()].ai; }
+  /** A play test from the authoring tool in which the person plays the opponent's side. */
+  function asOpponent() { return S.test && S.sc.testAs === 'opponent'; }
+  /** The result headline. Results are the puzzle player's; a test as the opponent reads them the other way round. */
+  function verdict(won) {
+    if (asOpponent()) return won ? '💀 Defeat: the player side won' : '🏆 Victory: you stopped the player side';
+    return won ? '🏆 Victory' : '💀 Defeat';
+  }
   function color(p) { return (S.map.powers.find((x) => x.id === p) || {}).color || '#888'; }
   function uname(t) { return (G().R.units[t] || {}).name || t; }
   function canUndo() { return humanTurn() && S.undo.length > 0 && ['combatMove', 'noncombatMove', 'place'].includes(G().phase) && !G().s.battle && !S.retreat; }
@@ -442,16 +449,16 @@
     // objectives
     const st = g.objectiveStatus();
     const total = g.objectiveTargets().filter((t) => t.type !== 'hold').length;
-    parts.push(`<div class="h">Objectives${g.objectivesNeeded() < total ? ` (need ${g.objectivesNeeded()})` : ''}</div><ul class="objlist">${objectiveRows(st, false)}</ul>`);
+    parts.push(`<div class="h">${asOpponent() ? 'The player side wins by' : 'Objectives'}${g.objectivesNeeded() < total ? ` (need ${g.objectivesNeeded()})` : ''}</div><ul class="objlist">${objectiveRows(st, false)}</ul>`);
     const opp = g.opponentStatus();
-    if (opp.length) parts.push(`<div class="h">The enemy wins if it</div><ul class="objlist enemy">${objectiveRows(opp, true)}</ul>`);
+    if (opp.length) parts.push(`<div class="h">${asOpponent() ? 'You win if you' : 'The enemy wins if it'}</div><ul class="objlist enemy">${objectiveRows(opp, true)}</ul>`);
     parts.push(`<div class="hint" style="margin-top:4px">${winCheckText()}</div>`);
 
     if (S.mode === 'free' && !S.busy) {
       parts.push('<div class="h">Free play</div><p class="hint">Practice on today\'s setup. It does not change your result or stats.</p><div class="actions"><button id="pFreeReset">↺ Reset board</button><button id="pDaily">Back to my result</button></div>');
     }
     if (g.phase === 'gameOver') {
-      parts.push(`<div class="h">Result</div><p><b>${g.s.result.won ? '🏆 Victory' : '💀 Defeat'}</b> — ${esc(g.s.result.reason)}</p><div class="actions"><button class="primary" id="pResult">Share result</button>${!S.test && S.mode === 'daily' ? '<button id="pFree">Free play</button>' : ''}</div>`);
+      parts.push(`<div class="h">Result</div><p><b>${verdict(g.s.result.won)}</b> — ${esc(g.s.result.reason)}</p><div class="actions"><button class="primary" id="pResult">Share result</button>${!S.test && S.mode === 'daily' ? '<button id="pFree">Free play</button>' : ''}</div>`);
       if (S.test) parts.push('<div class="actions"><button id="pRestart">Restart test</button></div>');
     } else if (S.retreat) {
       const from = S.mv.T[S.retreat.from].name;
@@ -1211,7 +1218,7 @@
       ${S.replayOf ? `<p class="hint">No new puzzle was set for today, so this is a replay of #${S.replayOf.number} (${esc(S.replayOf.date)}). Everyone gets the same one.</p>` : ''}
       ${sc.description ? `<p>${esc(sc.description)}</p>` : ''}
       ${sidesText()}
-      <h3>Objectives</h3><ul>${objs}</ul>
+      <h3>${asOpponent() ? 'The player side wins by (stop it)' : 'Objectives'}</h3><ul>${objs}</ul>
       <p class="hint">${winCheckText()} Rules: ${esc(R.name)}. Your moves are saved as you play, so you get one attempt per day.</p>
       ${mapCredit() ? `<p class="hint">Map: ${esc(mapCredit())}</p>` : ''}
       <div class="actions"><button data-close="help" id="brHelp">How to play</button><button class="primary" data-close="go">Start</button></div>`, false);
@@ -1344,7 +1351,7 @@
     const next = new Date(); next.setHours(24, 0, 0, 0);
     const mins = Math.max(0, Math.round((next - new Date()) / 60000));
     const free = S.mode === 'free';
-    openDialog(`<h2>${free ? 'Free play: ' : ''}${g.s.result.won ? '🏆 Victory!' : '💀 Defeat'}</h2><p>${esc(g.s.result.reason)}.</p>
+    openDialog(`<h2>${free ? 'Free play: ' : ''}${verdict(g.s.result.won)}</h2><p>${esc(g.s.result.reason)}.</p>
       <div class="share" id="shareText">${esc(text)}</div>
       <div class="actions"><button class="primary" id="copyShare">Copy result</button></div>
       ${S.test || free ? '' : statsHtml() + `<p class="hint">Next puzzle in ${Math.floor(mins / 60)}h ${mins % 60}m.</p>`}
