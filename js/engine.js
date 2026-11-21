@@ -349,13 +349,23 @@
       const ais = Object.keys(sc.powers || {}).filter((p) => sc.powers[p].controller !== 'human');
       if (!ais.length) warn('There is no computer opponent');
       if (!sc.playable || !sc.playable.length) err('No playable territories');
-      if (!sc.objectives || !sc.objectives.length) err('Add at least one objective');
+      const mineObj = (sc.objectives || []).filter((o) => o.side !== 'opponent');
+      if (!mineObj.length) err('Add at least one objective for the player');
       if (!(sc.maxTurns >= 1)) err('Max turns must be at least 1');
-      const capTotal = (sc.objectives || []).filter((o) => o.type !== 'hold').reduce((a, o) => a + (o.territories || []).length, 0);
-      if (sc.objectivesNeeded && sc.objectivesNeeded > capTotal) warn(`Objectives needed (${sc.objectivesNeeded}) is more than the ${capTotal} capture/clear territories; all are required`);
+      if (sc.winCheck === 'turn' && !(sc.checkTurn >= 1 && sc.checkTurn <= sc.maxTurns)) err('The turn objectives are checked on must be between 1 and the last turn');
+      const ipcType = (o) => o.type === 'bank' || o.type === 'damage';
+      const capTotal = mineObj.filter((o) => o.type !== 'hold').reduce((a, o) => a + (ipcType(o) ? 1 : (o.territories || []).length), 0);
+      if (sc.objectivesNeeded && sc.objectivesNeeded > capTotal) warn(`Objectives needed (${sc.objectivesNeeded}) is more than the ${capTotal} objective targets; all are required`);
       const R = Rules.get(sc.ruleset);
       const play = new Set(sc.playable || []);
       for (const o of sc.objectives || []) {
+        if (o.type === 'bank') { if (!(o.ipc > 0)) err('A bank objective needs an amount of IPC'); continue; }
+        if (o.type === 'damage') {
+          if (!(o.inflict > 0)) err('A damage objective needs an amount of IPC to inflict');
+          if (o.maxLoss != null && !(o.maxLoss >= 0)) err('A damage objective\'s loss limit must be 0 or more');
+          continue;
+        }
+        if (o.side === 'opponent' && o.type === 'hold') err('Opponent objectives can capture, clear, bank or inflict damage, not hold');
         for (const id of o.territories || []) {
           if (!T[id]) err(`Objective territory ${id} is not on the map`);
           else if (!play.has(id)) err(`Objective ${T[id].name} is not playable`);
@@ -533,36 +543,62 @@
     }
 
     // ---------------- objectives ----------------
-    objectiveStatus() {
+    // Objective types: capture, hold, destroy (clear) take territories; bank {ipc} needs that much money
+    // in the side's treasury; damage {inflict, maxLoss} needs that much enemy unit value destroyed while
+    // losing no more than maxLoss. side 'opponent' marks the computer's objectives (it wins by meeting them).
+    _objStatus(o) {
       const ht = this.humanTeam();
-      return (this.sc.objectives || []).map((o) => {
-        const ids = o.territories || [];
-        let done = 0;
-        for (const id of ids) {
-          if (o.type === 'destroy') {
-            if (!this.units(id).some((u) => this.team(u.o) !== ht && !this.def(u).infrastructure)) done++;
-          } else if (this.s.terr[id] && this.s.terr[id].o && this.team(this.s.terr[id].o) === ht) done++;
-        }
-        return { type: o.type || 'capture', territories: ids, done, total: ids.length, met: done === ids.length };
-      });
+      const side = o.side === 'opponent' ? 'opponent' : 'player';
+      const mine = (team) => (side === 'player' ? team === ht : !!team && team !== ht);
+      const type = o.type || 'capture';
+      if (type === 'bank') {
+        const have = Object.keys(this.s.powers).filter((p) => mine(this.team(p))).reduce((a, p) => a + (this.s.powers[p].money || 0), 0);
+        const met = have >= (o.ipc || 0);
+        return { type, side, territories: [], done: met ? 1 : 0, total: 1, met, have, ipc: o.ipc || 0 };
+      }
+      if (type === 'damage') {
+        const L = this.s.losses || {};
+        let inflicted = 0, taken = 0;
+        for (const t of Object.keys(L)) { if (mine(t)) taken += L[t]; else inflicted += L[t]; }
+        const met = inflicted >= (o.inflict || 0) && (o.maxLoss == null || taken <= o.maxLoss);
+        return { type, side, territories: [], done: met ? 1 : 0, total: 1, met, inflicted, taken, inflict: o.inflict || 0, maxLoss: o.maxLoss };
+      }
+      const ids = o.territories || [];
+      let done = 0;
+      for (const id of ids) if (this._territoryMet(type, id, mine)) done++;
+      return { type, side, territories: ids, done, total: ids.length, met: done === ids.length };
     }
-    /** One entry per objective territory: {id, type, met}. */
-    objectiveTargets() {
-      const ht = this.humanTeam();
+    _territoryMet(type, id, mine) {
+      if (type === 'destroy') return !this.units(id).some((u) => !mine(this.team(u.o)) && !this.def(u).infrastructure);
+      return !!(this.s.terr[id] && this.s.terr[id].o && mine(this.team(this.s.terr[id].o)));
+    }
+    /** The player's objectives with progress: [{type, side, territories, done, total, met, ...}]. */
+    objectiveStatus() {
+      return (this.sc.objectives || []).filter((o) => o.side !== 'opponent').map((o) => this._objStatus(o));
+    }
+    /** The computer's objectives (it wins when all are met at the end of one of its turns). */
+    opponentStatus() {
+      return (this.sc.objectives || []).filter((o) => o.side === 'opponent').map((o) => this._objStatus(o));
+    }
+    _targets(side) {
       const out = [];
       for (const o of this.sc.objectives || []) {
-        for (const id of o.territories || []) {
-          let met;
-          if (o.type === 'destroy') met = !this.units(id).some((u) => this.team(u.o) !== ht && !this.def(u).infrastructure);
-          else met = !!(this.s.terr[id] && this.s.terr[id].o && this.team(this.s.terr[id].o) === ht);
-          out.push({ id, type: o.type || 'capture', met });
-        }
+        if ((o.side === 'opponent') !== (side === 'opponent')) continue;
+        const type = o.type || 'capture';
+        if (type === 'bank' || type === 'damage') { out.push({ id: null, type, met: this._objStatus(o).met }); continue; }
+        const ht = this.humanTeam();
+        const mine = (team) => (side === 'opponent' ? !!team && team !== ht : team === ht);
+        for (const id of o.territories || []) out.push({ id, type, met: this._territoryMet(type, id, mine) });
       }
       return out;
     }
-    /** How many capture/clear targets must be met to win (all unless the puzzle says fewer). */
+    /** One entry per player objective target: {id, type, met} (id is null for IPC objectives). */
+    objectiveTargets() { return this._targets('player'); }
+    /** The same for the computer's objectives. */
+    opponentTargets() { return this._targets('opponent'); }
+    /** How many capture/clear/IPC targets the player must meet to win (all unless the puzzle says fewer). */
     objectivesNeeded() {
-      const total = (this.sc.objectives || []).filter((o) => o.type !== 'hold').reduce((a, o) => a + (o.territories || []).length, 0);
+      const total = this.objectiveTargets().filter((t) => t.type !== 'hold').length;
       const n = this.sc.objectivesNeeded | 0;
       return n > 0 ? Math.min(n, total) : total;
     }
@@ -599,12 +635,23 @@
       const alive = Object.keys(s.terr).some((id) => s.terr[id].o && this.team(s.terr[id].o) === ht) ||
         Object.keys(s.terr).some((id) => s.terr[id].u.some((u) => this.team(u.o) === ht));
       if (!alive) return finish(false, 'Your forces were wiped out');
+      // the computer wins by meeting all its objectives at the end of one of its turns
+      const opp = this.opponentStatus().filter((o) => o.type !== 'hold');
+      if (moment === 'turn' && opp.length && this.team(p) !== ht && opp.every((o) => o.met)) {
+        return finish(false, 'The enemy met its objectives');
+      }
       const allOthers = others.reduce((a, o) => a + o.done, 0) >= this.objectivesNeeded();
       const humanTurnEnd = moment === 'turn' && this.isHuman(p) && this._lastHumanInRound(p);
-      const check = this.sc.winCheck === 'roundEnd' ? moment === 'round' : (holds.length ? moment === 'round' : humanTurnEnd);
-      if (check && allOthers && (!holds.length || s.round >= s.maxTurns) && (others.length || s.round >= s.maxTurns)) {
+      // winCheck: 'turnEnd' (end of the player's turn), 'roundEnd' (after the counterattack), or
+      // 'turn' (only at the end of the player's turn checkTurn, which also ends the game)
+      const last = this.sc.winCheck === 'turn' ? Math.min(s.maxTurns, this.sc.checkTurn || s.maxTurns) : s.maxTurns;
+      const check = this.sc.winCheck === 'roundEnd' ? moment === 'round'
+        : this.sc.winCheck === 'turn' ? humanTurnEnd && s.round === last
+          : (holds.length ? moment === 'round' : humanTurnEnd);
+      if (check && allOthers && (!holds.length || s.round >= last) && (others.length || s.round >= last)) {
         return finish(true, `Objectives complete in ${s.round} turn${s.round === 1 ? '' : 's'}`);
       }
+      if (this.sc.winCheck === 'turn' && check) return finish(false, `Objectives not met by the end of turn ${last}`);
       if (s.round >= s.maxTurns) {
         const noMoreChances = (check && (others.length || holds.length)) ||
           (moment === 'round');

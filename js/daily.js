@@ -109,6 +109,24 @@
     if (r.url) lines.push(shortUrl(r.url));
     return lines.join('\n');
   }
+  /**
+   * Words for one objective: a scenario objective, or a status from the engine (objectiveStatus /
+   * opponentStatus), which adds progress. `names` is the territories already formatted (e.g. bold, escaped);
+   * `enemy` words it for the computer ("captures X", after "The enemy wins if it").
+   */
+  function objectiveWords(o, names, enemy) {
+    const n = (v) => Math.round(v || 0);
+    switch (o.type) {
+      case 'bank':
+        return `${enemy ? 'has' : 'Have'} ${n(o.ipc)} IPC in the bank` + (o.have != null ? ` (${enemy ? 'it has' : 'you have'} ${n(o.have)})` : '');
+      case 'damage':
+        return `${enemy ? 'inflicts' : 'Inflict'} ${n(o.inflict)} IPC of damage` + (o.maxLoss != null ? ` while losing no more than ${n(o.maxLoss)}` : '') +
+          (o.inflicted != null ? ` (so far ${n(o.inflicted)} dealt, ${n(o.taken)} lost)` : '');
+      case 'hold': return `${enemy ? 'holds' : 'Hold'} ${names}`;
+      case 'destroy': return enemy ? `clears your units from ${names}` : `Clear enemies from ${names}`;
+      default: return `${enemy ? 'captures' : 'Capture'} ${names}`;
+    }
+  }
   /** "🌍 62% of other players won today": how the day's other players did (from results.js), or '' with none. */
   function othersLine(t, isToday) {
     const n = t ? t.won + t.lost : 0;
@@ -116,5 +134,5 @@
     return `🌍 ${Math.round((100 * t.won) / n)}% of other players won ${isToday === false ? 'that day' : 'today'}`;
   }
 
-  return { today, dateStr, parse, addDays, daysBetween, number, entryFor, shareText, othersLine, luckWords, squares, shortUrl };
+  return { today, dateStr, parse, addDays, daysBetween, number, entryFor, shareText, othersLine, objectiveWords, luckWords, squares, shortUrl };
 });

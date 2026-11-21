@@ -84,6 +84,7 @@ button.small { padding: 3px 8px; font-size: 13px; }
 .tmap .tz.sea.hl-obj { fill: #fff2b0; }
 .tmap .outline { fill: none; stroke: var(--hl-move); pointer-events: none; stroke-linejoin: round; }
 .tmap .outline.obj { stroke: var(--obj); }
+.tmap .outline.obj.enemy { stroke: var(--hl-attack); stroke-dasharray: 5 3; }
 .tmap .outline.hl-attack, .tmap .outline.hl-amphibious, .tmap .outline.hl-capture, .tmap .outline.hl-blitz { stroke: var(--hl-attack); }
 .tmap .outline.hl-move, .tmap .outline.hl-unload, .tmap .outline.hl-place { stroke: #fff; }
 .tmap .outline.hl-battle { stroke: var(--hl-attack); stroke-dasharray: 6 4; }
@@ -93,6 +94,7 @@ button.small { padding: 3px 8px; font-size: 13px; }
 .tmap .tlabel { text-anchor: middle; fill: var(--label); paint-order: stroke; stroke: var(--label-halo); stroke-width: .28em; font-weight: 600; pointer-events: none; }
 .tmap .tlabel.sea { font-style: italic; font-weight: 500; fill: #1f4d68; stroke: #ffffffaa; }
 .tmap .tlabel.obj { fill: var(--obj-label); }
+.tmap .tlabel.obj.enemy { fill: var(--bad); }
 .tmap .chip { cursor: pointer; }
 .tmap .chip .chipbg { stroke: #0007; stroke-width: .6; }
 .tmap .chip.dim { opacity: .45; }
@@ -129,6 +131,9 @@ button.small { padding: 3px 8px; font-size: 13px; }
 .objlist { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
 .objlist li::before { content: '☐ '; }
 .objlist li.done::before { content: '☑ '; color: var(--good); }
+.objlist.enemy li::before { content: '⚑ '; color: var(--muted); }
+.objlist.enemy li.warn { color: var(--bad); }
+.objlist.enemy li.warn::before { color: var(--bad); }
 .log { font-size: 12.5px; color: var(--muted); max-height: 180px; overflow: auto; border-top: 1px solid var(--line); margin-top: 12px; padding-top: 6px; }
 .log div { padding: 1px 0; }
 
