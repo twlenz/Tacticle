@@ -13,11 +13,11 @@
   // pages (tabs on the left) and the steps of Edit Map, each with the map tool it uses
   const PAGES = [['select', 'Select Map'], ['edit', 'Edit Map'], ['schedule', 'Schedule'], ['files', 'Files']];
   const SUBS = [
-    ['territories', 'Select Territories', 'playable'],
-    ['owners', 'Select Owners', 'owner'],
-    ['units', 'Place Units', 'select'],
-    ['objectives', 'Set Objectives', 'objective'],
-    ['test', 'Test', 'select'],
+    ['territories', 'Select Territories', 'playable', 'Territories', 'P'],
+    ['owners', 'Select Owners', 'owner', 'Owners', 'O'],
+    ['units', 'Place Units', 'select', 'Units', 'U'],
+    ['objectives', 'Set Objectives', 'objective', 'Objectives', 'J'],
+    ['test', 'Test', 'select', 'Test', 'T'],
   ];
   // keyboard: a step, or a Place Units mode (U places the chosen unit, M moves units, S selects)
   const KEYS = { p: ['territories'], o: ['owners'], u: ['units', 'units'], m: ['units', 'move'], s: ['units', 'select'], j: ['objectives'], t: ['test'] };
@@ -424,6 +424,7 @@
     if (A.page !== 'select' && A.pv) { A.pv.destroy(); A.pv = null; A.pvId = null; $('pvInfo').innerHTML = ''; }
     document.body.dataset.page = A.page;
     document.body.dataset.sub = A.page === 'edit' ? A.sub : '';
+    document.body.dataset.tool = A.page === 'edit' ? A.tool : '';
     renderHeader();
     renderTab();
     renderToolbar();
@@ -485,14 +486,14 @@
   function renderInspector() {
     const el = $('inspector');
     const id = A.selected;
-    if (!id || !A.T[id]) { el.innerHTML = summaryHtml(); bindSummary(); return; }
+    if (!id || !A.T[id]) { el.innerHTML = summaryHtml(); bindChecks(el); return; }
     const t = A.T[id];
     const play = A.sc.playable.includes(id);
     const o = ownerOf(id);
     const us = (A.sc.setup[id] && A.sc.setup[id].units) || {};
     const h = [];
     h.push(`<div class="h">${t.type === 'sea' ? 'Sea zone' : 'Territory'}</div><h3 style="margin:0">${esc(t.name)}</h3><div class="hint">${esc(id)}${t.ipc ? ' · ' + t.ipc + ' IPC' : ''}${t.capital ? ' · capital of ' + esc(t.capital) : ''} · map owner ${esc(t.owner || '—')}</div>`);
-    h.push(`<label class="chk"><input type="checkbox" id="iPlay" ${play ? 'checked' : ''}> Playable</label>`);
+    h.push(`<label class="chk"><input type="checkbox" id="iPlay" ${play ? 'checked' : ''}> In play</label>`);
     if (t.type === 'land') {
       h.push(`<label class="f">Owner</label><select id="iOwner"><option value="">Neutral (impassable)</option>${A.map.powers.map((p) => `<option ${o === p.id ? 'selected' : ''}>${esc(p.id)}</option>`).join('')}</select>`);
     }
@@ -511,7 +512,7 @@
         if (t.type === 'land' && d.domain === 'sea') continue;
         if (t.type === 'sea' && (ty === 'factory' || ty === 'aaa')) continue;
         const n = (us[p] && us[p][ty]) || 0;
-        h.push(`<div class="urow" style="padding:2px 6px"><span class="ic" style="background:${powerInfo(p).color};width:24px;height:24px">${I.svg(ty, 18, '#fff')}</span><span class="nm" style="font-size:13px">${esc(d.name)}</span><span class="stepper"><button data-iu="${esc(p)}|${ty}|-1">−</button><output>${n}</output><button data-iu="${esc(p)}|${ty}|1">+</button></span></div>`);
+        h.push(`<div class="urow ${n ? '' : 'zero'}" style="padding:2px 6px"><span class="ic" style="background:${powerInfo(p).color};width:24px;height:24px">${I.svg(ty, 18, '#fff')}</span><span class="nm" style="font-size:13px">${esc(d.name)}</span><span class="stepper"><button data-iu="${esc(p)}|${ty}|-1" aria-label="One fewer ${esc(d.name)}" ${n ? '' : 'disabled'}>−</button><output>${n}</output><button data-iu="${esc(p)}|${ty}|1" aria-label="One more ${esc(d.name)}">+</button></span></div>`);
       }
       h.push('</div>');
     }
@@ -522,7 +523,7 @@
     const rest = others.filter((p) => !friends.includes(p));
     const opts = (list) => list.map((p) => `<option>${esc(p.id)}</option>`).join('');
     h.push(`<label class="f">Add troops of another country</label><select id="iAddPower"><option value="">—</option>${friends.length ? `<optgroup label="Friendly">${opts(friends)}</optgroup>` : ''}${rest.length ? `<optgroup label="${ref ? 'Enemy' : 'Other'}">${opts(rest)}</optgroup>` : ''}</select>`);
-    h.push('<p class="hint" style="margin-top:10px">Esc closes this panel.</p>');
+    h.push('<p class="hint" style="margin-top:10px"><kbd>Esc</kbd> closes this panel.</p>');
     el.innerHTML = h.join('');
     $('iPlay').onchange = (e) => edit(() => setPlayable(id, e.target.checked));
     const io = $('iOwner'); if (io) io.onchange = () => edit(() => setOwner(id, io.value || null));
@@ -558,11 +559,10 @@
     return `<div class="h">Scenario summary</div>
       <p class="hint">${land} land territories and ${play.length - land} sea zones in play. ${A.sc.maxTurns} turns. Rules: ${esc(R().name)}.</p>
       <div class="list">${Object.keys(A.sc.powers).map((p) => `<div class="urow"><span class="swatch" style="background:${powerInfo(p).color}"></span><span class="nm">${esc(p)}<small>${A.sc.powers[p].controller === 'human' ? 'Player' : 'Computer'} · ${A.sc.powers[p].team} · ${A.sc.powers[p].money} IPC</small></span><b title="Army value in IPCs">${val[p] || 0}</b></div>`).join('')}</div>
-      <div class="h">Checks</div>${msgs.length ? msgs.map((m) => `<div class="msg ${m.level}">${m.level === 'error' ? '✖' : '⚠'} ${esc(m.msg)}</div>`).join('') : '<div class="msg" style="color:var(--good)">✔ Ready to play</div>'}
+      <div class="h">Checks</div>${checksHtml(msgs)}
       ${A.lastSim ? `<div class="h">Last balance check</div><p class="hint">Computer-as-player won ${Math.round(100 * A.lastSim.won / A.lastSim.games)}% of ${A.lastSim.games} games.</p>` : ''}
       <div class="h">Shortcuts</div><div class="kbd-help"><kbd>P</kbd> territories <kbd>O</kbd> owners <kbd>U</kbd> place units <kbd>S</kbd> select <kbd>M</kbd> move <kbd>J</kbd> objectives <kbd>T</kbd> test · <kbd>1</kbd>–<kbd>9</kbd> pick a unit · <kbd>Esc</kbd> stop placing · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> undo/redo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> play test</div>`;
   }
-  function bindSummary() { /* nothing interactive */ }
 
   function validate() {
     const msgs = E.Game.validate(A.map, A.sc).slice();
@@ -582,6 +582,8 @@
     }
     const factories = A.sc.playable.some((id) => { const us = (A.sc.setup[id] && A.sc.setup[id].units) || {}; return Object.values(us).some((u) => u.factory); });
     if (A.sc.purchase !== false && !factories) msgs.push({ level: 'warn', msg: 'No factories in play, so nobody can place new units' });
+    if (!A.sc.title || A.sc.title === 'Untitled puzzle') msgs.push({ level: 'warn', msg: 'Give the puzzle a title' });
+    if (!String(A.sc.description || '').trim()) msgs.push({ level: 'warn', msg: 'Write a briefing for players (Write from objectives drafts one)' });
     if (!A.sc.id) msgs.push({ level: 'warn', msg: 'Give the puzzle a file name before saving' });
     return msgs;
   }
@@ -610,9 +612,10 @@
     if (framed && A.mv) A.mv.setFocus(A.sc.playable);
   }
   function renderTab() {
-    $('tabs').innerHTML = PAGES.map(([k, n]) => `<button data-page="${k}" class="${A.page === k ? 'on' : ''}">${n}</button>`).join('');
+    $('tabs').innerHTML = PAGES.map(([k, n]) => `<button role="tab" aria-selected="${A.page === k}" data-page="${k}" class="${A.page === k ? 'on' : ''}">${n}</button>`).join('');
     $('tabs').querySelectorAll('[data-page]').forEach((b) => b.onclick = () => goPage(b.dataset.page));
-    $('subtabs').innerHTML = A.page === 'edit' ? SUBS.map(([k, n], i) => `<button data-sub="${k}" class="${A.sub === k ? 'on' : ''}"><span class="num">${i + 1}</span>${n}</button>`).join('') : '';
+    const done = A.page === 'edit' ? stepDone() : {};
+    $('subtabs').innerHTML = A.page === 'edit' ? SUBS.map(([k, n, , , key], i) => `<button data-sub="${k}" class="${A.sub === k ? 'on' : ''}${done[k] ? ' done' : ''}" ${A.sub === k ? 'aria-current="step"' : ''} title="${n} (${key})"><span class="num" aria-hidden="true">${done[k] ? '✓' : i + 1}</span>${n}${done[k] ? '<span class="sr">, done</span>' : ''}</button>`).join('') : '';
     $('subtabs').querySelectorAll('[data-sub]').forEach((b) => b.onclick = () => goSub(b.dataset.sub));
     const body = $('tabbody');
     body.innerHTML = '';
@@ -629,17 +632,34 @@
     if (A.page === 'select') renderPreview();
   }
   function pad(el) { el.style.padding = '12px'; return el; }
+  /** Which steps of Edit Map have what a puzzle needs, shown as ✓ in the step list. */
+  function stepDone() {
+    const sc = A.sc;
+    const human = Object.keys(sc.powers).filter((p) => sc.powers[p].controller === 'human');
+    const complete = (o) => (o.type === 'bank' ? o.ipc > 0 : o.type === 'damage' ? o.inflict > 0 : o.territories.length > 0);
+    const val = armyValue();
+    return {
+      territories: sc.playable.length > 0,
+      owners: human.length > 0 && Object.keys(sc.powers).some((p) => sc.powers[p].controller !== 'human') && new Set(human.map((p) => sc.powers[p].team)).size === 1,
+      units: Object.keys(val).some((p) => val[p] > 0),
+      objectives: sc.objectives.some((o) => o.side !== 'opponent') && sc.objectives.every(complete),
+      test: !!sc.balance,
+    };
+  }
 
   // ---- Select Map: the maps as thumbnails; the one clicked fills the map area; Select Map opens it
   function leftSelect(el) {
     pad(el);
-    el.innerHTML = `<p class="hint" style="margin-top:0">Pick the map the puzzle is played on. Click one to look at it.</p>
-      <div class="maplist">${A.maps.map((m) => `<button class="mapcard ${m.id === (A.preview || A.sc.map) ? 'on' : ''}" data-map="${esc(m.id)}">
+    el.innerHTML = `<p class="hint" style="margin-top:0">Pick the map the puzzle is played on. Click one to look at it; double-click to start on it.</p>
+      <div class="maplist">${A.maps.map((m) => `<button class="mapcard ${m.id === (A.preview || A.sc.map) ? 'on' : ''}" aria-pressed="${m.id === (A.preview || A.sc.map)}" data-map="${esc(m.id)}">
         <div class="thumb" data-thumb="${esc(m.id)}">${A.thumbs[m.id] || '<span class="hint">Loading…</span>'}</div>
         <div class="mname">${esc(m.name)}${m.id === A.sc.map ? ' · current puzzle' : ''}<small>${esc(m.source || (m.local ? 'kept in this browser' : ''))}</small></div></button>`).join('')}</div>
       ${field('Rules', `<select id="smRules">${Rules.list().map((r) => `<option value="${r.id}" ${r.id === A.sc.ruleset ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select>`)}
       <div class="actions col"><button id="smImport">Import base map…</button><button id="smOpen">Import existing scenario…</button><button id="smGen">Generate a puzzle…</button></div>`;
-    el.querySelectorAll('[data-map]').forEach((b) => b.onclick = () => { A.preview = b.dataset.map; renderTab(); renderDock(); });
+    el.querySelectorAll('[data-map]').forEach((b) => {
+      b.onclick = () => { if (A.preview === b.dataset.map) return; A.preview = b.dataset.map; renderTab(); renderDock(); };
+      b.ondblclick = () => { A.preview = b.dataset.map; selectMap(); };
+    });
     $('smRules').onchange = (e) => edit(() => { A.sc.ruleset = e.target.value; });
     $('smImport').onclick = browseTripleA;
     $('smOpen').onclick = openScenarioDialog;
@@ -714,7 +734,7 @@
   async function selectMap() {
     const id = A.preview || A.sc.map;
     if (id !== A.sc.map) {
-      if (unsavedWork() && !confirm(`Start a new puzzle on this map? Unsaved changes to “${A.sc.title || 'the current puzzle'}” will be lost.`)) return;
+      if (!await okToReplace('Start a new puzzle on this map?')) return;
       const before = JSON.stringify(A.sc);
       try { await useMap(id, Object.assign(newScenario(id), { ruleset: A.sc.ruleset })); } catch (e) { toast(e.message, 6000); return; }
       A.hist.push(before); A.fut = [];
@@ -728,7 +748,7 @@
       <div class="list plist" style="max-height:50vh;overflow:auto">${A.puzzles.map((p) => `<div class="urow"><span class="nm">${esc(p.title || p.id)}<small>${esc(p.id)} · ${esc(p.map || '')}${p.maxTurns ? ' · ' + p.maxTurns + ' turns' : ''}</small></span><button class="small" data-open="${esc(p.file)}">Open</button></div>`).join('') || '<p class="hint">No saved puzzles yet.</p>'}</div>
       <div class="actions"><label class="small" style="border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer">Open a JSON file…<input type="file" id="osFile" accept=".json" hidden></label><button data-close>Cancel</button></div>`);
     $('dialog').querySelectorAll('[data-open]').forEach((b) => b.onclick = async () => {
-      if (unsavedWork() && !confirm('Discard unsaved changes to the current puzzle?')) return;
+      if (!await okToReplace('Open this puzzle instead?')) return;
       try {
         if (await loadScenario(await getJSON(b.dataset.open), false)) { closeDialog(); A.preview = A.sc.map; goSub('territories'); }
       } catch (e) { toast(e.message); }
@@ -744,27 +764,41 @@
     const el = $('dock');
     if (A.page === 'select') {
       const id = A.preview || A.sc.map;
-      el.innerHTML = `<button class="primary" id="dkSelect">Select Map</button>${id === A.sc.map ? '<p class="hint" style="margin:0">The current puzzle\'s map: continue editing.</p>' : ''}`;
+      const m = A.maps.find((x) => x.id === id);
+      el.innerHTML = `<p class="hint" style="margin:0">${id === A.sc.map ? `The map of the puzzle you are editing. Select it to carry on with “${esc(A.sc.title || 'Untitled puzzle')}”.` : `Starts a new puzzle on ${esc((m && m.name) || id)}.`}</p><button class="primary" id="dkSelect">Select Map</button>`;
       $('dkSelect').onclick = selectMap;
       return;
     }
     if (A.page !== 'edit') { el.innerHTML = ''; return; }
     const i = SUBS.findIndex((x) => x[0] === A.sub);
     const saved = !!A.sc.id && !!A.savedJSON && !dirty();
-    el.innerHTML = `<label class="f" style="margin:0">File name</label><input type="text" id="dkName" value="${esc(A.sc.id)}" placeholder="e.g. kursk-salient" spellcheck="false">
-      ${A.overwrite && A.overwrite === A.sc.id ? '<p class="dkwarn">A save file with this name exists, click again to overwrite it</p>' : ''}
-      <div class="row"><button class="primary ${saved ? 'saved' : ''}" id="dkSave">${saved ? 'Saved' : 'Save'}</button>${i < SUBS.length - 1 ? '<button id="dkNext">Next →</button>' : ''}</div>
+    const warn = A.overwrite && A.overwrite === A.sc.id ? 'A save file with this name exists, click again to overwrite it' : A.dockMsg || '';
+    el.innerHTML = `<label class="f" for="dkName" style="margin:0">File name</label><input type="text" id="dkName" value="${esc(A.sc.id)}" placeholder="e.g. kursk-salient" spellcheck="false" autocomplete="off" aria-describedby="dkHint dkWarn" ${A.dockMsg ? 'aria-invalid="true"' : ''}>
+      <p class="hint dkhint" id="dkHint">${fileHint(A.sc.id)}</p>
+      <p class="dkwarn" id="dkWarn" role="alert">${esc(warn)}</p>
+      <div class="row"><button class="primary ${saved ? 'saved' : ''}" id="dkSave" title="Save (Ctrl+S)">${saved ? 'Saved' : 'Save'}</button>${i < SUBS.length - 1 ? `<button id="dkNext" title="${SUBS[i + 1][1]} (${SUBS[i + 1][4]})">Next: ${SUBS[i + 1][3]} →</button>` : ''}</div>
       ${saved && A.justSaved ? '<button id="dkSched">Schedule It</button>' : ''}`;
-    $('dkName').onchange = (e) => { const id = slug(e.target.value); A.overwrite = null; if (id !== A.sc.id) edit(() => { A.sc.id = id; }); else renderDock(); };
+    $('dkName').oninput = (e) => {
+      $('dkHint').innerHTML = fileHint(slug(e.target.value));
+      // the warnings were about the name before this change
+      if (A.overwrite || A.dockMsg) { A.overwrite = null; A.dockMsg = null; $('dkWarn').textContent = ''; e.target.removeAttribute('aria-invalid'); }
+    };
+    $('dkName').onkeydown = (e) => { if (e.key === 'Enter') dockSave(); };
+    $('dkName').onchange = (e) => {
+      const id = slug(e.target.value);
+      if (id !== A.sc.id) { A.overwrite = null; edit(() => { A.sc.id = id; }); } else if (e.target.value !== id) renderDock(); // show the name as saved
+    };
     $('dkSave').onclick = dockSave;
     const nx = $('dkNext'); if (nx) nx.onclick = () => goSub(SUBS[i + 1][0]);
     const sc = $('dkSched'); if (sc) sc.onclick = () => { A.schedFocus = { file: `puzzles/${A.sc.id}.json`, title: A.sc.title }; goPage('schedule'); };
   }
+  function fileHint(id) { return id ? `Saves as <code>puzzles/${esc(id)}.json</code>` : 'Letters, numbers and dashes'; }
   /** Save from the dock: names an existing file only after a second click. */
   async function dockSave() {
     const box = $('dkName');
     const id = slug((box && box.value) || A.sc.id || '');
-    if (!id) { toast('Give the puzzle a file name first'); if (box) box.focus(); return; }
+    if (!id) { A.dockMsg = 'Type a file name to save'; renderDock(); $('dkName').focus(); return; }
+    A.dockMsg = null;
     if (id !== A.sc.id) edit(() => { A.sc.id = id; });
     const exists = A.puzzles.some((p) => p.id === id);
     if (exists && A.savedAs !== id && A.overwrite !== id) { A.overwrite = id; renderDock(); return; }
@@ -772,7 +806,11 @@
     if (await save()) { A.savedAs = id; A.justSaved = true; }
     renderAll();
   }
-  function field(label, html) { return `<div><label class="f">${label}</label>${html}</div>`; }
+  /** A labelled field; the label is tied to the first input, select or textarea with an id. */
+  function field(label, html) {
+    const m = /<(?:input|select|textarea)\b[^>]*\bid="([^"]+)"/.exec(html);
+    return `<div><label class="f"${m ? ` for="${m[1]}"` : ''}>${label}</label>${html}</div>`;
+  }
   function autoDescription() {
     const sc = A.sc;
     const human = Object.keys(sc.powers).filter((p) => sc.powers[p].controller === 'human');
@@ -795,7 +833,7 @@
     const land = play.filter((id) => A.T[id] && A.T[id].type === 'land').length;
     el.innerHTML = `<p class="hint" style="margin-top:0">Click territories and sea zones on the map to put them in play, or click again to take them out.${A.map.defaultSetup ? ' Each one comes with the map\'s starting units: click a unit icon to remove one.' : ''}</p>
       <ul class="hint" style="padding-left:18px;margin:6px 0"><li>Shift-click: a territory and all its neighbours</li><li>Right-click: take it out of play</li></ul>
-      <div class="actions"><button id="tNb" title="Add every land neighbour of the land in play">+ Neighbours</button><button id="tSea" title="Add sea zones that touch two or more coasts in play">+ Seas</button><button id="tClr">Clear</button></div>
+      <div class="actions"><button id="tNb" title="Add every land neighbour of the land in play">+ Neighbours</button><button id="tSea" title="Add sea zones that touch two or more coasts in play">+ Seas</button><button id="tClr" title="Take every territory out of play (Undo brings them back)">Remove all</button></div>
       <p><b>${land}</b> territor${land === 1 ? 'y' : 'ies'} and <b>${play.length - land}</b> sea zone${play.length - land === 1 ? '' : 's'} in play.</p>`;
     $('tNb').onclick = () => edit(() => {
       for (const id of A.sc.playable.slice()) if (A.T[id].type === 'land') for (const n of A.T[id].adj) if (A.T[n] && A.T[n].type === 'land') setPlayable(n, true);
@@ -804,7 +842,11 @@
       const on = new Set(A.sc.playable);
       for (const t of A.map.territories) if (t.type === 'sea' && t.adj.filter((y) => on.has(y) && A.T[y] && A.T[y].type === 'land').length >= 2) setPlayable(t.id, true);
     });
-    $('tClr').onclick = () => { if (confirm('Remove every territory from play?')) edit(() => { A.sc.playable = []; A.sc.objectives.forEach((o) => { o.territories = []; }); A.selected = null; A.msel = null; }); };
+    $('tClr').onclick = () => {
+      if (!A.sc.playable.length) return;
+      edit(() => { A.sc.playable = []; A.sc.objectives.forEach((o) => { o.territories = []; }); A.selected = null; A.msel = null; });
+      undoable('Removed every territory from play');
+    };
   }
 
   // ---- step 2: Select Owners (who controls each territory, and the powers' settings)
@@ -812,7 +854,7 @@
     pad(el);
     if (A.brush.owner !== null && !(A.map.powers || []).some((p) => p.id === A.brush.owner)) A.brush.owner = A.sc.turnOrder[0] || ((A.map.powers || [])[0] || {}).id;
     el.innerHTML = `<p class="hint" style="margin-top:0">Pick a power, then click territories to give them to it. Right-click makes a territory neutral; Alt-click gives it back to the map's owner.</p>
-      <div class="powlist">${(A.map.powers || []).map((p) => `<button data-own="${esc(p.id)}" class="${A.brush.owner === p.id ? 'on' : ''}"><span class="swatch" style="background:${esc(p.color)}"></span>${esc(p.id)}</button>`).join('')}<button data-own="" class="${A.brush.owner === null ? 'on' : ''}"><span class="swatch" style="background:var(--neutral)"></span>Neutral</button></div>
+      <div class="powlist">${(A.map.powers || []).map((p) => `<button data-own="${esc(p.id)}" class="${A.brush.owner === p.id ? 'on' : ''}" aria-pressed="${A.brush.owner === p.id}"><span class="swatch" style="background:${esc(p.color)}"></span>${esc(p.id)}</button>`).join('')}<button data-own="" class="${A.brush.owner === null ? 'on' : ''}" aria-pressed="${A.brush.owner === null}"><span class="swatch" style="background:var(--neutral)"></span>Neutral</button></div>
       <div class="h">Powers in this puzzle</div><div id="powersPanel"></div>`;
     el.querySelectorAll('[data-own]').forEach((b) => b.onclick = () => { A.brush.owner = b.dataset.own || null; renderTab(); renderToolbar(); });
     powersPanel($('powersPanel'));
@@ -824,7 +866,7 @@
     const cards = (sc.turnOrder || []).filter((p) => sc.powers[p]).map((p, i) => {
       const pw = sc.powers[p];
       return `<div class="objbox"><div class="row"><span class="swatch" style="background:${powerInfo(p).color}"></span><b>${i + 1}. ${esc(p)}</b><div class="grow"></div>
-          <button class="small" data-up="${i}" title="Earlier in turn order" ${i ? '' : 'disabled'}>↑</button><button class="small" data-del="${esc(p)}" title="Remove">✕</button></div>
+          <button class="small" data-up="${i}" title="Earlier in turn order" ${i ? '' : 'disabled'}>↑</button><button class="small" data-del="${esc(p)}" title="Remove ${esc(p)} from the puzzle" aria-label="Remove ${esc(p)}">✕</button></div>
         <div class="two">${field('Played by', `<select data-pw="${esc(p)}" data-k="controller"><option value="human" ${pw.controller === 'human' ? 'selected' : ''}>Player</option><option value="ai" ${pw.controller !== 'human' ? 'selected' : ''}>Computer</option></select>`)}
           ${field('Team', `<select data-pw="${esc(p)}" data-k="team"><option ${pw.team === 'Axis' ? 'selected' : ''}>Axis</option><option ${pw.team === 'Allies' ? 'selected' : ''}>Allies</option></select>`)}
           ${field('Starting IPCs', `<input type="number" min="0" data-pw="${esc(p)}" data-k="money" value="${pw.money || 0}">`)}
@@ -844,12 +886,15 @@
       const i = +b.dataset.up;
       if (i > 0) { const o = sc.turnOrder; [o[i - 1], o[i]] = [o[i], o[i - 1]]; }
     }));
-    el.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => edit(() => {
+    el.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
       const p = b.dataset.del;
-      delete sc.powers[p];
-      sc.turnOrder = sc.turnOrder.filter((x) => x !== p);
-      for (const id of Object.keys(sc.setup)) { if (sc.setup[id].owner === p) sc.setup[id].owner = null; if (sc.setup[id].units) delete sc.setup[id].units[p]; }
-    }));
+      edit(() => {
+        delete sc.powers[p];
+        sc.turnOrder = sc.turnOrder.filter((x) => x !== p);
+        for (const id of Object.keys(sc.setup)) { if (sc.setup[id].owner === p) sc.setup[id].owner = null; if (sc.setup[id].units) delete sc.setup[id].units[p]; }
+      });
+      undoable(`Removed ${p}, its territories and its units`);
+    });
     $('pwAdd').onchange = (e) => { if (e.target.value) edit(() => ensurePower(e.target.value)); };
     $('pwDefault').onclick = () => edit(() => { const o = mapOrder(); sc.turnOrder.sort((a, b) => idxOr(o, a) - idxOr(o, b)); });
   }
@@ -867,9 +912,9 @@
         ? 'Click a unit icon on the map to pick those units (again: one fewer), or a territory for all of them, then click where they go.'
         : 'Pick a unit to place it with clicks on the map. Or click a territory to change its units on the right, including adding friendly troops of another country.';
     el.innerHTML = `<p class="hint" style="margin-top:0">${tip}</p>
-      <div class="unitpal">${unitTypes().map((t, i) => `<button data-unit="${t}" class="${placing && A.brush.unit === t ? 'on' : ''}" title="${esc(nm(t))}${i < 9 ? ' (' + (i + 1) + ')' : ''}">${I.svg(t, 30)}<span>${esc(nm(t))}</span></button>`).join('')}</div>
+      <div class="unitpal">${unitTypes().map((t, i) => `<button data-unit="${t}" class="${placing && A.brush.unit === t ? 'on' : ''}" aria-pressed="${placing && A.brush.unit === t}" title="${esc(nm(t))}${i < 9 ? ' (' + (i + 1) + ')' : ''}">${I.svg(t, 30)}<span>${esc(nm(t))}</span></button>`).join('')}</div>
       ${field('Units placed at sea belong to', `<select id="uSea">${(A.map.powers || []).map((p) => `<option value="${esc(p.id)}" ${A.brush.power === p.id ? 'selected' : ''}>${esc(p.id)}</option>`).join('')}</select>`)}
-      <div class="actions"><button id="uAuto" title="Give every territory in play that has no troops the map's starting units">Auto Populate</button><button id="uMove" class="${A.tool === 'move' ? 'on toggle' : ''}">${A.tool === 'move' ? 'Stop moving' : 'Move units'}</button></div>
+      <div class="actions"><button id="uAuto" title="Give every territory in play that has no troops the map's starting units">Auto Populate</button><button id="uMove" class="${A.tool === 'move' ? 'on toggle' : ''}" aria-pressed="${A.tool === 'move'}">${A.tool === 'move' ? 'Stop moving' : 'Move units'}</button></div>
       <div class="h">Army value (IPCs)</div>
       <div class="list">${Object.keys(A.sc.powers).map((p) => `<div class="urow"><span class="swatch" style="background:${powerInfo(p).color}"></span><span class="nm">${esc(p)}<small>${A.sc.powers[p].controller === 'human' ? 'Player' : 'Computer'} · ${esc(A.sc.powers[p].team)}</small></span><b>${val[p] || 0}</b></div>`).join('') || '<p class="hint">No units yet.</p>'}</div>`;
     el.querySelectorAll('[data-unit]').forEach((b) => b.onclick = () => pickUnit(b.dataset.unit));
@@ -945,7 +990,7 @@
       return `<div class="objbox ${A.brush.obj === i ? 'on' : ''}" data-opick="${i}" style="cursor:pointer">
         <div class="row"><b>#${i + 1}</b><select data-oside="${i}" style="width:auto"><option value="player">You</option><option value="opponent" ${opp ? 'selected' : ''}>Opponent</option></select>
         <select data-otype="${i}" style="width:auto">${types.map(([k, n]) => `<option value="${k}" ${o.type === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
-        <div class="grow"></div><button class="small" data-odel="${i}" title="Delete objective">✕</button></div>
+        <div class="grow"></div><button class="small" data-odel="${i}" title="Delete objective #${i + 1}" aria-label="Delete objective #${i + 1}">✕</button></div>
         <div class="hint" style="margin:2px 0 4px">${esc(info)}</div>${body}
         <div class="hint"><i>${esc(opp ? 'The opponent wins if it ' + D.objectiveWords(o, namesOf(o), true) : D.objectiveWords(o, namesOf(o), false))}</i></div></div>`;
     };
@@ -963,10 +1008,9 @@
       <div class="two">${field('Turns in the game', `<input type="number" min="1" max="20" id="sTurns" value="${sc.maxTurns}">`)}${when === 'turn' ? field('Checked at the end of turn', `<input type="number" min="1" max="${sc.maxTurns}" id="sCheckTurn" value="${sc.checkTurn || sc.maxTurns}">`) : ''}</div>
       ${field('When objectives are checked', `<select id="sWin"><option value="turnEnd" ${when === 'turnEnd' ? 'selected' : ''}>At the end of each of your turns</option><option value="turn" ${when === 'turn' ? 'selected' : ''}>At the end of one turn</option><option value="roundEnd" ${when === 'roundEnd' ? 'selected' : ''}>After all opponents can counter-attack</option></select>`)}
       <p class="hint">${when === 'turn' ? `Checked once, at the end of your turn ${sc.checkTurn || sc.maxTurns}. The game ends there.` : when === 'roundEnd' ? 'Checked at the end of each round, after every opponent has had a turn to strike back.' : 'You win as soon as they are met at the end of one of your turns.'} A Hold objective runs the game to its last turn. The opponent wins when all its objectives are met at the end of one of its turns.</p>
-      <div class="h">Game rules</div>
-      ${field('Rules', `<select id="sRules">${Rules.list().map((r) => `<option value="${r.id}" ${r.id === sc.ruleset ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select>`)}
-      <label class="chk"><input type="checkbox" id="sIncome" ${sc.income !== false ? 'checked' : ''}> Collect income at the end of each turn</label>
-      <label class="chk"><input type="checkbox" id="sBuy" ${sc.purchase !== false ? 'checked' : ''}> Allow buying units</label>
+      ${fold('rules', 'Game rules', `${field('Rules', `<select id="sRules">${Rules.list().map((r) => `<option value="${r.id}" ${r.id === sc.ruleset ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select>`)}
+        <label class="chk"><input type="checkbox" id="sIncome" ${sc.income !== false ? 'checked' : ''}> Collect income at the end of each turn</label>
+        <label class="chk"><input type="checkbox" id="sBuy" ${sc.purchase !== false ? 'checked' : ''}> Allow buying units</label>`, `${R().name}, ${sc.income !== false ? 'income' : 'no income'}, ${sc.purchase !== false ? 'buying' : 'no buying'}`)}
       <div class="h">Puzzle details</div>
       ${field('Title', `<input type="text" id="sTitle" value="${esc(sc.title)}">`)}
       ${field('Briefing', `<textarea id="sDesc">${esc(sc.description)}</textarea><button class="small" id="sAutoDesc" style="margin-top:4px">Write from objectives</button>`)}
@@ -996,7 +1040,7 @@
       if (k === 'maxLoss' && c.value === '') delete o.maxLoss;
       else o[k] = Math.max(k === 'maxLoss' ? 0 : 1, Math.round(+c.value || 0));
     }));
-    el.querySelectorAll('[data-odel]').forEach((b) => b.onclick = () => edit(() => { sc.objectives.splice(+b.dataset.odel, 1); A.brush.obj = 0; }));
+    el.querySelectorAll('[data-odel]').forEach((b) => b.onclick = () => { const n = +b.dataset.odel + 1; edit(() => { sc.objectives.splice(n - 1, 1); A.brush.obj = 0; }); undoable(`Deleted objective #${n}`); });
     el.querySelectorAll('[data-orm]').forEach((b) => b.onclick = () => edit(() => { const [i, id] = b.dataset.orm.split('|'); sc.objectives[+i].territories = sc.objectives[+i].territories.filter((x) => x !== id); }));
     const on = (id, fn, ev) => { const e = $(id); if (e) e.addEventListener(ev || 'change', () => fn(e)); };
     on('oNeed', (e) => edit(() => { if (+e.value > 0) sc.objectivesNeeded = +e.value; else delete sc.objectivesNeeded; }));
@@ -1012,7 +1056,12 @@
     on('sDesc', (e) => edit(() => { sc.description = e.value; }));
     on('sAuthor', (e) => edit(() => { sc.author = e.value; }));
     on('sDiff', (e) => edit(() => { sc.difficulty = e.value; }));
-    on('sAutoDesc', () => edit(() => { sc.description = autoDescription(); }), 'click');
+    on('sAutoDesc', () => {
+      const had = !!sc.description;
+      edit(() => { sc.description = autoDescription(); });
+      if (had) undoable('Briefing rewritten from the objectives');
+    }, 'click');
+    bindFolds(el);
   }
 
   // ---- step 5: Test (play it as either side or both; the computer's win odds)
@@ -1023,25 +1072,28 @@
     const team = human.length ? sc.powers[human[0]].team : null;
     const foes = Object.keys(sc.powers).filter((p) => sc.powers[p].team !== team);
     const msgs = validate();
+    const blocked = msgs.some((m) => m.level === 'error');
     const sim = A.lastSim;
-    el.innerHTML = `<p class="hint" style="margin-top:0">Plays in a new tab exactly as players will see it. Test games are kept apart from the daily save.</p>
-      <div class="actions col"><button class="primary" data-play="player">▶ Play as the player${human.length ? ' (' + esc(human.join(', ')) + ')' : ''}</button>
-        <button data-play="opponent" ${foes.length ? '' : 'disabled'}>▶ Play as the opponent${foes.length ? ' (' + esc(foes.join(', ')) + ')' : ''}</button>
-        <button data-play="both">▶ Play both sides</button></div>
+    el.innerHTML = `<div class="h" style="margin-top:0">Checks</div>${checksHtml(msgs)}
+      <div class="h">Play it</div><p class="hint" style="margin-top:0">${blocked ? 'Fix the problems marked ✖ above to play.' : 'Opens a new tab exactly as players will see it. Test games are kept apart from the daily save.'}</p>
+      <div class="actions col"><button class="primary" data-play="player" ${blocked ? 'disabled' : ''}>▶ Play as the player${human.length ? ' (' + esc(human.join(', ')) + ')' : ''}</button>
+        <button data-play="opponent" ${foes.length && !blocked ? '' : 'disabled'}>▶ Play as the opponent${foes.length ? ' (' + esc(foes.join(', ')) + ')' : ''}</button>
+        <button data-play="both" ${blocked ? 'disabled' : ''}>▶ Play both sides</button></div>
       ${field('Computer opponent', `<select id="sOpp"><option value="">Standard</option><option value="earlier" ${sc.opponent === 'earlier' ? 'selected' : ''}>Earlier, easier (before the November 2026 update)</option></select>`)}
-      <div class="h">Checks</div>${msgs.length ? msgs.map((m) => `<div class="msg ${m.level}">${m.level === 'error' ? '✖' : '⚠'} ${esc(m.msg)}</div>`).join('') : '<div class="msg" style="color:var(--good)">✔ Ready to play</div>'}
       <div class="h">Win odds</div><p class="hint">The computer plays your side against the computer opponent, many times. A thoughtful person usually does better than this.</p>
-      <div class="row">${field('Games', `<input type="number" id="tGames" value="${A.simGames || 30}" min="5" max="200" style="width:90px">`)}<button id="tRun" style="align-self:flex-end">Run</button></div>
+      <div class="row">${field('Games', `<input type="number" id="tGames" value="${A.simGames || 30}" min="5" max="200" style="width:90px">`)}<button id="tRun" style="align-self:flex-end" ${blocked ? 'disabled title="Fix the problems marked ✖ first"' : ''}>Run</button></div>
       <div class="bar"><div id="tBar"></div></div><div id="tOut">${sim ? `<p><b>${Math.round(100 * sim.won / sim.games)}%</b> of ${sim.games} games won by the computer playing your side.</p>
         <p class="hint">Wins by turn: ${Object.keys(sim.turns).sort().map((k) => `${k}: ${sim.turns[k]}`).join(' · ') || '—'}</p>
         <p class="hint">${Object.keys(sim.reasons).map((k) => `${esc(k)} ×${sim.reasons[k]}`).join('<br>')}</p>` : sc.balance ? `<p class="hint">Last check: ${Math.round(sc.balance.winRate * 100)}% of ${sc.balance.games} games.</p>` : ''}</div>
       <div class="actions"><button id="gVar" title="A new puzzle like this one with the armies adjusted toward the same win rate">Make a variant</button></div><div id="gOut" class="hint"></div>
-      <div class="h">Player results</div><p class="hint">Daily results reported by players' browsers (needs a GoatCounter site code in <code>config.json</code>), next to each puzzle's win odds, to see how much better or worse people do than the computer.</p>
-      <div class="actions"><button id="tPlayers">Load player results</button></div><div id="tPlayersOut"></div>
-      <div class="h">Battle odds</div><p class="hint">Attackers vs defenders as counts, e.g. <code>3 infantry, 1 tank</code>.</p>
-      ${field('Attackers', '<input type="text" id="oA" value="3 infantry, 1 artillery, 1 tank">')}${field('Defenders', '<input type="text" id="oD" value="3 infantry">')}
-      <label class="chk"><input type="checkbox" id="oSea"> Sea battle</label><div class="actions"><button id="oRun">Calculate</button></div><div id="oOut" class="hint"></div>
-      <div class="actions"><button id="tShare">Preview share text</button></div>`;
+      ${fold('players', 'Player results', `<p class="hint">Daily results reported by players' browsers (needs a GoatCounter site code in <code>config.json</code>), next to each puzzle's win odds, to see how much better or worse people do than the computer.</p>
+        <div class="actions"><button id="tPlayers">Load player results</button></div><div id="tPlayersOut"></div>`)}
+      ${fold('battle', 'Battle odds', `<p class="hint">Attackers vs defenders as counts, e.g. <code>3 infantry, 1 tank</code>.</p>
+        ${field('Attackers', '<input type="text" id="oA" value="3 infantry, 1 artillery, 1 tank">')}${field('Defenders', '<input type="text" id="oD" value="3 infantry">')}
+        <label class="chk"><input type="checkbox" id="oSea"> Sea battle</label><div class="actions"><button id="oRun">Calculate</button></div><div id="oOut" class="hint"></div>`)}
+      ${fold('share', 'Share text', '<div class="actions"><button id="tShare">Preview share text</button></div>')}`;
+    bindFolds(el);
+    bindChecks(el);
     el.querySelectorAll('[data-play]').forEach((b) => b.onclick = () => playTest(b.dataset.play));
     $('sOpp').onchange = (e) => edit(() => { if (e.target.value === 'earlier') sc.opponent = 'earlier'; else delete sc.opponent; });
     $('tShare').onclick = () => {
@@ -1080,13 +1132,47 @@
       $('oOut').innerHTML = `Attacker wins <b>${Math.round(r.win * 100)}%</b>, defender holds ${Math.round(r.lose * 100)}%, stalemate ${Math.round(r.draw * 100)}%.<br>Average losses: attacker ${r.attLoss.toFixed(1)} IPC, defender ${r.defLoss.toFixed(1)} IPC.`;
     };
   }
+  /** Which step fixes a problem the checks report ('name' is the file name in the dock). */
+  function stepFor(msg) {
+    const m = msg.toLowerCase();
+    if (/file name/.test(m)) return 'name';
+    if (/objective|max turns|turn objectives|title|briefing/.test(m)) return 'objectives';
+    if (/no playable/.test(m)) return 'territories';
+    if (/power|player|team|computer opponent|capital/.test(m)) return 'owners';
+    if (/unit|ship|transport|factor|rules/.test(m)) return 'units';
+    return null;
+  }
+  /** The checks, each with a button to the step that fixes it. */
+  function checksHtml(msgs) {
+    if (!msgs.length) return '<div class="msg" style="color:var(--good)">✔ Ready to play</div>';
+    return msgs.map((m) => {
+      const to = stepFor(m.msg);
+      const sub = SUBS.find((x) => x[0] === to);
+      const btn = to === 'name' ? '<button class="small link" data-fix="name">File name</button>' : sub ? `<button class="small link" data-fix="${to}">${sub[1]}</button>` : '';
+      return `<div class="msg ${m.level}"><span>${m.level === 'error' ? '✖' : '⚠'} ${esc(m.msg)}</span>${btn}</div>`;
+    }).join('');
+  }
+  function bindChecks(el) {
+    el.querySelectorAll('[data-fix]').forEach((b) => b.onclick = () => {
+      if (b.dataset.fix === 'name') { const n = $('dkName'); if (n) { n.focus(); n.select(); } return; }
+      goSub(b.dataset.fix);
+    });
+  }
+  /** A section that folds away; whether it is open is remembered while the page is open. */
+  function fold(key, title, html, summary) {
+    const open = (A.folds || (A.folds = {}))[key];
+    return `<details class="fold" data-fold="${key}" ${open ? 'open' : ''}><summary>${esc(title)}${summary ? `<span class="hint"> · ${esc(summary)}</span>` : ''}</summary>${html}</details>`;
+  }
+  function bindFolds(el) {
+    el.querySelectorAll('[data-fold]').forEach((d) => d.addEventListener('toggle', () => { A.folds[d.dataset.fold] = d.open; }));
+  }
   /**
    * Opens the puzzle in a new tab. 'opponent' hands the opposing side to the person and the player's side to the
    * computer; 'both' lets the person move every power. playerTeam keeps objectives and the result on the player's side.
    */
   function playTest(mode) {
     const errs = validate().filter((m) => m.level === 'error');
-    if (errs.length) { toast(errs[0].msg, 3500); return; }
+    if (errs.length) { toast(`Can't play yet: ${errs[0].msg}${errs.length > 1 ? ` (and ${errs.length - 1} more)` : ''}`, 0, { label: 'Show problems', run: () => goSub('test') }); return; }
     const sc = pruned(A.sc);
     if (mode === 'opponent' || mode === 'both') {
       const human = Object.keys(sc.powers).filter((p) => sc.powers[p].controller === 'human');
@@ -1116,13 +1202,13 @@
       ${map.defaultSetup ? `<label class="chk"><input type="checkbox" id="gMapUnits" ${g.mapUnits !== false ? 'checked' : ''}> Use this map's starting armies (tune the turn limit and reinforcements)</label>` : ''}
       ${cal && cal.b ? `<label class="chk"><input type="checkbox" id="gCal" ${g.calibrate ? 'checked' : ''}> Aim for real players (${cal.players} players, ${cal.puzzles} puzzle${cal.puzzles === 1 ? '' : 's'}): for players to win ${band.map((x) => Math.round(x * 100) + '%').join('–')}, the computer's win odds aim at ${band.map((x) => Math.round(100 * window.TacticleResults.simFromReal(cal, x)) + '%').join('–')}</label>` : ''}
       <div class="bar"><div id="gBar"></div></div><div id="gOut2" class="hint"></div>
-      <div class="actions"><button data-close>Cancel</button><button class="primary" id="gNew">Generate</button></div>`);
+      ${unsavedWork() ? `<p class="dkwarn">The generated puzzle replaces “${esc(A.sc.title || 'Untitled puzzle')}”, which has changes that are not saved.</p>` : ''}
+      <div class="actions"><button data-close>Cancel</button><button class="primary" id="gNew">${unsavedWork() ? 'Discard changes and generate' : 'Generate'}</button></div>`);
     $('gNew').onclick = async () => {
       g.theater = $('gTh').value; g.size = +$('gSize').value || 9; g.difficulty = $('gDiff').value; g.playerTeam = $('gTeam').value;
       g.tune = Math.max(0, +$('gTune').value || 0); g.naval = $('gNaval').checked; g.ruleset = A.sc.ruleset;
       g.mapUnits = $('gMapUnits') ? $('gMapUnits').checked : false;
       g.calibrate = !!($('gCal') && $('gCal').checked);
-      if (unsavedWork() && !confirm(`Replace “${A.sc.title || 'the current puzzle'}” with a generated one? Its unsaved changes will be lost.`)) return;
       if (id !== A.map.id) {
         try { await useMap(id, Object.assign(newScenario(id), { ruleset: A.sc.ruleset }), false, map); } catch (e) { $('gOut2').textContent = e.message; return; }
         A.savedJSON = null;
@@ -1219,7 +1305,7 @@
     const save = $('schSave'); if (save) save.onclick = () => saveSchedule();
     const discard = $('schDiscard');
     if (discard) discard.onclick = async () => {
-      if (!confirm('Discard the schedule changes made in this browser?')) return;
+      if (!await ask('Discard the schedule changes made in this browser?', '<p>The schedule goes back to the published <code>schedule.json</code>.</p>', 'Discard changes', 'Keep them', true)) return;
       store.del(SCHED_DRAFT);
       try { A.schedule = await getJSON('schedule.json'); } catch (e) { A.schedule = { epoch: D.today(), days: {} }; }
       A.schedule.days = A.schedule.days || {};
@@ -1265,14 +1351,8 @@
       ${unopenedHtml()}
       <div class="h">Saved puzzles (${A.puzzles.length})</div>
       <div class="list plist">${A.puzzles.map((p) => `<div class="urow ${p.id === A.sc.id ? 'cur' : ''}"><span class="nm">${esc(p.title || p.id)}<small>${esc(p.id)} · ${esc(p.map || '')} · ${esc(p.ruleset || '')} · ${p.maxTurns || '?'} turns${Object.values(A.schedule.days).includes(p.file) ? ' · scheduled' : ''}</small></span><button class="small" data-load="${esc(p.file)}">Open</button>${A.server ? `<button class="small" data-delp="${esc(p.id)}">✕</button>` : ''}</div>`).join('') || '<p class="hint">None yet.</p>'}</div>`;
-    $('fNew').onclick = async () => { if (unsavedWork() && !confirm('Discard unsaved changes?')) return; await loadScenario(newScenario(A.map.id), false); A.savedJSON = null; A.savedAs = null; goPage('select'); };
-    $('fSaveAs').onclick = async () => {
-      const id = slug(prompt('File name for the copy', A.sc.id ? A.sc.id + '-2' : slug(A.sc.title)) || '');
-      if (!id) return;
-      if (A.puzzles.some((p) => p.id === id) && id !== A.savedAs && !confirm(`A save file named ${id} exists. Overwrite it?`)) return;
-      edit(() => { A.sc.id = id; });
-      if (await save()) { A.savedAs = id; A.justSaved = true; renderAll(); }
-    };
+    $('fNew').onclick = async () => { if (!await okToReplace('Start a new puzzle?')) return; await loadScenario(newScenario(A.map.id), false); A.savedJSON = null; A.savedAs = null; goPage('select'); };
+    $('fSaveAs').onclick = saveAsDialog;
     $('fDl').onclick = () => download((A.sc.id || 'puzzle') + '.json', JSON.stringify(pruned(A.sc), null, 2));
     $('fOpen').onchange = async (e) => {
       const f = e.target.files[0]; if (!f) return;
@@ -1281,7 +1361,7 @@
     const fu = $('fUnopened');
     if (fu) {
       fu.onclick = async () => {
-        if (unsavedWork() && !confirm('Discard unsaved changes?')) return;
+        if (!await okToReplace('Open the set-aside draft?')) return;
         const d = store.get('tacticle:authorDraftUnopened');
         if (d && d.sc && await loadScenario(d.sc, true)) { store.del('tacticle:authorDraftUnopened'); goSub('territories'); }
       };
@@ -1289,11 +1369,12 @@
     }
     const fd = $('fDir'); if (fd) fd.onclick = async () => { try { A.dir = await window.showDirectoryPicker({ mode: 'readwrite' }); toast('Folder connected'); renderTab(); } catch (e) { /* cancelled */ } };
     el.querySelectorAll('[data-load]').forEach((b) => b.onclick = async () => {
-      if (unsavedWork() && !confirm('Discard unsaved changes?')) return;
+      if (!await okToReplace('Open this puzzle instead?')) return;
       try { if (await loadScenario(await getJSON(b.dataset.load), false)) goSub('territories'); } catch (e) { toast(e.message); }
     });
     el.querySelectorAll('[data-delp]').forEach((b) => b.onclick = async () => {
-      if (!confirm(`Delete puzzle ${b.dataset.delp}? Scheduled days that use it will be cleared.`)) return;
+      const p = A.puzzles.find((x) => x.id === b.dataset.delp) || { id: b.dataset.delp };
+      if (!await ask(`Delete “${p.title || p.id}”?`, `<p>This deletes <code>puzzles/${esc(p.id)}.json</code> and clears any scheduled days that use it. It cannot be undone.</p>`, 'Delete puzzle', 'Keep it', true)) return;
       await fetch('api/puzzles/' + b.dataset.delp, { method: 'DELETE' });
       for (const d of Object.keys(A.schedule.days)) if (A.schedule.days[d] === `puzzles/${b.dataset.delp}.json`) delete A.schedule.days[d];
       await refreshPuzzles();
@@ -1302,6 +1383,33 @@
     });
   }
 
+  /** Saves a copy under a new name. The file it writes shows as the name is typed, and an existing file is named before it is replaced. */
+  function saveAsDialog() {
+    const first = A.sc.id ? A.sc.id + '-2' : slug(A.sc.title);
+    dialog(`<h2>Save a copy</h2>${field('File name', `<input type="text" id="saIn" value="${esc(first)}" spellcheck="false" autocomplete="off">`)}<p class="hint" id="saHint"></p>
+      <div class="actions"><button data-close>Cancel</button><button class="primary" id="saGo">Save copy</button></div>`);
+    const inp = $('saIn');
+    const upd = () => {
+      const id = slug(inp.value);
+      const exists = !!id && id !== A.savedAs && A.puzzles.some((p) => p.id === id);
+      $('saHint').innerHTML = !id ? 'Use letters, numbers and dashes.' : exists ? `<span class="warnink">A save file named <code>${esc(id)}</code> exists. Saving replaces it.</span>` : `Saves as <code>puzzles/${esc(id)}.json</code>`;
+      $('saGo').textContent = exists ? 'Replace it' : 'Save copy';
+      $('saGo').disabled = !id;
+    };
+    const go = async () => {
+      const id = slug(inp.value);
+      if (!id) return;
+      closeDialog();
+      edit(() => { A.sc.id = id; });
+      if (await save()) { A.savedAs = id; A.justSaved = true; renderAll(); }
+    };
+    inp.oninput = upd;
+    inp.onkeydown = (e) => { if (e.key === 'Enter') go(); };
+    $('saGo').onclick = go;
+    upd();
+    inp.focus();
+    inp.select();
+  }
   /** A draft set aside at start-up because its map was missing; it can be reopened once the map is back. */
   function unopenedHtml() {
     const d = store.get('tacticle:authorDraftUnopened');
@@ -1361,7 +1469,7 @@
     const sc = A.sc;
     if (!sc.id) { toast('Give the puzzle a file name first'); return false; }
     const errs = validate().filter((m) => m.level === 'error');
-    if (errs.length && !confirm(`This puzzle has problems:\n• ${errs.map((e) => e.msg).join('\n• ')}\n\nSave anyway?`)) return false;
+    if (errs.length && !await ask('Save a puzzle with problems?', `<ul>${errs.map((e) => `<li>${esc(e.msg)}</li>`).join('')}</ul><p>Players cannot start it until these are fixed. The Test step lists them with links to the step that fixes each.</p>`, 'Save anyway', 'Don\'t save', true)) return false;
     const data = pruned(sc);
     const text = JSON.stringify(data, null, 2);
     try {
@@ -1529,8 +1637,8 @@
     A.thumbLoading[id] = false;
     if (A.pv && A.pvId === id) { A.pv.destroy(); A.pv = null; A.pvId = null; }
     if (A.page === 'select') { A.preview = id; renderTab(); renderDock(); }
-    $('taUse').onclick = () => {
-      if (unsavedWork() && !confirm('Start a new puzzle on this map? Unsaved changes to the current one will be lost.')) return;
+    $('taUse').onclick = async () => {
+      if (!await okToReplace('Start a new puzzle on this map?')) return;
       closeDialog(); commit();
       A.savedJSON = null;
       useMap(id, Object.assign(newScenario(id), { ruleset: A.sc.ruleset }), false, map)
@@ -1561,19 +1669,51 @@
   }
 
   // ------------------------------------------------------------------ misc UI
-  function toast(msg, ms) {
+  /** A short message; long ones stay up longer. An action (such as Undo) adds a button and more time. */
+  function toast(msg, ms, action) {
     const t = $('toast');
-    t.textContent = msg;
+    t.innerHTML = `<span>${esc(msg)}</span>${action ? `<button class="small" id="toastAct">${esc(action.label)}</button>` : ''}`;
+    t.classList.toggle('act', !!action);
     t.classList.add('on');
+    if (action) $('toastAct').onclick = () => { t.classList.remove('on'); action.run(); };
     clearTimeout(A.toastT);
-    A.toastT = setTimeout(() => t.classList.remove('on'), ms || 2400);
+    A.toastT = setTimeout(() => t.classList.remove('on'), ms || Math.max(action ? 7000 : 2400, 55 * String(msg).length));
   }
-  function dialog(html) {
+  /** Reports an edit that removed things, with Undo right there instead of an “Are you sure?” first. */
+  function undoable(msg) { toast(msg, 0, { label: 'Undo', run: undo }); }
+  /** onClose runs once when the dialog closes or is replaced by another (Cancel, Esc, a click outside). */
+  function dialog(html, onClose) {
+    const prev = A.dialogClose;
+    A.dialogClose = null;
+    if (prev) prev();
     $('dialog').innerHTML = html;
     $('modal').classList.add('open');
+    A.dialogClose = onClose || null;
     $('dialog').querySelectorAll('[data-close]').forEach((b) => b.onclick = closeDialog);
   }
-  function closeDialog() { $('modal').classList.remove('open'); }
+  function closeDialog() {
+    $('modal').classList.remove('open');
+    const f = A.dialogClose;
+    A.dialogClose = null;
+    if (f) f();
+  }
+  /**
+   * A question in the page. The buttons say what they do, and the safe answer has the focus, so Enter
+   * never throws work away. Resolves true for `yes`.
+   */
+  function ask(title, body, yes, no, danger) {
+    return new Promise((resolve) => {
+      dialog(`<h2>${esc(title)}</h2>${body ? `<div class="askbody">${body}</div>` : ''}<div class="actions end"><button id="askNo">${esc(no || 'Cancel')}</button><button class="${danger ? 'danger' : 'primary'}" id="askYes">${esc(yes)}</button></div>`, () => resolve(false));
+      $('askYes').onclick = () => { resolve(true); closeDialog(); };
+      $('askNo').onclick = closeDialog;
+      $('askNo').focus();
+    });
+  }
+  /** Asks before replacing a puzzle with unsaved changes; resolves true when it may go. */
+  async function okToReplace(what) {
+    if (!unsavedWork()) return true;
+    return ask(what, `<p>“${esc(A.sc.title || 'Untitled puzzle')}” has changes that are not saved. They will be lost.</p>`, 'Discard changes', 'Keep editing', true);
+  }
 
   function wire() {
     $('bUndo').onclick = undo;
@@ -1587,6 +1727,8 @@
     window.addEventListener('beforeunload', (e) => { if ((A.sc && dirty()) || A.schedDirty) { e.preventDefault(); e.returnValue = ''; } });
     document.addEventListener('keydown', (e) => {
       const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement && document.activeElement.tagName);
+      // with a dialog open only Esc counts; the shortcuts would change the page behind it
+      if ($('modal').classList.contains('open')) { if (e.key === 'Escape') { e.preventDefault(); closeDialog(); } return; }
       if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); if (A.page !== 'edit') goPage('edit'); dockSave(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); playTest('player'); return; }
       if (typing) return;

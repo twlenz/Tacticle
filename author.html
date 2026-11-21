@@ -9,6 +9,8 @@
 <meta name="robots" content="noindex">
 <link rel="stylesheet" href="css/tacticle.css">
 <style>
+  :root { --warn-ink: #8a5d06; }
+  :root[data-theme="dark"] { --warn-ink: #e5b75a; }
   .amain { flex: 1; display: grid; grid-template-columns: 340px 1fr 290px; min-height: 0; }
   .aside { background: var(--panel); overflow: auto; min-height: 0; }
 .aside.left { border-right: 1px solid var(--line); display: flex; flex-direction: column; }
@@ -36,13 +38,46 @@
   .pvinfo { position: absolute; left: 12px; top: 12px; z-index: 2; max-width: min(440px, 60%); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; box-shadow: var(--shadow); font-size: 13.5px; display: none; }
   .pvinfo h3 { margin: 0 0 2px; font-size: 16px; }
   /* bottom-right dock: Next, file name, Save, Schedule It (Edit Map); Select Map (Select Map) */
-  .dock { position: absolute; right: 14px; bottom: 14px; z-index: 4; display: flex; flex-direction: column; align-items: stretch; gap: 6px; width: 250px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; box-shadow: var(--shadow); }
+  .dock { position: absolute; right: 14px; bottom: 14px; z-index: 4; display: flex; flex-direction: column; align-items: stretch; gap: 6px; width: 280px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; box-shadow: var(--shadow); }
   .dock:empty { display: none; }
   .dock .row { display: flex; gap: 6px; }
-  .dock .row > button { flex: 1; }
+  .dock .row > button { flex: 1; white-space: nowrap; }
+  .dock .row > #dkNext { flex: none; }
   .dock button { padding: 8px 10px; }
   .dock .saved { opacity: .55; }
-  .dkwarn { margin: 0; font-size: 12.5px; color: var(--warn); }
+  .dkwarn { margin: 0; font-size: 12.5px; color: var(--warn-ink); }
+  .dkwarn:empty { display: none; }
+  .dkhint { margin: -2px 0 0; font-size: 12px; }
+  .dkhint code { font-size: 11.5px; }
+  .warnink { color: var(--warn-ink); }
+  /* finished steps */
+  .subtabs button.done .num { background: var(--good); color: #fff; }
+  .subtabs button.on .num { background: var(--accent); color: #fff; }
+  /* checks with a link to the step that fixes them */
+  .msg { display: flex; gap: 6px; align-items: baseline; justify-content: space-between; }
+  button.link { flex: none; border-color: transparent; background: transparent; color: var(--accent); text-decoration: underline; padding: 0 2px; font-size: 12.5px; white-space: nowrap; }
+  /* sections that fold away */
+  details.fold { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 8px; }
+  details.fold > summary { cursor: pointer; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 650; }
+  details.fold > summary .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  details.fold[open] > summary { margin-bottom: 6px; }
+  .urow.zero .nm, .urow.zero output { color: var(--muted); }
+  .urow.zero .ic { opacity: .55; }
+  .askbody ul { margin: 6px 0; padding-left: 20px; }
+  /* the answer that throws something away is plain, with red text; Cancel is the default */
+  .actions.end { justify-content: flex-end; }
+  .actions.end .primary { flex: none; }
+  button.danger { color: var(--bad); border-color: var(--bad); font-weight: 600; }
+  button.primary:disabled { background: var(--panel); color: var(--muted); border-color: var(--line); }
+  .askbody li { margin: 2px 0; }
+  /* toasts can carry an action (Undo) */
+  #toast { display: flex; gap: 12px; align-items: center; justify-content: center; }
+  #toast.act { pointer-events: auto; }
+  #toast button { background: transparent; color: inherit; border-color: currentColor; }
+  /* a click in place mode adds a unit */
+  body[data-tool="units"] #map .tmap, body[data-tool="units"] #map .tmap * { cursor: copy; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   /* Place Units */
   .unitpal { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; margin: 8px 0; }
   .unitpal button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; border: 2px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 12px; }
@@ -109,14 +144,14 @@
   <span class="pill" id="hdrTitle"></span>
   <span class="savestate" id="saveState"></span>
   <div class="spacer"></div>
-  <button id="bUndo" title="Undo (Ctrl+Z)">↶</button>
-  <button id="bRedo" title="Redo (Ctrl+Y)">↷</button>
+  <button id="bUndo" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
+  <button id="bRedo" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
   <button id="bTest" title="Play this scenario in a new tab (Ctrl+Enter)">▶ Play test</button>
 </header>
 <div class="amain">
   <aside class="aside left">
-    <nav class="ptabs" id="tabs"></nav>
-    <nav class="subtabs" id="subtabs"></nav>
+    <nav class="ptabs" id="tabs" role="tablist" aria-label="Authoring sections"></nav>
+    <nav class="subtabs" id="subtabs" aria-label="Steps of Edit Map"></nav>
     <div class="tabbody" id="tabbody"></div>
   </aside>
   <div class="mapwrap" id="map">
@@ -125,18 +160,18 @@
     <div class="dock" id="dock"></div>
     <div class="toolbar" id="toolbar"></div>
     <div class="zoombar">
-      <button id="zin" title="Zoom in">+</button>
-      <button id="zout" title="Zoom out">−</button>
-      <button id="zfit" title="Fit to playable area">⤢</button>
-      <button id="zworld" title="Whole map">🌐</button>
+      <button id="zin" title="Zoom in" aria-label="Zoom in">+</button>
+      <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
+      <button id="zfit" title="Fit to the territories in play" aria-label="Fit to the territories in play">⤢</button>
+      <button id="zworld" title="Whole map" aria-label="Whole map">🌐</button>
     </div>
   </div>
   <div id="page"></div>
   <aside class="aside right" id="inspector"></aside>
 </div>
 <footer class="credit">Tacticle brought to you by Tommy Lenz and Abie Sprain</footer>
-<div class="modal" id="modal"><div class="dialog" id="dialog"></div></div>
-<div class="toast" id="toast"></div>
+<div class="modal" id="modal"><div class="dialog" id="dialog" role="dialog" aria-modal="true"></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="tooltip" id="tip"></div>
 <script src="js/rulesets.js"></script>
 <script src="js/engine.js"></script>

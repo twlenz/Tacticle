@@ -197,8 +197,8 @@ Below the list:
   Worker and adjusts the armies toward a target win rate (easy 70–92 %, medium 45–72 %,
   hard 22–48 % for the computer playing your side).
 
-**Edit Map** has five steps. Each has **Next →** at the bottom right, next to the file
-name and **Save**.
+**Edit Map** has five steps. A step shows ✓ once it has what a puzzle needs, and each has
+**Next: <step> →** at the bottom right, next to the file name and **Save**.
 
 | Step | Key | On the map |
 |---|---|---|
@@ -209,7 +209,7 @@ name and **Save**.
 | 5. Test | <kbd>T</kbd> | |
 
 1. **Select Territories.** **+ Neighbours** grows the area by one ring; **+ Seas** adds sea
-   zones that touch two or more coasts in play. A territory put in play brings its map owner,
+   zones that touch two or more coasts in play; **Remove all** empties it. A territory put in play brings its map owner,
    its factory and the map's starting units. Taking it out of play also takes it out of any
    objective. Moving on to a later step frames the map on the area in play.
 2. **Select Owners.** Pick a power (or Neutral), then click territories. Below: the powers in
@@ -240,17 +240,21 @@ name and **Save**.
    counter-attack); rules, income and buying; and the title, briefing ("Write from
    objectives" drafts one), author and difficulty.
 5. **Test.**
+   - **Checks** come first, each with a link to the step that fixes it. Problems marked ✖
+     stop the puzzle from starting, so the Play buttons wait until they are fixed; ⚠ marks
+     things to look at, such as a missing title or briefing.
    - **Play** in a new tab as the player, as the opponent (the computer plays the player's
      side), or both sides. Test games are kept apart from the daily save; results are the
      player side's.
    - **Win odds** runs *N* computer-vs-computer games and keeps the rate with the puzzle.
    - Also: the computer opponent (standard or earlier), the checks, **Make a variant**
      (armies nudged, an objective moved to a neighbour, turn limit ±1, tuned the same way),
-     player results, a battle-odds calculator and a share-text preview.
+     player results, a battle-odds calculator and a share-text preview (the last three fold
+     away).
 
-**Saving.** Type a file name above **Save** (<kbd>Ctrl</kbd>+<kbd>S</kbd>). Saving writes
-`puzzles/<name>.json` and refreshes `puzzles/index.json`; the button then reads **Saved**
-until the next change. If another puzzle already has that name, the first click only warns
+**Saving.** Type a file name above **Save** (<kbd>Ctrl</kbd>+<kbd>S</kbd>, or Enter in the
+field); the file it will write shows as you type. Saving writes `puzzles/<name>.json` and
+refreshes `puzzles/index.json`; the button then reads **Saved** until the next change. If another puzzle already has that name, the first click only warns
 ("A save file with this name exists, click again to overwrite it") and the second click
 saves. After a save, **Schedule It** opens the Schedule tab with a button that puts the
 puzzle on the first free day.
@@ -263,7 +267,13 @@ puzzle on the first free day.
 - **Without either** (e.g. on GitHub Pages): changes are kept in the browser and survive a
   reload. **Download schedule.json** to publish them, or **Discard changes**.
 
-**Files.** Open, delete, save-as, download and import JSON. Without the server, Chrome and
+**Undo and questions.** Edits that remove things (Remove all, deleting an objective,
+removing a power, rewriting the briefing) happen at once with **Undo** in the message that
+reports them. Steps that cannot be undone (replacing a puzzle that has unsaved changes,
+deleting a saved file) ask first in the page; the safe answer, such as **Keep editing**,
+has the focus, so Enter or Esc never throws work away.
+
+**Files.** Open, delete, save a copy, download and import JSON. Without the server, Chrome and
 Edge can **connect the repository folder** and write files directly; other browsers
 download the files for you to copy in.
 
