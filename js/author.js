@@ -24,7 +24,14 @@
     try { A.maps = (await getJSON('maps/index.json')).maps || []; } catch (e) { A.maps = [{ id: 'world1942', name: 'World 1942', file: 'maps/world1942.json' }]; }
     await refreshPuzzles();
     try { A.schedule = await getJSON('schedule.json'); } catch (e) { A.schedule = { epoch: D.today(), days: {} }; }
+    // without a server, schedule changes made earlier in this browser are kept until downloaded
     A.schedule.days = A.schedule.days || {};
+    const schedDraft = !A.server && store.get(SCHED_DRAFT);
+    if (schedDraft && schedDraft.days) {
+      const same = scheduleText() === JSON.stringify(Object.assign({ epoch: schedDraft.epoch }, schedDraft.fallback === 'latest' ? { fallback: 'latest' } : {}, { days: sortObj(schedDraft.days) }), null, 2);
+      if (same) store.del(SCHED_DRAFT); // already published
+      else A.schedule = schedDraft;
+    }
     // maps imported in this browser (no server to save them to) are listed too
     if (LM && !A.server) for (const m of await LM.list()) if (!A.maps.some((x) => x.id === m.id)) A.maps.push({ id: m.id, name: m.name, file: `maps/${m.id}.json`, local: true });
     wire();
@@ -851,6 +858,7 @@
     };
     const opts = (sel, d) => `<option value="">${esc(replayLabel(d))}</option>` + A.puzzles.map((p) => `<option value="${esc(p.file)}" ${sel === p.file ? 'selected' : ''}>${esc(p.id)}${used[p.file] ? ' ✓' : ''}</option>`).join('') + (sel && !files.includes(sel) ? `<option selected value="${esc(sel)}">${esc(sel)} (missing)</option>` : '');
     el.innerHTML = `<p class="hint">One puzzle per day, by the player's local date. Puzzle numbers count from the first day. Saved puzzles marked ✓ are already scheduled.</p>
+      <p class="hint" id="schStatus"></p>
       ${field('First day (puzzle #1)', `<input type="date" id="schEpoch" value="${esc(sch.epoch || today)}">`)}
       ${field('Days with nothing scheduled', `<select id="schFallback"><option value="random" ${sch.fallback !== 'latest' ? 'selected' : ''}>Replay an earlier puzzle (picked from the date, same for everyone)</option><option value="latest" ${sch.fallback === 'latest' ? 'selected' : ''}>Keep showing the most recent puzzle</option></select>`)}
       <div class="actions"><button class="small" id="schPrev">← 4 weeks</button><button class="small" id="schToday">Today</button><button class="small" id="schNext">4 weeks →</button></div>
@@ -860,10 +868,10 @@
         const n = D.number({ epoch: sch.epoch || today }, d);
         return `<tr class="${d === today ? 'today' : d < today ? 'past' : ''}"><td>${dt.toLocaleDateString(undefined, { weekday: 'short' })}</td><td>${d}</td><td>${n >= 1 ? '#' + n : ''}</td><td><select data-day="${d}">${opts(sch.days[d], d)}</select></td></tr>`;
       }).join('')}</table>
-      <div class="actions"><button class="primary" id="schSave">Save schedule</button></div>`;
-    el.querySelectorAll('[data-day]').forEach((s) => s.onchange = () => { if (s.value) sch.days[s.dataset.day] = s.value; else delete sch.days[s.dataset.day]; A.schedDirty = true; renderTab(); });
-    $('schEpoch').onchange = (e) => { sch.epoch = e.target.value; A.schedDirty = true; renderTab(); };
-    $('schFallback').onchange = (e) => { if (e.target.value === 'latest') sch.fallback = 'latest'; else delete sch.fallback; A.schedDirty = true; renderTab(); };
+      ${A.server || A.dir ? '' : `<div class="actions"><button class="primary" id="schSave">Download schedule.json</button>${store.get(SCHED_DRAFT) ? '<button id="schDiscard">Discard changes</button>' : ''}</div>`}`;
+    el.querySelectorAll('[data-day]').forEach((s) => s.onchange = () => { if (s.value) sch.days[s.dataset.day] = s.value; else delete sch.days[s.dataset.day]; scheduleChanged(); });
+    $('schEpoch').onchange = (e) => { sch.epoch = e.target.value; scheduleChanged(); };
+    $('schFallback').onchange = (e) => { if (e.target.value === 'latest') sch.fallback = 'latest'; else delete sch.fallback; scheduleChanged(); };
     $('schPrev').onclick = () => { A.schedFrom = D.addDays(start, -28); renderTab(); };
     $('schNext').onclick = () => { A.schedFrom = D.addDays(start, 28); renderTab(); };
     $('schToday').onclick = () => { A.schedFrom = null; renderTab(); };
@@ -871,10 +879,47 @@
       const unused = A.puzzles.filter((p) => !used[p.file] && !p.error).map((p) => p.file);
       let d = today, n = 0;
       while (unused.length && n < 400) { if (!sch.days[d]) { sch.days[d] = unused.shift(); } d = D.addDays(d, 1); n++; }
-      A.schedDirty = true;
+      scheduleChanged();
+    };
+    const save = $('schSave'); if (save) save.onclick = () => saveSchedule();
+    const discard = $('schDiscard');
+    if (discard) discard.onclick = async () => {
+      if (!confirm('Discard the schedule changes made in this browser?')) return;
+      store.del(SCHED_DRAFT);
+      try { A.schedule = await getJSON('schedule.json'); } catch (e) { A.schedule = { epoch: D.today(), days: {} }; }
+      A.schedule.days = A.schedule.days || {};
+      A.schedDirty = false;
       renderTab();
     };
-    $('schSave').onclick = saveSchedule;
+    renderSchedStatus();
+  }
+  // ---- the schedule saves itself: through the local server or a connected folder; otherwise it is
+  // kept in this browser (it survives a reload) until it is downloaded
+  const SCHED_DRAFT = 'tacticle:scheduleDraft';
+  function scheduleText() {
+    return JSON.stringify(Object.assign({ epoch: A.schedule.epoch }, A.schedule.fallback === 'latest' ? { fallback: 'latest' } : {}, { days: sortObj(A.schedule.days) }), null, 2);
+  }
+  function scheduleChanged() {
+    A.schedDirty = true;
+    if (A.server || A.dir) {
+      A.schedState = 'saving';
+      clearTimeout(A.schedTimer);
+      A.schedTimer = setTimeout(() => saveSchedule(true), 400);
+    } else {
+      store.set(SCHED_DRAFT, JSON.parse(scheduleText()));
+      A.schedState = 'local';
+      A.schedDirty = false; // kept in this browser
+    }
+    renderTab();
+  }
+  function renderSchedStatus() {
+    const el = $('schStatus');
+    if (!el) return;
+    const st = A.schedState;
+    el.textContent = A.server || A.dir
+      ? (st === 'saving' ? 'Saving…' : st === 'error' ? `Not saved: ${A.schedError}. Change anything to try again.` : 'Changes save automatically.')
+      : (store.get(SCHED_DRAFT) ? 'No local server: changes are kept in this browser. Download schedule.json and put it in the repository root to publish them.' : 'No local server: changes are kept in this browser until you download schedule.json.');
+    el.className = 'hint' + (st === 'error' ? ' err' : '');
   }
   function firstFree(from) { let d = from; while (A.schedule.days[d]) d = D.addDays(d, 1); return d; }
 
@@ -999,16 +1044,28 @@
     } catch (e) { toast('Save failed: ' + e.message, 4000); }
   }
   async function saveSchedule(quiet) {
-    const text = JSON.stringify(Object.assign({ epoch: A.schedule.epoch }, A.schedule.fallback === 'latest' ? { fallback: 'latest' } : {}, { days: sortObj(A.schedule.days) }), null, 2);
+    // one save at a time; a change made while saving is saved right after
+    if (A.schedSaving) { A.schedAgain = true; return; }
+    A.schedSaving = true;
+    const text = scheduleText();
     try {
       if (A.server) {
         const r = await fetch('api/schedule', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: text });
         if (!r.ok) throw new Error((await r.json()).error);
       } else if (A.dir) await writeFile(['schedule.json'], text);
       else download('schedule.json', text);
+      if (A.server || A.dir) { A.schedState = 'saved'; store.del(SCHED_DRAFT); }
       A.schedDirty = false;
       if (!quiet) toast(A.server || A.dir ? 'Schedule saved' : 'Downloaded schedule.json; put it in the repository root');
-    } catch (e) { toast('Could not save schedule: ' + e.message); }
+    } catch (e) {
+      A.schedState = 'error';
+      A.schedError = e.message;
+      if (!quiet) toast('Could not save schedule: ' + e.message);
+    } finally {
+      A.schedSaving = false;
+      renderSchedStatus();
+      if (A.schedAgain) { A.schedAgain = false; saveSchedule(true); }
+    }
   }
   function sortObj(o) { const out = {}; for (const k of Object.keys(o).sort()) out[k] = o[k]; return out; }
   async function writeFile(parts, text) {

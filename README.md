@@ -224,8 +224,11 @@ starts a new puzzle and keeps the draft; **Files** offers to open it once the ma
   separately from daily progress). The **balance check** runs *N* computer-vs-computer
   games. A **battle odds** calculator is included.
 - **Schedule**: a calendar of the next weeks. Pick a puzzle per day, set the first day
-  (puzzle #1), use "Fill empty days with unscheduled puzzles", then **Save schedule**
-  (writes `schedule.json`).
+  (puzzle #1), or use "Fill empty days with unscheduled puzzles".
+  - **Saving:** every change saves `schedule.json` by itself, through the local server or a
+    connected folder.
+  - **Without either** (e.g. on GitHub Pages): changes are kept in the browser and survive a
+    reload. **Download schedule.json** to publish them, or **Discard changes**.
 - **Files**: open, delete, save-as, download and import JSON. Without the server, Chrome
   and Edge can **connect the repository folder** and write files directly; other browsers
   download the files for you to copy in.
