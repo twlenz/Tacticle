@@ -1,6 +1,6 @@
 /* Web worker for the authoring tool: generation and AI self-play off the UI thread. */
 /* global importScripts, TacticleGen, TacticleAI */
-importScripts('rulesets.js', 'engine.js', 'ai.js', 'generator.js');
+importScripts('rulesets.js', 'engine.js', 'value.js', 'ai.js', 'generator.js');
 const maps = {};
 self.onmessage = (ev) => {
   const m = ev.data;

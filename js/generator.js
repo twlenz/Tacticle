@@ -182,7 +182,15 @@
       if (keep) objectives.push({ type: 'hold', territories: [keep] });
     }
     const far = Math.max(1, ...objIds.map((id) => (dPlayer[id] === Infinity ? 2 : dPlayer[id])));
-    const diff = DIFFICULTY[opts.difficulty] || DIFFICULTY.medium;
+    let diff = DIFFICULTY[opts.difficulty] || DIFFICULTY.medium;
+    // calibration {a, b} (results.js fitCalibration): real players win σ(a + b·logit(sim)); aim the self-play
+    // target at the rates that put real players in the band. A plain number shifts the band by that many points.
+    if (opts.calibration && opts.calibration.b) {
+      const c = opts.calibration;
+      const lg = (p) => { const q = Math.min(0.98, Math.max(0.02, p)); return Math.log(q / (1 - q)); };
+      const inv = (r) => 1 / (1 + Math.exp(-(lg(r) - c.a) / c.b));
+      diff = Object.assign({}, diff, { band: diff.band.map((x) => Math.min(0.97, Math.max(0.03, inv(x)))) });
+    } else if (opts.calibrate) diff = Object.assign({}, diff, { band: diff.band.map((x) => Math.min(0.97, Math.max(0.03, x - opts.calibrate / 100))) });
     const maxTurns = opts.maxTurns || Math.min(6, Math.max(2, far + diff.slack + (objIds.length > 1 ? 1 : 0)));
 
     const base = {

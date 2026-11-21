@@ -115,7 +115,7 @@
     }
     S.g.s.uiHold = true;
     S.g.s.autoCasualties = true;
-    S.ai = new TAI(S.g);
+    S.ai = new TAI(S.g, TAI.opponentOptions(S.sc));
     S.sel = null; S.dest = {}; S.unload = {}; S.placeType = null; S.edit = null; S.anim = {}; S.retreat = null;
     $('puzzleNo').textContent = (S.puzzleLabel || '') + (S.mode === 'free' ? ' · free play' : '');
   }
@@ -1280,14 +1280,53 @@
       targets: g.objectiveTargets(), luckYou: g.luck(ht), luckFoe: g.luck(foeTeam()),
       lossYou: (g.s.losses || {})[ht] || 0,
       lossFoe: Object.keys(g.s.losses || {}).filter((t) => t !== ht).reduce((a, t) => a + g.s.losses[t], 0),
+      others: S.mode === 'free' || S.test ? null : S.others, today: S.date === D.today(),
       url: location.origin + location.pathname.replace(/index\.html$/, ''),
     });
+  }
+  // ---- results of other players (js/results.js; off unless config.json names a GoatCounter site)
+  async function resultsCode() {
+    if (S.config === undefined) {
+      try { S.config = await getJSON('config.json'); } catch (e) { S.config = null; }
+    }
+    const code = S.config && S.config.results && S.config.results.goatcounter;
+    return window.TacticleResults && window.TacticleResults.valid(code) ? code : null;
+  }
+  /** See how others did today (before our own result counts), then record ours, once per browser. */
+  async function reportResult() {
+    const R = window.TacticleResults;
+    if (S.test || S.mode === 'free' || !S.sc.id || !G().s.result) return;
+    const code = await resultsCode();
+    if (!code) return;
+    const won = !!G().s.result.won;
+    const key = `${S.date}:${S.sc.id}`;
+    const sent = store.get('tacticle:sent:' + key);
+    let others = store.get('tacticle:others:' + key);
+    if (!others) {
+      try {
+        const t = await R.tally(code, S.sc.id, S.date, (u, o) => fetch(u, o));
+        others = sent ? R.without(t, won) : t;
+        store.set('tacticle:others:' + key, others);
+      } catch (e) { /* offline, or the counter is not switched on */ }
+    }
+    if (!sent) {
+      for (const path of [R.dayPath(S.date, S.sc.id, won ? 'won' : 'lost'), R.puzzlePath(S.sc.id, won ? 'won' : 'lost')]) new Image().src = R.hitUrl(code, path);
+      store.set('tacticle:sent:' + key, 1);
+    }
+    S.others = others || null;
+    const box = $('shareText');
+    if (box) box.textContent = shareText();
   }
   function showResult() {
     const g = G();
     if (!g.s.result) return;
     recordStats(g.s.result.won, g.s.result.turns);
+    if (!S.test && S.mode !== 'free' && S.others === undefined) {
+      const key = `${S.date}:${S.sc.id}`;
+      S.others = store.get('tacticle:others:' + key) || undefined;
+    }
     const text = shareText();
+    reportResult();
     const next = new Date(); next.setHours(24, 0, 0, 0);
     const mins = Math.max(0, Math.round((next - new Date()) / 60000));
     const free = S.mode === 'free';
@@ -1304,7 +1343,7 @@
     on('rFreeAgain', () => enterFreePlay(true));
     on('rDaily', exitFreePlay);
     $('copyShare').onclick = async () => {
-      try { await navigator.clipboard.writeText(text); toast('Copied to clipboard'); } catch (e) {
+      try { await navigator.clipboard.writeText(shareText()); toast('Copied to clipboard'); } catch (e) {
         const r = document.createRange(); r.selectNodeContents($('shareText'));
         const s = getSelection(); s.removeAllRanges(); s.addRange(r);
         toast('Select and copy the text');

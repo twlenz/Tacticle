@@ -24,7 +24,14 @@
     try { A.maps = (await getJSON('maps/index.json')).maps || []; } catch (e) { A.maps = [{ id: 'world1942', name: 'World 1942', file: 'maps/world1942.json' }]; }
     await refreshPuzzles();
     try { A.schedule = await getJSON('schedule.json'); } catch (e) { A.schedule = { epoch: D.today(), days: {} }; }
+    // without a server, schedule changes made earlier in this browser are kept until downloaded
     A.schedule.days = A.schedule.days || {};
+    const schedDraft = !A.server && store.get(SCHED_DRAFT);
+    if (schedDraft && schedDraft.days) {
+      const same = scheduleText() === JSON.stringify(Object.assign({ epoch: schedDraft.epoch }, schedDraft.fallback === 'latest' ? { fallback: 'latest' } : {}, { days: sortObj(schedDraft.days) }), null, 2);
+      if (same) store.del(SCHED_DRAFT); // already published
+      else A.schedule = schedDraft;
+    }
     // maps imported in this browser (no server to save them to) are listed too
     if (LM && !A.server) for (const m of await LM.list()) if (!A.maps.some((x) => x.id === m.id)) A.maps.push({ id: m.id, name: m.name, file: `maps/${m.id}.json`, local: true });
     wire();
@@ -596,6 +603,7 @@
         field('Difficulty label', `<select id="sDiff">${['easy', 'medium', 'hard'].map((d) => `<option ${sc.difficulty === d ? 'selected' : ''}>${d}</option>`).join('')}</select>`) + '</div>',
       field('Map', `<select id="sMap">${A.maps.map((m) => `<option value="${esc(m.id)}" ${m.id === sc.map ? 'selected' : ''}>${esc(m.name)}${m.source ? ' (' + esc(m.source) + ')' : ''}</option>`).join('')}</select>`),
       field('Rules', `<select id="sRules">${Rules.list().map((r) => `<option value="${r.id}" ${r.id === sc.ruleset ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select><div class="hint" style="margin-top:4px">${esc(R().summary)}</div>`),
+      field('Computer opponent', `<select id="sOpp"><option value="">Standard</option><option value="earlier" ${sc.opponent === 'earlier' ? 'selected' : ''}>Earlier, easier (before the November 2026 update)</option></select><div class="hint" style="margin-top:4px">The standard opponent defends objectives more carefully. Puzzles balanced against the earlier one can keep it.</div>`),
       '<div class="two">' + field('Max turns', `<input type="number" min="1" max="20" id="sTurns" value="${sc.maxTurns}">`) +
         field('Win check', `<select id="sWin"><option value="turnEnd" ${sc.winCheck !== 'roundEnd' ? 'selected' : ''}>End of player's turn</option><option value="roundEnd" ${sc.winCheck === 'roundEnd' ? 'selected' : ''}>End of round (after counter-attack)</option></select>`) + '</div>',
       `<label class="chk"><input type="checkbox" id="sIncome" ${sc.income !== false ? 'checked' : ''}> Collect income at the end of each turn</label>`,
@@ -620,6 +628,7 @@
         .catch((err) => { toast(err.message, 6000); renderTab(); });
     });
     bindInput(el, '#sRules', (e) => upd(() => { sc.ruleset = e.value; }));
+    bindInput(el, '#sOpp', (e) => upd(() => { if (e.value === 'earlier') sc.opponent = 'earlier'; else delete sc.opponent; }));
     bindInput(el, '#sTurns', (e) => upd(() => { sc.maxTurns = Math.max(1, Math.min(20, +e.value || 1)); }));
     bindInput(el, '#sWin', (e) => upd(() => { sc.winCheck = e.value; }));
     bindInput(el, '#sIncome', (e) => upd(() => { sc.income = e.checked; }));
@@ -707,6 +716,7 @@
 
   function tabGenerate(el) {
     const g = A.genOpts || (A.genOpts = { theater: 'eastern', size: 9, difficulty: 'medium', naval: false, playerTeam: 'any', tune: 16, ruleset: A.sc.ruleset });
+    const cal = store.get('tacticle:calibration');
     el.innerHTML = `<p class="hint">Builds a puzzle around a front line on the ${esc(A.map.name)} map, then plays it computer-vs-computer and adjusts the armies toward a target win rate. Runs in the background.</p>` +
       field('Theatre', `<select id="gTh">${Object.keys(GEN.THEATERS).map((k) => `<option value="${k}" ${g.theater === k ? 'selected' : ''}>${esc(GEN.THEATERS[k].name)}</option>`).join('')}<option value="__sel" ${g.theater === '__sel' ? 'selected' : ''}>Around the selected territory</option></select>`) +
       '<div class="two">' + field('Land territories', `<input type="number" id="gSize" min="4" max="30" value="${g.size}">`) +
@@ -715,16 +725,18 @@
       field('Balance games', `<input type="number" id="gTune" min="0" max="60" value="${g.tune}" title="AI self-play games per tuning step (0 = skip)">`) + '</div>' +
       `<label class="chk"><input type="checkbox" id="gNaval" ${g.naval ? 'checked' : ''}> Include sea zones, fleets and transports</label>
       ${A.map.defaultSetup ? `<label class="chk"><input type="checkbox" id="gMapUnits" ${g.mapUnits !== false ? 'checked' : ''}> Use this map's starting armies (tune the turn limit and reinforcements)</label>` : ''}
+      ${cal && cal.b ? `<label class="chk"><input type="checkbox" id="gCal" ${g.calibrate ? 'checked' : ''}> Aim for real players (${cal.players} players, ${cal.puzzles} puzzle${cal.puzzles === 1 ? '' : 's'}; Test tab): for players to win ${(GEN.DIFFICULTY ? GEN.DIFFICULTY[g.difficulty].band : [0.45, 0.72]).map((x) => Math.round(x * 100) + '%').join('–')}, the balance check aims at ${(GEN.DIFFICULTY ? GEN.DIFFICULTY[g.difficulty].band : [0.45, 0.72]).map((x) => Math.round(100 * window.TacticleResults.simFromReal(cal, x)) + '%').join('–')}</label>` : ''}
       <div class="actions"><button class="primary" id="gNew">Generate new</button><button id="gVar">Variant of current</button></div>
       <div class="bar"><div id="gBar"></div></div><div id="gOut" class="hint"></div>`;
     const read = () => {
       g.theater = $('gTh').value; g.size = +$('gSize').value || 9; g.difficulty = $('gDiff').value; g.playerTeam = $('gTeam').value;
       g.tune = Math.max(0, +$('gTune').value || 0); g.naval = $('gNaval').checked; g.ruleset = A.sc.ruleset;
       g.mapUnits = $('gMapUnits') ? $('gMapUnits').checked : false;
+      g.calibrate = !!($('gCal') && $('gCal').checked);
     };
     $('gNew').onclick = async () => {
       read();
-      const opts = Object.assign({}, g, { seed: E.randomSeed() });
+      const opts = Object.assign({}, g, { seed: E.randomSeed(), calibration: g.calibrate && cal && cal.b ? { a: cal.a, b: cal.b } : null });
       if (g.theater === '__sel') {
         if (!A.selected) { toast('Select a territory first (Select tool)'); return; }
         opts.theater = 'any'; opts.center = A.selected;
@@ -758,6 +770,8 @@
       <div class="h">Balance check</div><p class="hint">The computer plays your side against the computer opponent. A thoughtful human usually does better than this.</p>
       <div class="row">${field('Games', '<input type="number" id="tGames" value="30" min="5" max="200" style="width:90px">')}</div>
       <div class="actions"><button id="tRun">Run</button></div><div class="bar"><div id="tBar"></div></div><div id="tOut"></div>
+      <div class="h">Player results</div><p class="hint">Daily results reported by players' browsers (needs a GoatCounter site code in <code>config.json</code>), next to each puzzle's balance check, to see how much better or worse people do than the computer.</p>
+      <div class="actions"><button id="tPlayers">Load player results</button></div><div id="tPlayersOut"></div>
       <div class="h">Battle odds</div><p class="hint">Attackers vs defenders as counts, e.g. <code>3 infantry, 1 tank</code>.</p>
       ${field('Attackers', '<input type="text" id="oA" value="3 infantry, 1 artillery, 1 tank">')}${field('Defenders', '<input type="text" id="oD" value="3 infantry">')}
       <label class="chk"><input type="checkbox" id="oSea"> Sea battle</label><div class="actions"><button id="oRun">Calculate</button></div><div id="oOut" class="hint"></div>`;
@@ -774,11 +788,16 @@
       if (!r.ok) { $('tOut').textContent = r.error; return; }
       A.lastSim = r.result;
       const res = r.result;
+      // kept with the puzzle, to compare with how real players do (Player results below)
+      A.sc.balance = { winRate: Math.round((1000 * res.won) / res.games) / 1000, games: res.games, ai: (window.TacticleAI && window.TacticleAI.VERSION) || 1 };
+      draft();
+      renderHeader();
       $('tOut').innerHTML = `<p><b>${Math.round(100 * res.won / res.games)}%</b> of ${res.games} games won by the computer playing your side.</p>
         <p class="hint">Wins by turn: ${Object.keys(res.turns).sort().map((k) => `${k}: ${res.turns[k]}`).join(' · ') || '—'}</p>
         <p class="hint">${Object.keys(res.reasons).map((k) => `${esc(k)} ×${res.reasons[k]}`).join('<br>')}</p>`;
       renderInspector();
     };
+    $('tPlayers').onclick = loadPlayerResults;
     $('oRun').onclick = () => {
       const parse = (s) => { const o = {}; for (const part of s.split(',')) { const m = /(\d+)\s*([a-z]+)/i.exec(part.trim()); if (m) { const t = Object.keys(R().units).find((k) => k.startsWith(m[2].toLowerCase()) || R().units[k].name.toLowerCase().startsWith(m[2].toLowerCase())); if (t) o[t] = (o[t] || 0) + +m[1]; } } return o; };
       const a = parse($('oA').value), d = parse($('oD').value);
@@ -793,6 +812,36 @@
     window.open('index.html?test&fresh', 'tacticle-test');
   }
 
+  /** Real players' results per puzzle (GoatCounter counts, see js/results.js) next to the balance check. */
+  async function loadPlayerResults() {
+    const out = $('tPlayersOut');
+    const RS = window.TacticleResults;
+    let cfg = null;
+    try { cfg = await getJSON('config.json'); } catch (e) { /* none */ }
+    const code = cfg && cfg.results && cfg.results.goatcounter;
+    if (!RS || !RS.valid(code)) {
+      out.innerHTML = '<p class="hint">Not set up. Create a free site at goatcounter.com, turn on “Allow adding visitor counts on your website” in its settings, and put its code in <code>config.json</code> as <code>{"results": {"goatcounter": "yourcode"}}</code>. Results are counted from then on.</p>';
+      return;
+    }
+    out.textContent = 'Loading…';
+    const rows = [];
+    for (const p of A.puzzles) {
+      let sim = null;
+      try { const sc = await getJSON(p.file); sim = sc.balance && sc.balance.winRate != null ? sc.balance.winRate : sc.generator && sc.generator.winRate != null ? sc.generator.winRate : null; } catch (e) { /* missing file */ }
+      let players = null;
+      try { players = await RS.tally(code, p.id, null, (u, o) => fetch(u, o)); } catch (e) { out.innerHTML = `<p class="hint">${esc(e.message)}. Is “Allow adding visitor counts on your website” on in GoatCounter?</p>`; return; }
+      rows.push({ id: p.id, title: p.title || p.id, sim, players });
+    }
+    const cal = RS.calibration(rows, 5);
+    const fit = RS.fitCalibration(rows, 5);
+    store.set('tacticle:calibration', fit ? Object.assign({ at: D.today(), gap: cal ? cal.gap : 0 }, fit) : null);
+    const pctOf = (t) => { const v = RS.pct(t); return v == null ? '—' : v + '%'; };
+    out.innerHTML = `<table class="ptable"><tr><th align="left">Puzzle</th><th>Players</th><th>Won</th><th>Balance check</th></tr>${rows.map((r) => {
+      const n = r.players.won + r.players.lost;
+      return `<tr><td>${esc(r.title)}</td><td align="center">${n}</td><td align="center">${pctOf(r.players)}</td><td align="center">${r.sim == null ? '—' : Math.round(r.sim * 100) + '%'}</td></tr>`;
+    }).join('')}</table>
+      <p class="hint">${cal && fit ? `On average players won <b>${Math.abs(cal.gap)} points ${cal.gap >= 0 ? 'more' : 'less'}</b> often than the balance check predicted (${cal.players} players on ${cal.puzzles} puzzle${cal.puzzles === 1 ? '' : 's'} with at least 5 players and a balance check). The gap is not the same at every rate, so it is fitted as a curve: a balance check of ${[0.2, 0.5, 0.8].map((x) => `${Math.round(x * 100)}% → ${Math.round(100 * RS.realFromSim(fit, x))}%`).join(', ')} for players. The Generate tab can aim for that.` : 'Not enough results yet: a puzzle needs at least 5 players and a saved balance check (run one in this tab, or generate the puzzle) to count.'}</p>`;
+  }
   function tabSchedule(el) {
     const sch = A.schedule;
     const today = D.today();
@@ -809,6 +858,7 @@
     };
     const opts = (sel, d) => `<option value="">${esc(replayLabel(d))}</option>` + A.puzzles.map((p) => `<option value="${esc(p.file)}" ${sel === p.file ? 'selected' : ''}>${esc(p.id)}${used[p.file] ? ' ✓' : ''}</option>`).join('') + (sel && !files.includes(sel) ? `<option selected value="${esc(sel)}">${esc(sel)} (missing)</option>` : '');
     el.innerHTML = `<p class="hint">One puzzle per day, by the player's local date. Puzzle numbers count from the first day. Saved puzzles marked ✓ are already scheduled.</p>
+      <p class="hint" id="schStatus"></p>
       ${field('First day (puzzle #1)', `<input type="date" id="schEpoch" value="${esc(sch.epoch || today)}">`)}
       ${field('Days with nothing scheduled', `<select id="schFallback"><option value="random" ${sch.fallback !== 'latest' ? 'selected' : ''}>Replay an earlier puzzle (picked from the date, same for everyone)</option><option value="latest" ${sch.fallback === 'latest' ? 'selected' : ''}>Keep showing the most recent puzzle</option></select>`)}
       <div class="actions"><button class="small" id="schPrev">← 4 weeks</button><button class="small" id="schToday">Today</button><button class="small" id="schNext">4 weeks →</button></div>
@@ -818,10 +868,10 @@
         const n = D.number({ epoch: sch.epoch || today }, d);
         return `<tr class="${d === today ? 'today' : d < today ? 'past' : ''}"><td>${dt.toLocaleDateString(undefined, { weekday: 'short' })}</td><td>${d}</td><td>${n >= 1 ? '#' + n : ''}</td><td><select data-day="${d}">${opts(sch.days[d], d)}</select></td></tr>`;
       }).join('')}</table>
-      <div class="actions"><button class="primary" id="schSave">Save schedule</button></div>`;
-    el.querySelectorAll('[data-day]').forEach((s) => s.onchange = () => { if (s.value) sch.days[s.dataset.day] = s.value; else delete sch.days[s.dataset.day]; A.schedDirty = true; renderTab(); });
-    $('schEpoch').onchange = (e) => { sch.epoch = e.target.value; A.schedDirty = true; renderTab(); };
-    $('schFallback').onchange = (e) => { if (e.target.value === 'latest') sch.fallback = 'latest'; else delete sch.fallback; A.schedDirty = true; renderTab(); };
+      ${A.server || A.dir ? '' : `<div class="actions"><button class="primary" id="schSave">Download schedule.json</button>${store.get(SCHED_DRAFT) ? '<button id="schDiscard">Discard changes</button>' : ''}</div>`}`;
+    el.querySelectorAll('[data-day]').forEach((s) => s.onchange = () => { if (s.value) sch.days[s.dataset.day] = s.value; else delete sch.days[s.dataset.day]; scheduleChanged(); });
+    $('schEpoch').onchange = (e) => { sch.epoch = e.target.value; scheduleChanged(); };
+    $('schFallback').onchange = (e) => { if (e.target.value === 'latest') sch.fallback = 'latest'; else delete sch.fallback; scheduleChanged(); };
     $('schPrev').onclick = () => { A.schedFrom = D.addDays(start, -28); renderTab(); };
     $('schNext').onclick = () => { A.schedFrom = D.addDays(start, 28); renderTab(); };
     $('schToday').onclick = () => { A.schedFrom = null; renderTab(); };
@@ -829,10 +879,47 @@
       const unused = A.puzzles.filter((p) => !used[p.file] && !p.error).map((p) => p.file);
       let d = today, n = 0;
       while (unused.length && n < 400) { if (!sch.days[d]) { sch.days[d] = unused.shift(); } d = D.addDays(d, 1); n++; }
-      A.schedDirty = true;
+      scheduleChanged();
+    };
+    const save = $('schSave'); if (save) save.onclick = () => saveSchedule();
+    const discard = $('schDiscard');
+    if (discard) discard.onclick = async () => {
+      if (!confirm('Discard the schedule changes made in this browser?')) return;
+      store.del(SCHED_DRAFT);
+      try { A.schedule = await getJSON('schedule.json'); } catch (e) { A.schedule = { epoch: D.today(), days: {} }; }
+      A.schedule.days = A.schedule.days || {};
+      A.schedDirty = false;
       renderTab();
     };
-    $('schSave').onclick = saveSchedule;
+    renderSchedStatus();
+  }
+  // ---- the schedule saves itself: through the local server or a connected folder; otherwise it is
+  // kept in this browser (it survives a reload) until it is downloaded
+  const SCHED_DRAFT = 'tacticle:scheduleDraft';
+  function scheduleText() {
+    return JSON.stringify(Object.assign({ epoch: A.schedule.epoch }, A.schedule.fallback === 'latest' ? { fallback: 'latest' } : {}, { days: sortObj(A.schedule.days) }), null, 2);
+  }
+  function scheduleChanged() {
+    A.schedDirty = true;
+    if (A.server || A.dir) {
+      A.schedState = 'saving';
+      clearTimeout(A.schedTimer);
+      A.schedTimer = setTimeout(() => saveSchedule(true), 400);
+    } else {
+      store.set(SCHED_DRAFT, JSON.parse(scheduleText()));
+      A.schedState = 'local';
+      A.schedDirty = false; // kept in this browser
+    }
+    renderTab();
+  }
+  function renderSchedStatus() {
+    const el = $('schStatus');
+    if (!el) return;
+    const st = A.schedState;
+    el.textContent = A.server || A.dir
+      ? (st === 'saving' ? 'Saving…' : st === 'error' ? `Not saved: ${A.schedError}. Change anything to try again.` : 'Changes save automatically.')
+      : (store.get(SCHED_DRAFT) ? 'No local server: changes are kept in this browser. Download schedule.json and put it in the repository root to publish them.' : 'No local server: changes are kept in this browser until you download schedule.json.');
+    el.className = 'hint' + (st === 'error' ? ' err' : '');
   }
   function firstFree(from) { let d = from; while (A.schedule.days[d]) d = D.addDays(d, 1); return d; }
 
@@ -957,16 +1044,28 @@
     } catch (e) { toast('Save failed: ' + e.message, 4000); }
   }
   async function saveSchedule(quiet) {
-    const text = JSON.stringify(Object.assign({ epoch: A.schedule.epoch }, A.schedule.fallback === 'latest' ? { fallback: 'latest' } : {}, { days: sortObj(A.schedule.days) }), null, 2);
+    // one save at a time; a change made while saving is saved right after
+    if (A.schedSaving) { A.schedAgain = true; return; }
+    A.schedSaving = true;
+    const text = scheduleText();
     try {
       if (A.server) {
         const r = await fetch('api/schedule', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: text });
         if (!r.ok) throw new Error((await r.json()).error);
       } else if (A.dir) await writeFile(['schedule.json'], text);
       else download('schedule.json', text);
+      if (A.server || A.dir) { A.schedState = 'saved'; store.del(SCHED_DRAFT); }
       A.schedDirty = false;
       if (!quiet) toast(A.server || A.dir ? 'Schedule saved' : 'Downloaded schedule.json; put it in the repository root');
-    } catch (e) { toast('Could not save schedule: ' + e.message); }
+    } catch (e) {
+      A.schedState = 'error';
+      A.schedError = e.message;
+      if (!quiet) toast('Could not save schedule: ' + e.message);
+    } finally {
+      A.schedSaving = false;
+      renderSchedStatus();
+      if (A.schedAgain) { A.schedAgain = false; saveSchedule(true); }
+    }
   }
   function sortObj(o) { const out = {}; for (const k of Object.keys(o).sort()) out[k] = o[k]; return out; }
   async function writeFile(parts, text) {

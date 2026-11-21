@@ -16,19 +16,116 @@
  * step() returns null when it is not an AI decision (human turn or human casualty choice).
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./engine.js'));
-  else root.TacticleAI = factory(root.TacticleEngine);
-})(typeof self !== 'undefined' ? self : this, function (E) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./engine.js'), require('./value.js'));
+  else root.TacticleAI = factory(root.TacticleEngine, root.TacticleValue);
+})(typeof self !== 'undefined' ? self : this, function (E, V) {
   'use strict';
 
   class AI {
     constructor(game, opts) {
       this.g = game;
-      this.opts = Object.assign({ trials: 60, swingOdds: 0.6, playerAggression: 1 }, opts || {});
+      // strategy settings (tools/ai_bench.js measures them): DEFAULTS, then the moving side's ROLE, then opts
+      this._given = opts || {};
+      this._byRole = {};
       this.queue = [];
       this.planned = null; // phase key the queue was built for
     }
 
+    /** The settings for the side now moving (see AI.ROLES), plus this turn's policy when lookahead chose one. */
+    get opts() {
+      const role = this._given.roles === false ? 'none' : this._role();
+      const tp = this._turnPolicy && this._turnPolicy.key === this._turnKey() ? this._turnPolicy : null;
+      const ck = role + (tp ? '|' + tp.k : '');
+      return this._byRole[ck] || (this._byRole[ck] = Object.assign({}, AI.DEFAULTS, AI.ROLES[role] || {}, this._given, tp ? AI.POLICIES[tp.k] : {}));
+    }
+    _turnKey() { return this.g.s.round + '|' + this.g.s.turn; }
+    /**
+     * Lookahead (setting `lookahead: {samples}`): at the start of its turn, play the whole turn on copies of
+     * the game once per candidate policy (AI.POLICIES), with fresh dice so the real rolls stay unknown, score
+     * each resulting position with the win-probability model (js/value.js), and play the real turn with the
+     * policy whose positions scored best for the moving side.
+     */
+    _pickPolicy() {
+      const g = this.g;
+      const la = this._given.lookahead || {};
+      const p = g.current();
+      const forPlayer = g.team(p) === g.humanTeam();
+      const samples = la.samples || 2;
+      const scores = [];
+      for (let k = 0; k < AI.POLICIES.length; k++) {
+        let sum = 0;
+        for (let s = 0; s < samples; s++) {
+          const st = JSON.parse(JSON.stringify(g.s));
+          st.uiHold = false;
+          st.autoCasualties = true;
+          st.rng = (hash(this._turnKey() + ':' + s) ^ Math.imul(g.s.rng | 0, 0x9e3779b1)) >>> 0;
+          const g2 = new E.Game(g.map, g.sc, st);
+          if (Object.prototype.hasOwnProperty.call(g, 'humanTeam')) g2.humanTeam = g.humanTeam;
+          if (Object.prototype.hasOwnProperty.call(g, 'isHuman')) g2.isHuman = g.isHuman;
+          // the policy plays the turn; any power's moves are made by the same AI (the turn is the mover's)
+          for (const q of Object.keys(st.powers)) st.powers[q].ai = true;
+          const given = Object.assign({}, this._given, AI.POLICIES[k]);
+          delete given.lookahead;
+          const a2 = new AI(g2, given);
+          let n = 0;
+          while (g2.phase !== 'gameOver' && g2.current() === p && n++ < 4000) if (!a2.step()) break;
+          const pw = V.predict(g2);
+          sum += forPlayer ? pw : 1 - pw;
+        }
+        scores.push(sum / samples);
+      }
+      let best = 0;
+      for (let k = 1; k < scores.length; k++) if (scores[k] > scores[best] + 1e-9) best = k;
+      this._turnPolicy = { key: this._turnKey(), k: best, scores };
+    }
+    /**
+     * 'defend' for the side keeping the other from its objectives, else 'attack'. In capture and clear
+     * puzzles the computer defends; in puzzles where the player only has to hold, the player defends.
+     */
+    _role() {
+      const g = this.g;
+      const objs = g.sc.objectives || [];
+      const holdOnly = objs.length > 0 && objs.every((o) => o.type === 'hold');
+      const forPlayer = g.team(g.current()) === g.humanTeam();
+      return forPlayer === holdOnly ? 'defend' : 'attack';
+    }
+    /**
+     * Value moves (setting `valueMoves`): land units move one at a time to wherever the win-probability model
+     * (js/value.js) rates the position best for the moving side, until no single move improves it. Each
+     * candidate is tried by moving the unit in place, scoring, and moving it back.
+     */
+    _valueMoves(doMove, D) {
+      const g = this.g;
+      const p = g.current();
+      const forPlayer = g.team(p) === g.humanTeam();
+      const val = () => { const v = V.predict(g); return forPlayer ? v : 1 - v; };
+      const friendly = [...g.B.playable].filter((id) => g.B.isLand(id) && g.friendlyOwner(id, p) && !g.s.terr[id].conq);
+      let cur = val();
+      for (let iter = 0; iter < 40; iter++) {
+        let best = null;
+        const tried = new Set();
+        for (const from of friendly) {
+          for (const u of g.units(from)) {
+            if (u.o !== p || g.def(u).domain !== 'land' || !g.canUnitMove(u, from)) continue;
+            const sig = from + '|' + u.t + '|' + (u.h || 0);
+            if (tried.has(sig)) continue; // one unit of each kind per territory is enough to try
+            tried.add(sig);
+            for (const to of friendly) {
+              const d = D.land[from][to];
+              if (to === from || d === undefined || d > u.ml) continue;
+              const list = g.s.terr[from].u, i = list.indexOf(u);
+              list.splice(i, 1); g.s.terr[to].u.push(u);
+              const v = val();
+              g.s.terr[to].u.pop(); list.splice(i, 0, u);
+              if (v > cur + 0.002 && (!best || v > best.v)) best = { v, from, to, u };
+            }
+          }
+        }
+        if (!best) break;
+        if (!g.checkMove(best.from, [best.u.id], best.to).ok || !doMove(best.from, [best.u.id], best.to)) break;
+        cur = val();
+      }
+    }
     /** Execute one AI action. Returns a description, or null if nothing for the AI to do. */
     step() {
       const g = this.g;
@@ -40,7 +137,11 @@
       const p = g.current();
       if (!g.s.powers[p].ai) return null;
       const key = `${g.s.round}|${g.s.turn}|${g.phase}`;
-      if (this.planned !== key) { this.queue = this._plan(); this.planned = key; }
+      if (this.planned !== key) {
+        if (this._given.lookahead && V && V.model && g.phase === 'purchase' && (!this._turnPolicy || this._turnPolicy.key !== this._turnKey())) this._pickPolicy();
+        this.queue = this._plan();
+        this.planned = key;
+      }
       while (this.queue.length) {
         const a = this.queue.shift();
         const r = this._do(a);
@@ -177,10 +278,47 @@
     _value(id) {
       const g = this.g;
       if (g.B.isSea(id)) return 0;
-      let v = g.B.ipc(id) + 1;
-      for (const p of Object.keys(g.s.powers)) if (g.s.powers[p].capital === id) v += 6;
-      if (g.units(id).some((u) => u.t === 'factory')) v += 3;
+      const w = this._incomeWeight();
+      let v = (g.B.ipc(id) + 1) * w + (1 - w) * 0.6;
+      for (const p of Object.keys(g.s.powers)) if (g.s.powers[p].capital === id) v += 6 * w;
+      if (g.units(id).some((u) => u.t === 'factory')) v += 3 * w;
       return v;
+    }
+    /**
+     * How much income still matters (incomeAware): nothing when nobody can buy, when there is no factory,
+     * or when no turn is left to spend it; it fades over the last rounds. 1 without incomeAware.
+     */
+    _incomeWeight() {
+      if (!this.opts.incomeAware) return 1;
+      const g = this.g;
+      if (g.sc.purchase === false || g.sc.income === false) return 0;
+      if (this._facCache === undefined || this._facCache.round !== g.s.round) {
+        this._facCache = { round: g.s.round, any: Object.keys(g.s.terr).some((id) => g.units(id).some((u) => u.t === 'factory')) };
+      }
+      if (!this._facCache.any) return 0;
+      const left = g.s.maxTurns - g.s.round; // rounds after this one: income now is spent next turn
+      return left <= 0 ? 0 : Math.min(1, left / 3);
+    }
+    /** Turns of the player's side still to come after the current one (when objectives can still change). */
+    _laterHumanTurns() {
+      const g = this.g;
+      const ht = g.humanTeam();
+      const order = g.s.order;
+      let n = 0;
+      for (let i = g.s.turn + 1; i < order.length; i++) if (g.team(order[i]) === ht) n++;
+      const perRound = order.filter((q) => g.team(q) === ht).length;
+      return n + perRound * Math.max(0, g.s.maxTurns - g.s.round);
+    }
+    /**
+     * How much trading units still matters to the moving side (tuvEndgame): once no later turn can use
+     * them, only the objectives count. 1 without tuvEndgame.
+     */
+    _tuvWeight() {
+      if (!this.opts.tuvEndgame) return 1;
+      const g = this.g;
+      const forPlayer = g.team(g.current()) === g.humanTeam();
+      if (forPlayer) return g.s.round >= g.s.maxTurns ? 0.15 : 1;
+      return this._laterHumanTurns() === 0 ? 0.15 : 1;
     }
     /**
      * Where the race for the objectives stands, from the moving power's point of view.
@@ -201,9 +339,10 @@
     _gain(id) {
       const g = this.g;
       if (g.B.isSea(id)) return 0;
-      let v = (g.B.ipc(id) + 1) / 2;
-      for (const p of Object.keys(g.s.powers)) if (g.s.powers[p].capital === id) v += 6;
-      if (g.units(id).some((u) => u.t === 'factory')) v += 3;
+      const w = this._incomeWeight();
+      let v = ((g.B.ipc(id) + 1) / 2) * w + (1 - w) * 0.3;
+      for (const p of Object.keys(g.s.powers)) if (g.s.powers[p].capital === id) v += 6 * w;
+      if (g.units(id).some((u) => u.t === 'factory')) v += 3 * w;
       return v;
     }
     /** Extra score (in IPC) for winning a battle at `to` because of the objectives. */
@@ -222,9 +361,10 @@
     }
     /** Lowest win chance worth attacking with, given how much rides on the battle. */
     _minOdds(bonus) {
-      if (bonus >= 60) return 0.12;
-      if (bonus >= 25) return 0.35;
-      if (bonus > 0) return 0.45;
+      const k = this.opts.objOdds;
+      if (bonus >= 60) return 0.12; // the game depends on it: any real chance beats none (not scaled)
+      if (bonus >= 25) return Math.min(0.9, 0.35 * k);
+      if (bonus > 0) return Math.min(0.9, 0.45 * k);
       return this.opts.swingOdds;
     }
     /** Is this a territory the moving side must keep for the objectives? */
@@ -276,12 +416,13 @@
       return this._distCache;
     }
 
-    /** Enemy attack strength that could reach territory id next turn. */
-    _threat(id, p) {
+    /** Enemy attack strength that could reach territory id next turn (optionally leaving out one territory's units). */
+    _threat(id, p, skip) {
       const g = this.g;
       const D = this._dist();
       let t = 0;
       for (const x of g.B.playable) {
+        if (x === skip) continue;
         for (const u of g.units(x)) {
           if (!g.isEnemy(u.o, p) || u.tr) continue;
           const d = g.def(u);
@@ -333,6 +474,7 @@
       for (const id of Object.keys(fac)) if (this._threat(id, p) > this._defense(id, p)) threatened = true;
       const sit = this._situation();
       if (!sit.forPlayer && sit.state !== 'calm') threatened = true; // the player is close to winning: bodies first
+      if (this.opts.defBuy && !sit.forPlayer) threatened = true; // the defending side: infantry is the most defence per IPC
       const buy = {};
       let n = 0;
       const add = (t) => { if (!U[t] || U[t].cost > money || n >= capacity) return false; buy[t] = (buy[t] || 0) + 1; money -= U[t].cost; n++; return true; };
@@ -405,13 +547,16 @@
         }
       }
       // garrison: keep a defender in threatened capitals/objectives/factories
+      // (not when the player is about to win: then only the objectives matter, everything else may strike back)
+      const desperate = !sit.forPlayer && sit.state === 'winning';
       const keep = {};
       for (const id of g.B.playable) {
         if (!g.friendlyOwner(id, p) || g.B.isSea(id)) continue;
+        if (desperate && !this._guarding(id, sit)) continue;
         const v = this._defValue(id, sit);
         if (v < 5) continue;
         const threat = this._threat(id, p);
-        if (threat > 0) keep[id] = this._guarding(id, sit) ? threat * 1.5 : Math.min(threat, v * 2) * 0.6;
+        if (threat > 0) keep[id] = (this._guarding(id, sit) ? threat * 1.5 : Math.min(threat, v * 2) * 0.6) * this.opts.garrison;
       }
       const garrisonOk = (from, u) => {
         if (!keep[from]) return true;
@@ -444,9 +589,23 @@
           // expected IPC damage dealt minus expected IPC lost, plus what winning the territory is worth
           // spoiling attacks: destroying units poised to strike an objective we guard is worth extra
           const spoil = this._spoilValue(to, sit);
-          const scoreOf = (o) => (o.defLoss - o.attLoss) + o.win * (value + bonus) + (o.defLoss / Math.max(1, this._unitValue(foes))) * spoil;
+          const tuvW = this._tuvWeight();
+          // counter: survivors left in a territory the enemy can retake are likely lost again (a dead zone)
+          const counterTh = this.opts.counter && !isSea ? this._threat(to, p, to) : 0;
+          let attSet = null;
+          const counterLoss = (o) => {
+            if (!counterTh || !attSet) return 0;
+            const val = this._unitValue(attSet.map((c) => c.u));
+            const left = Math.max(0, val - o.attLoss);
+            const def = attSet.reduce((a, c) => a + g.def(c.u).def, 0) * (val ? left / val : 0);
+            const pLose = Math.max(0, Math.min(1, (counterTh - def) / (counterTh + def + 1) * 1.5));
+            return pLose * (left + value);
+          };
+          const scoreOf = (o) => (o.defLoss - o.attLoss) * tuvW + o.win * (value + bonus) + (o.defLoss / Math.max(1, this._unitValue(foes))) * spoil -
+            this.opts.counter * o.win * counterLoss(o);
           const minOdds = this._minOdds(bonus);
           let set = cand.slice();
+          attSet = set;
           let odds = sim(set);
           if (odds.win < minOdds) continue;
           let score = scoreOf(odds);
@@ -456,8 +615,10 @@
             const trial = set.slice(0, k).concat(set.slice(k + 1));
             if (!trial.some((c) => g.def(c.u).domain === 'land') && !isSea) continue;
             const o2 = sim(trial);
+            attSet = trial;
             const s2 = scoreOf(o2);
-            if (o2.win >= minOdds && s2 >= score - 0.5) { set = trial; odds = o2; score = s2; k--; }
+            attSet = set;
+            if (o2.win >= minOdds && s2 >= score - this.opts.trimSlack) { set = trial; odds = o2; score = s2; k--; attSet = set; }
           }
           if (!isSea && !set.some((c) => g.def(c.u).domain === 'land')) continue;
           if (score > 0 && (!best || score > best.score)) best = { to, score, units: set };
@@ -573,6 +734,7 @@
         if (r.ok) moves.push({ type: 'shown', from, to, uids });
         return r.ok;
       };
+      if (this.opts.valueMoves && V && V.model) this._valueMoves(doMove, D);
       // need score per friendly land territory
       const need = () => {
         const out = {};
@@ -582,7 +744,7 @@
           const def = this._defense(id, p);
           const front = g.B.adj[id].some((y) => g.B.isLand(y) && g.s.terr[y].o && g.isEnemy(g.s.terr[y].o, p));
           // objective territories the player needs are over-provisioned: 1.5x the threat
-          out[id] = { deficit: Math.max(0, th * (this._guarding(id, sit) ? 1.5 : 1) - def), value: this._defValue(id, sit), front, th };
+          out[id] = { deficit: Math.max(0, th * (this._guarding(id, sit) ? this.opts.objGuard : 1) - def), value: this._defValue(id, sit), front, th };
         }
         return out;
       };
@@ -622,6 +784,10 @@
           else if (!stay && best) doMove(from, [u.id], best.id);
         }
       }
+      // dead zones (deadZone k): a territory facing more than k times its defence, that the objectives don't need,
+      // is not worth feeding or holding; its units pull back to the strongest safe stack in reach
+      const hopeless = (id, N) => this.opts.deadZone > 0 && N[id] && !this._guarding(id, sit) &&
+        N[id].th > this.opts.deadZone * Math.max(1, this._defense(id, p));
       // 2) land units: reinforce deficits, else move toward the front
       for (let pass = 0; pass < 2; pass++) {
         for (const from of [...g.B.playable]) {
@@ -631,6 +797,17 @@
             const N = need();
             const here = N[from];
             if (!here) continue;
+            if (hopeless(from, N)) {
+              // pull back to the strongest stack in reach that is not itself a dead zone
+              let back = null;
+              for (const id of Object.keys(N)) {
+                const d = D.land[from][id];
+                if (id === from || d === undefined || d > u.ml || hopeless(id, N)) continue;
+                const sc = this._defense(id, p) + (this._guarding(id, sit) ? 10 : 0) - d;
+                if (!back || sc > back.sc) back = { id, sc };
+              }
+              if (back && doMove(from, [u.id], back.id)) continue;
+            }
             // keep enough to hold valuable territory
             if (here.deficit > 0 || (here.th > 0 && here.value >= 5 && this._defense(from, p) - g.def(u).def < here.th)) continue;
             let best = null;
@@ -638,9 +815,10 @@
               if (id === from) continue;
               const d = D.land[from][id];
               if (d === undefined || d > u.ml) continue;
+              if (hopeless(id, N)) continue;
               const n = N[id];
               let sc = n.deficit > 0 ? n.deficit * 0.5 + n.value : 0;
-              if (!here.front && n.front) sc += 3;
+              if (!here.front && n.front) sc += this.opts.frontPull;
               if (sc <= 0) continue;
               if (!best || sc > best.sc) best = { id, sc };
             }
@@ -699,6 +877,43 @@
     }
   }
 
+  /** Strategy settings. The defaults are the strategy as it was before tools/ai_bench.js experiments. */
+  AI.DEFAULTS = {
+    trials: 60, // dice simulations per candidate attack
+    swingOdds: 0.6, // lowest win chance for an attack with nothing riding on it
+    playerAggression: 1, // scales the objective bonus for the player's side (self-play)
+    objOdds: 1, // scales the lowest win chance accepted for battles over objectives
+    trimSlack: 0.5, // how much score it gives up to leave an expensive unit out of an attack
+    garrison: 1, // scales the defence kept back in threatened valuable territory
+    incomeAware: false, // territory income counts only while it can still be spent
+    tuvEndgame: false, // trading units stops counting once no later turn can use them
+    counter: 0, // weight of the expected loss to a counterattack after taking a territory
+    deadZone: 0, // noncombat: abandon territories facing more than this many times their defence (0 = off)
+    defBuy: false, // the computer's side buys infantry only
+    objGuard: 1.5, // noncombat: objectives a side must keep are stacked to this many times the threat
+    frontPull: 3, // noncombat: pull of idle land units toward the front
+  };
+  /**
+   * Settings by role. 'defend' was found by tools/ai_evolve.js (a genetic search) and checked on scenarios
+   * it never trained on: against the earlier strategy it cut the attacking side's win rate from 57.5% to
+   * 50% over 360 held-out games. It makes a poor attacker, so the attacking side keeps the defaults.
+   */
+  AI.ROLES = {
+    defend: { swingOdds: 0.79, objOdds: 1.13, trimSlack: 1.31, garrison: 1.63, counter: 0.47, deadZone: 1.77, objGuard: 3, frontPull: 2.58 },
+    attack: {},
+  };
+  /** Candidate policies for lookahead (settings on top of the role's). */
+  AI.POLICIES = [
+    {}, // the role's settings
+    { swingOdds: 0.6, objOdds: 1, trimSlack: 0.5, garrison: 1, counter: 0, deadZone: 0, objGuard: 1.5, frontPull: 3 }, // the earlier strategy
+    { swingOdds: 0.45, garrison: 0.7, deadZone: 0, trimSlack: 0.5, counter: 0 }, // aggressive
+    { swingOdds: 0.85, garrison: 2.2, objGuard: 3, deadZone: 1.3, frontPull: 1 }, // fortress
+    { frontPull: 6, deadZone: 2.5, garrison: 1.2, swingOdds: 0.7 }, // forward
+  ];
+  AI.VERSION = 2;
+  /** Settings a puzzle asks for: "opponent": "earlier" keeps the strategy from before the role settings. */
+  AI.opponentOptions = (sc) => (sc && sc.opponent === 'earlier' ? { roles: false } : {});
+
   // queue entries of type 'shown' were already executed during planning; report them one by one
   const baseDo = AI.prototype._do;
   AI.prototype._do = function (a) {
@@ -741,10 +956,15 @@
     for (const p of humans) g.s.powers[p].ai = true;
     g.humanTeam = () => g.s.powers[humans[0]].team;
     g.isHuman = (p) => humans.includes(p);
-    const ai = new AI(g, opts.ai);
+    // opts.aiFoe: different settings for the computer's side (strategy experiments, tools/ai_bench.js)
+    const ai = new AI(g, Object.assign({}, AI.opponentOptions(sc), opts.ai));
+    const foe = opts.aiFoe ? new AI(g, Object.assign({}, opts.ai, opts.aiFoe)) : ai;
+    const mine = new Set(humans.map((p) => g.team(p)));
     let guard = 0;
     while (g.phase !== 'gameOver' && guard++ < 20000) {
-      if (!ai.step()) break;
+      if (opts.onState) opts.onState(g); // e.g. recording positions for the win-probability model
+      const who = mine.has(g.team(g.current())) ? ai : foe;
+      if (!who.step()) break;
     }
     return { won: !!(g.s.result && g.s.result.won), turns: g.s.result ? g.s.result.turns : g.s.round, result: g.s.result, game: g };
   }

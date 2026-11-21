@@ -144,6 +144,38 @@ changes and push them.
 - Stats (played, win %, streak, wins by turn count) are kept per browser. Each date counts
   once, however often the page is reloaded.
 
+### Player results (optional)
+
+A static site has no server of its own to count results, so Tacticle can use a free
+[GoatCounter](https://www.goatcounter.com) site:
+
+1. Create a site at goatcounter.com (its code is the `mycode` in `mycode.goatcounter.com`).
+2. In its settings, turn on **Allow adding visitor counts on your website** so counts can be
+   read back.
+3. Put the code in `config.json`: `{ "results": { "goatcounter": "mycode" } }`.
+
+From then on, each finished daily game is recorded once per browser as two hits:
+`/tacticle/<date>/<puzzle id>/won|lost` and `/tacticle/puzzle/<puzzle id>/won|lost`.
+Free play and play tests are never recorded.
+- **Share text:** before recording, the result screen reads the day's counts and adds
+  "🌍 62% of other players won today" as the second-to-last line. The snapshot is kept, so
+  the line doesn't change on reload.
+- **Authoring tool (Test tab → Player results):** lists each puzzle's real win rate next to
+  its balance check.
+  - The balance check is now saved with the puzzle as `balance.winRate`; generated puzzles
+    already carry `generator.winRate`.
+  - The gap is not the same at every rate (a puzzle at 95% can't gain 35 points), so the tool
+    fits a curve in log-odds, `players = σ(a + b·logit(check))`, by maximum likelihood over
+    puzzles with at least 5 players. A mild pull toward "no difference" stops a few puzzles
+    giving a wild curve, and the slope is fitted only from 3 puzzles up.
+  - Example: if players won 85% of a puzzle the check put at 50%, the curve maps a check of
+    5% → 22%, 20% → 58%, 80% → 96% and 95% → 99%.
+- **Generate tab:** "Aim for real players" maps the target band through the inverse curve. For
+  players to win a medium puzzle 45–72% of the time in that example, the check aims at 13–32%.
+- **Privacy and reliability:** GoatCounter keeps no cookies and nothing beyond a page view
+  is sent. Anyone could send fake hits, so treat the numbers as a guide. With the code
+  empty (the default), nothing is sent or read.
+
 ## Authoring
 
 Run `node tools/serve.js` and open `author.html`. The page autosaves a draft in the
@@ -192,8 +224,11 @@ starts a new puzzle and keeps the draft; **Files** offers to open it once the ma
   separately from daily progress). The **balance check** runs *N* computer-vs-computer
   games. A **battle odds** calculator is included.
 - **Schedule**: a calendar of the next weeks. Pick a puzzle per day, set the first day
-  (puzzle #1), use "Fill empty days with unscheduled puzzles", then **Save schedule**
-  (writes `schedule.json`).
+  (puzzle #1), or use "Fill empty days with unscheduled puzzles".
+  - **Saving:** every change saves `schedule.json` by itself, through the local server or a
+    connected folder.
+  - **Without either** (e.g. on GitHub Pages): changes are kept in the browser and survive a
+    reload. **Download schedule.json** to publish them, or **Discard changes**.
 - **Files**: open, delete, save-as, download and import JSON. Without the server, Chrome
   and Edge can **connect the repository folder** and write files directly; other browsers
   download the files for you to copy in.
@@ -315,10 +350,95 @@ The objective race changes its priorities:
   objectives on the last turn.
 
 It also plans amphibious landings from loaded transports, retreats from hopeless fights,
-and only counts landing spots that exist (it doesn't plan carrier moves). In 336
-generated puzzles played against the earlier version, the player side's win rate fell
-from 53% to about 51%. It is a fair opponent for small puzzles, not a strong general one:
-it makes no multi-turn plans.
+and only counts landing spots that exist (it doesn't plan carrier moves). It makes no
+multi-turn plans.
+
+**Settings by role.** The strategy has numeric settings (`AI.DEFAULTS` in `js/ai.js`). The
+side defending the objectives (the computer, in capture and clear puzzles) uses settings found
+by a genetic search (`AI.ROLES.defend`):
+- **Attacks:** it attacks only at good odds (about 80%), leaves expensive units out of attacks
+  more readily, and weighs the counterattack on survivors.
+- **Defence:** it keeps 1.6× the threat in threatened territory, stacks objectives to 3× the
+  threat, and pulls units out of "dead zones" (places facing more than 1.8× their defence that
+  the objectives don't need) into the strongest safe stack.
+
+The attacking side keeps the defaults, because these settings make it a poor attacker. A
+puzzle can keep the earlier opponent with `"opponent": "earlier"` (authoring tool, Scenario
+tab).
+
+**How the settings were chosen.** `tools/ai_bench.js` plays a fixed set of scenarios (the
+saved puzzles plus 36 generated ones) with fixed seeds, the player's side and the computer's
+side each with their own settings. Lower player win rates mean a stronger computer.
+- **Baseline:** with both sides on the earlier strategy, the player side won 46.3% of 294 games.
+- **Hand-picked, one at a time:**
+  - dead zones: 40.1%;
+  - a heavier garrison: 41.8%;
+  - leaving units out of attacks more readily: 43.9%;
+  - income awareness, endgame unit value, infantry-only buying, objective odds: no games changed;
+  - all of them combined: 35.7%.
+- **Genetic search** (`tools/ai_evolve.js`, 10 settings, population 10, 8 generations): each
+  candidate played the computer side against the earlier strategy and against the previous
+  champion, on fresh seeds each generation. Its champion reached 34.7%.
+- **Held-out check:** on 60 generated scenarios that neither the search nor the hand-picking
+  saw (360 games), the player side's win rate fell from 57.5% to 50.0% with the evolved
+  settings (z ≈ 3.9), against 52.5% with the hand-picked combination.
+
+The gain on the training scenarios (11–12 points) was larger than on new ones (7–8 points):
+part of it was fitted to those scenarios.
+
+**Win-probability model** (`js/value.js`, trained by `tools/ai_value.js`). This is a classifier
+that estimates, from any position, the chance that the player's side wins, like a chess
+evaluation bar.
+- **Features:** objectives met and missing, player turns left, units' IPC value and
+  attack/defence for each side, attack within reach of each objective (one and two turns)
+  against its defenders, threat to held objectives, income and money. It also simulates the
+  chance of taking the objectives still needed next turn, and of the enemy retaking those held.
+- **Data:** 19,253 positions from 5,225 self-play games on 209 training scenarios, with random
+  strategy settings for each side so the positions vary.
+- **Quality on 2,861 positions from the 60 held-out scenarios:**
+
+  | Model | Log-loss | Accuracy | AUC |
+  |---|---|---|---|
+  | Constant win rate | 0.749 | 55% | 0.52 |
+  | Objectives and turns only | 0.727 | 56% | 0.64 |
+  | Logistic regression (used) | 0.570 | 69% | 0.78 |
+  | Network, 16 hidden units | 0.575 | 71% | 0.78 |
+
+  The two battle-odds features improved the log-loss from 0.598. The model is somewhat
+  overconfident at the extremes: positions it puts at 90% are won about 81% of the time.
+
+**Using the model to choose actions.** Two settings, both off by default, each measured against
+the GA-tuned opponent (player side's win rate; benchmark / held-out 1 / held-out 2):
+
+| Computer side | Benchmark | Held-out 1 | Held-out 2 |
+|---|---|---|---|
+| GA settings | 34.7% | 43.1% | 54.6% |
+| `valueMoves` | 35.0% | 43.8% | 51.4% |
+| `lookahead` | 34.7% | 43.1% | 55.1% |
+
+- **`valueMoves`:** in noncombat move it moves land units one at a time to wherever the model
+  rates the position best, until no move improves it. Across all three sets it turned 12 games
+  into computer wins and 7 into player wins, so no reliable gain.
+- **`lookahead`:** it plays its turn on copies of the game with each candidate strategy
+  (`AI.POLICIES`), using fresh dice, and plays the one whose resulting positions the model rates
+  best. It changed almost nothing: the candidates often produce identical moves, and the
+  computer usually has only one or two turns.
+- **Conclusion:** the GA-tuned rules already do what the model rewards (stacking objectives,
+  leaving dead zones), so the model adds little on top of them.
+
+```sh
+node tools/ai_value.js pool                      # training scenarios (benchmark set + generated)
+node tools/ai_value.js data --games 25           # self-play positions with outcomes
+node tools/ai_value.js train                     # fit, report held-out quality, write js/value.js
+node tools/ai_bench.js run --foe '{"valueMoves":true}'
+```
+
+```sh
+node tools/ai_bench.js build                       # scenario set (tools/cache/bench.json)
+node tools/ai_bench.js run --foe '{"roles":false}' # player side's win rate against the earlier computer
+node tools/ai_bench.js compare variants.json       # {"name": {settings}, ...}, each paired against the defaults
+node tools/ai_evolve.js --pop 10 --gens 8          # genetic search; result in tools/cache/evolved.json
+```
 
 ## Maps
 
@@ -394,13 +514,19 @@ author.html, js/author.js     authoring tool
 js/engine.js                  rules engine (pure, JSON state; browser + Node)
 js/rulesets.js                unit stats and rule switches per edition
 js/ai.js                      computer opponent + AI self-play
+js/value.js                   win-probability model (features + trained weights)
 js/generator.js               procedural puzzles and variants
 js/mapview.js, js/icons.js    SVG map (pan/zoom/pinch/wrap) and unit icons
 js/daily.js                   dates, puzzle numbers, share text
+js/results.js                 player results via GoatCounter (config.json)
+js/localmaps.js               maps imported in the browser, kept in IndexedDB
 js/triplea.js                 TripleA catalogue reader and map converter
 tools/triplea_fetch.js        TripleA import from the command line
 js/worker.js                  Web Worker for generation and balance checks
 tools/serve.js                static server + save API for the authoring tool
+tools/ai_bench.js             computer-opponent tournament on fixed scenarios and seeds
+tools/ai_evolve.js            genetic search over the opponent's settings
+tools/ai_value.js             win-probability model: self-play data, training, evaluation
 tools/build_world_map.py      world map builder (+ tools/world_config.py)
 tests/                        node --test suites
 ```

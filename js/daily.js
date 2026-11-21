@@ -104,9 +104,17 @@
     lines.push(`🎲 I ${luckWords(r.luckYou)}`);
     lines.push(`🎲 Opponent ${luckWords(r.luckFoe)}`);
     lines.push(`Me ${ipc(r.lossYou)} / Them ${ipc(r.lossFoe)}`);
+    const others = othersLine(r.others, r.today);
+    if (others) lines.push(others);
     if (r.url) lines.push(shortUrl(r.url));
     return lines.join('\n');
   }
+  /** "🌍 62% of other players won today": how the day's other players did (from results.js), or '' with none. */
+  function othersLine(t, isToday) {
+    const n = t ? t.won + t.lost : 0;
+    if (!n) return '';
+    return `🌍 ${Math.round((100 * t.won) / n)}% of other players won ${isToday === false ? 'that day' : 'today'}`;
+  }
 
-  return { today, dateStr, parse, addDays, daysBetween, number, entryFor, shareText, luckWords, squares, shortUrl };
+  return { today, dateStr, parse, addDays, daysBetween, number, entryFor, shareText, othersLine, luckWords, squares, shortUrl };
 });
