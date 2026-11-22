@@ -84,7 +84,7 @@
      */
     _role() {
       const g = this.g;
-      const objs = g.sc.objectives || [];
+      const objs = (g.sc.objectives || []).filter((o) => o.side !== 'opponent');
       const holdOnly = objs.length > 0 && objs.every((o) => o.type === 'hold');
       const forPlayer = g.team(g.current()) === g.humanTeam();
       return forPlayer === holdOnly ? 'defend' : 'attack';
@@ -333,7 +333,7 @@
       const need = g.objectivesNeeded();
       const met = targets.filter((t) => t.type !== 'hold' && t.met).length;
       const state = need > 0 && met >= need ? 'winning' : need > 0 && met === need - 1 ? 'close' : 'calm';
-      return { p, forPlayer: g.team(p) === ht, targets, need, met, state, finalRound: g.s.round >= g.s.maxTurns };
+      return { p, forPlayer: g.team(p) === ht, targets, opp: g.opponentTargets ? g.opponentTargets() : [], need, met, state, finalRound: g.s.round >= g.s.maxTurns };
     }
     /** What capturing `to` is worth next to the IPC swing: half its income, plus capitals and factories in full. */
     _gain(id) {
@@ -347,6 +347,13 @@
     }
     /** Extra score (in IPC) for winning a battle at `to` because of the objectives. */
     _objBonus(to, sit) {
+      // the computer's own objectives: take its targets; the player must win them back before its turn ends
+      const o = (sit.opp || []).filter((x) => x.id === to);
+      if (o.length) {
+        const oppAll = sit.opp.filter((x) => x.type !== 'hold').every((x) => x.met || x.id === to);
+        if (!sit.forPlayer && o.some((x) => !x.met)) return oppAll ? 60 : 25;
+        if (sit.forPlayer && o.some((x) => x.met)) return sit.opp.every((x) => x.met) ? 60 : 20;
+      }
       const t = sit.targets.filter((x) => x.id === to);
       if (!t.length) return 0;
       const k = this.opts.playerAggression;
@@ -369,6 +376,8 @@
     }
     /** Is this a territory the moving side must keep for the objectives? */
     _guarding(id, sit) {
+      // keep the computer's targets out of its hands (player), or hold on to them (computer)
+      if ((sit.opp || []).some((x) => x.id === id) && this.g.friendlyOwner(id, sit.p)) return true;
       const t = sit.targets.filter((x) => x.id === id);
       if (!t.length || !this.g.friendlyOwner(id, sit.p)) return false;
       return sit.forPlayer ? t.some((x) => x.type === 'hold' || x.met) : t.some((x) => x.type !== 'hold' && !x.met);
@@ -475,6 +484,8 @@
       const sit = this._situation();
       if (!sit.forPlayer && sit.state !== 'calm') threatened = true; // the player is close to winning: bodies first
       if (this.opts.defBuy && !sit.forPlayer) threatened = true; // the defending side: infantry is the most defence per IPC
+      // a side that must bank IPCs keeps its money
+      if ((sit.forPlayer ? g.objectiveStatus() : (g.opponentStatus ? g.opponentStatus() : [])).some((o) => o.type === 'bank')) return [];
       const buy = {};
       let n = 0;
       const add = (t) => { if (!U[t] || U[t].cost > money || n >= capacity) return false; buy[t] = (buy[t] || 0) + 1; money -= U[t].cost; n++; return true; };

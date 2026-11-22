@@ -48,7 +48,7 @@
       $('status').textContent = '';
       return;
     }
-    $('puzzleNo').textContent = S.test ? 'test' : `#${S.number} · ${S.date}`;
+    $('puzzleNo').textContent = S.test ? 'test' + (S.sc.testAs === 'opponent' ? ' · you play the opponent' : S.sc.testAs === 'both' ? ' · you play both sides' : '') : `#${S.number} · ${S.date}`;
     S.puzzleLabel = $('puzzleNo').textContent;
     document.title = `Tacticle ${S.test ? '(test)' : '#' + S.number}`;
     S.dailyKey = S.key;
@@ -189,6 +189,13 @@
   // ------------------------------------------------------------------ helpers
   const G = () => S.g;
   function humanTurn() { const g = G(); return g.phase !== 'gameOver' && !g.s.powers[g.current()].ai; }
+  /** A play test from the authoring tool in which the person plays the opponent's side. */
+  function asOpponent() { return S.test && S.sc.testAs === 'opponent'; }
+  /** The result headline. Results are the puzzle player's; a test as the opponent reads them the other way round. */
+  function verdict(won) {
+    if (asOpponent()) return won ? '💀 Defeat: the player side won' : '🏆 Victory: you stopped the player side';
+    return won ? '🏆 Victory' : '💀 Defeat';
+  }
   function color(p) { return (S.map.powers.find((x) => x.id === p) || {}).color || '#888'; }
   function uname(t) { return (G().R.units[t] || {}).name || t; }
   function canUndo() { return humanTurn() && S.undo.length > 0 && ['combatMove', 'noncombatMove', 'place'].includes(G().phase) && !G().s.battle && !S.retreat; }
@@ -431,7 +438,7 @@
     if (S.retreat) for (const id of S.retreat.opts) hl[id] = 'move';
     if (g.phase === 'place' && S.placeType && humanTurn()) for (const id of g.placeTargets(S.placeType)) hl[id] = 'place';
     const objectives = {};
-    for (const o of S.sc.objectives || []) for (const id of o.territories || []) objectives[id] = o.type;
+    for (const o of S.sc.objectives || []) for (const id of o.territories || []) objectives[id] = o.side === 'opponent' ? (objectives[id] || 'enemy') : o.type;
     S.mv.update({ owners, units, highlight: hl, selected: sel, objectives, playable: new Set(S.sc.playable), dimInactive: true, labels: 'playable' });
   }
 
@@ -441,21 +448,17 @@
     const parts = [];
     // objectives
     const st = g.objectiveStatus();
-    parts.push(`<div class="h">Objectives${G().objectivesNeeded() < st.filter((o) => o.type !== 'hold').reduce((a, o) => a + o.total, 0) ? ` (need ${G().objectivesNeeded()})` : ''}</div><ul class="objlist">` + st.map((o) => {
-      const verb = o.type === 'hold' ? 'Hold' : o.type === 'destroy' ? 'Clear enemies from' : 'Capture';
-      return o.territories.map((id) => {
-        const t = S.mv.T[id];
-        const ok = o.type === 'destroy' ? !g.units(id).some((u) => g.team(u.o) !== humanTeam() && !g.def(u).infrastructure)
-          : g.s.terr[id].o && g.team(g.s.terr[id].o) === humanTeam();
-        return `<li class="${ok ? 'done' : ''}">${verb} <b>${esc(t.name)}</b></li>`;
-      }).join('');
-    }).join('') + `</ul><div class="hint" style="margin-top:4px">${winCheckText()}</div>`);
+    const total = g.objectiveTargets().filter((t) => t.type !== 'hold').length;
+    parts.push(`<div class="h">${asOpponent() ? 'The player side wins by' : 'Objectives'}${g.objectivesNeeded() < total ? ` (need ${g.objectivesNeeded()})` : ''}</div><ul class="objlist">${objectiveRows(st, false)}</ul>`);
+    const opp = g.opponentStatus();
+    if (opp.length) parts.push(`<div class="h">${asOpponent() ? 'You win if you' : 'The enemy wins if it'}</div><ul class="objlist enemy">${objectiveRows(opp, true)}</ul>`);
+    parts.push(`<div class="hint" style="margin-top:4px">${winCheckText()}</div>`);
 
     if (S.mode === 'free' && !S.busy) {
       parts.push('<div class="h">Free play</div><p class="hint">Practice on today\'s setup. It does not change your result or stats.</p><div class="actions"><button id="pFreeReset">↺ Reset board</button><button id="pDaily">Back to my result</button></div>');
     }
     if (g.phase === 'gameOver') {
-      parts.push(`<div class="h">Result</div><p><b>${g.s.result.won ? '🏆 Victory' : '💀 Defeat'}</b> — ${esc(g.s.result.reason)}</p><div class="actions"><button class="primary" id="pResult">Share result</button>${!S.test && S.mode === 'daily' ? '<button id="pFree">Free play</button>' : ''}</div>`);
+      parts.push(`<div class="h">Result</div><p><b>${verdict(g.s.result.won)}</b> — ${esc(g.s.result.reason)}</p><div class="actions"><button class="primary" id="pResult">Share result</button>${!S.test && S.mode === 'daily' ? '<button id="pFree">Free play</button>' : ''}</div>`);
       if (S.test) parts.push('<div class="actions"><button id="pRestart">Restart test</button></div>');
     } else if (S.retreat) {
       const from = S.mv.T[S.retreat.from].name;
@@ -470,16 +473,32 @@
     $('panel').innerHTML = parts.join('');
     bindPanel();
   }
+  /** List items for objectives (player's or the enemy's), one per territory or IPC goal, marked when met. */
+  function objectiveRows(st, enemy) {
+    const g = G();
+    const ht = humanTeam();
+    const mine = (team) => (enemy ? !!team && team !== ht : team === ht);
+    return st.map((o) => {
+      if (o.type === 'bank' || o.type === 'damage') return `<li class="${o.met ? (enemy ? 'warn' : 'done') : ''}">${D.objectiveWords(o, '', enemy)}</li>`;
+      return o.territories.map((id) => {
+        const ok = g._territoryMet(o.type, id, mine);
+        return `<li class="${ok ? (enemy ? 'warn' : 'done') : ''}">${D.objectiveWords(o, `<b>${esc(S.mv.T[id].name)}</b>`, enemy)}</li>`;
+      }).join('');
+    }).join('');
+  }
   function winCheckText() {
-    const holds = (S.sc.objectives || []).some((o) => o.type === 'hold');
-    const need = G().objectivesNeeded();
-    const total = (S.sc.objectives || []).filter((o) => o.type !== 'hold').reduce((a, o) => a + (o.territories || []).length, 0);
-    const some = need < total ? `Any ${need} of the ${total} capture objectives is enough. ` : '';
-    return some + winCheckTiming(holds);
+    const g = G();
+    const holds = (S.sc.objectives || []).some((o) => o.type === 'hold' && o.side !== 'opponent');
+    const need = g.objectivesNeeded();
+    const total = g.objectiveTargets().filter((t) => t.type !== 'hold').length;
+    const some = need < total ? `Any ${need} of the ${total} objectives is enough. ` : '';
+    const enemy = g.opponentStatus().length ? ' The enemy wins if it meets all its objectives at the end of one of its turns.' : '';
+    return some + winCheckTiming(holds) + enemy;
   }
   function winCheckTiming(holds) {
+    if (S.sc.winCheck === 'turn') return `Checked only at the end of your turn ${Math.min(G().s.maxTurns, S.sc.checkTurn || G().s.maxTurns)}.`;
     if (S.sc.winCheck === 'roundEnd' || holds) return `Checked at the end of each round${holds ? '; held territories must be kept every turn' : ''}. ${G().s.maxTurns} turns.`;
-    return `Win as soon as they are yours at the end of your turn. ${G().s.maxTurns} turns.`;
+    return `Win as soon as they are met at the end of your turn. ${G().s.maxTurns} turns.`;
   }
 
   function phasePanel() {
@@ -1192,12 +1211,14 @@
   function showBriefing() {
     const sc = S.sc;
     const R = Rules.get(sc.ruleset);
-    const objs = G().objectiveStatus().map((o) => `<li>${o.type === 'hold' ? 'Hold' : o.type === 'destroy' ? 'Clear enemies from' : 'Capture'} ${o.territories.map((id) => '<b>' + esc(S.mv.T[id].name) + '</b>').join(', ')}</li>`).join('');
+    const names = (o) => o.territories.map((id) => '<b>' + esc(S.mv.T[id].name) + '</b>').join(', ');
+    const objs = G().objectiveStatus().map((o) => `<li>${D.objectiveWords(o, names(o), false)}</li>`).join('') +
+      (G().opponentStatus().length ? `</ul><h3>The enemy wins if it</h3><ul>${G().opponentStatus().map((o) => `<li>${D.objectiveWords(o, names(o), true)}</li>`).join('')}` : '');
     openDialog(`<h2>${esc(sc.title || 'Today\'s puzzle')}</h2>
       ${S.replayOf ? `<p class="hint">No new puzzle was set for today, so this is a replay of #${S.replayOf.number} (${esc(S.replayOf.date)}). Everyone gets the same one.</p>` : ''}
       ${sc.description ? `<p>${esc(sc.description)}</p>` : ''}
       ${sidesText()}
-      <h3>Objectives</h3><ul>${objs}</ul>
+      <h3>${asOpponent() ? 'The player side wins by (stop it)' : 'Objectives'}</h3><ul>${objs}</ul>
       <p class="hint">${winCheckText()} Rules: ${esc(R.name)}. Your moves are saved as you play, so you get one attempt per day.</p>
       ${mapCredit() ? `<p class="hint">Map: ${esc(mapCredit())}</p>` : ''}
       <div class="actions"><button data-close="help" id="brHelp">How to play</button><button class="primary" data-close="go">Start</button></div>`, false);
@@ -1330,7 +1351,7 @@
     const next = new Date(); next.setHours(24, 0, 0, 0);
     const mins = Math.max(0, Math.round((next - new Date()) / 60000));
     const free = S.mode === 'free';
-    openDialog(`<h2>${free ? 'Free play: ' : ''}${g.s.result.won ? '🏆 Victory!' : '💀 Defeat'}</h2><p>${esc(g.s.result.reason)}.</p>
+    openDialog(`<h2>${free ? 'Free play: ' : ''}${verdict(g.s.result.won)}</h2><p>${esc(g.s.result.reason)}.</p>
       <div class="share" id="shareText">${esc(text)}</div>
       <div class="actions"><button class="primary" id="copyShare">Copy result</button></div>
       ${S.test || free ? '' : statsHtml() + `<p class="hint">Next puzzle in ${Math.floor(mins / 60)}h ${mins % 60}m.</p>`}

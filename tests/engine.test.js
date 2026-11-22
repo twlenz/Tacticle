@@ -689,3 +689,70 @@ test('attacking transports that can retreat are not destroyed as defenceless', (
   assert.ok(!b.over);
   assert.equal(g._helplessVictims(g._side('A').filter((u) => u.t === 'transport'), g._side('D'), 'A').length, 0, 'it can retreat to S1');
 });
+
+// ---- objectives: the computer's own, IPC goals, and a check on one turn
+test('opponent objectives: the computer wins by holding its target at the end of its turn', () => {
+  const g = newGame({ objectives: [{ type: 'capture', territories: ['B2'] }, { side: 'opponent', type: 'capture', territories: ['A3'] }] });
+  assert.equal(g.objectiveStatus().length, 1, 'the player\'s list leaves the computer\'s out');
+  assert.equal(g.opponentTargets()[0].id, 'A3');
+  assert.equal(g.opponentStatus()[0].met, false);
+  g.s.terr.A3.o = 'Soviet Union';
+  assert.equal(g.opponentStatus()[0].met, true);
+  // end the German turn, then the Soviet turn: the Soviets hold A3 at the end of theirs
+  let n = 0;
+  while (g.current() === 'Germany' && n++ < 10) g.nextPhase();
+  assert.notEqual(g.phase, 'gameOver', 'not checked at the end of the player\'s turn');
+  while (g.current() === 'Soviet Union' && g.phase !== 'gameOver' && n++ < 20) g.nextPhase();
+  assert.equal(g.phase, 'gameOver');
+  assert.equal(g.s.result.won, false);
+  assert.match(g.s.result.reason, /enemy/);
+});
+
+test('bank objective: met when the side has that much money at the check', () => {
+  const g = newGame({ objectives: [{ type: 'bank', ipc: 25 }], purchase: false });
+  assert.equal(g.objectiveStatus()[0].met, false, '20 IPC to start');
+  assert.deepEqual(g.objectiveTargets(), [{ id: null, type: 'bank', met: false }]);
+  assert.equal(g.objectivesNeeded(), 1);
+  let n = 0;
+  while (g.current() === 'Germany' && g.phase !== 'gameOver' && n++ < 10) g.nextPhase();
+  // income (3 + 2 + 1 IPC of German land) takes the bank to 26 at the end of the turn
+  assert.equal(g.phase, 'gameOver');
+  assert.ok(g.s.result.won, g.s.result.reason);
+});
+
+test('damage objective: enough enemy value destroyed, own losses within the limit', () => {
+  const g = newGame({ objectives: [{ type: 'damage', inflict: 6, maxLoss: 3 }] });
+  g.s.losses = { Allies: 6, Axis: 4 };
+  let st = g.objectiveStatus()[0];
+  assert.equal(st.inflicted, 6);
+  assert.equal(st.taken, 4);
+  assert.equal(st.met, false, 'lost too much');
+  g.s.losses.Axis = 3;
+  st = g.objectiveStatus()[0];
+  assert.equal(st.met, true);
+});
+
+test('winCheck "turn": objectives count only at the end of that turn, and missing them there ends the game', () => {
+  const g = newGame({ objectives: [{ type: 'bank', ipc: 1 }], winCheck: 'turn', checkTurn: 2, maxTurns: 3, purchase: false });
+  let n = 0;
+  while (g.s.round === 1 && g.phase !== 'gameOver' && n++ < 30) g.nextPhase();
+  assert.notEqual(g.phase, 'gameOver', 'met in turn 1, but only turn 2 counts');
+  while (g.phase !== 'gameOver' && n++ < 60) g.nextPhase();
+  assert.ok(g.s.result.won);
+  assert.equal(g.s.result.turns, 2);
+  const h = newGame({ objectives: [{ type: 'bank', ipc: 999 }], winCheck: 'turn', checkTurn: 2, maxTurns: 3, purchase: false });
+  n = 0;
+  while (h.phase !== 'gameOver' && n++ < 60) h.nextPhase();
+  assert.equal(h.s.result.won, false);
+  assert.equal(h.s.result.turns, 2, 'the game ends at the check');
+});
+
+test('validation of the new objectives', () => {
+  const { map: m, scenario: S } = require('./fixture.js');
+  const v = (o) => E.Game.validate(m, S(o)).filter((x) => x.level === 'error').map((x) => x.msg);
+  assert.ok(v({ objectives: [{ side: 'opponent', type: 'capture', territories: ['A1'] }] }).some((x) => /for the player/.test(x)));
+  assert.ok(v({ objectives: [{ type: 'bank' }] }).some((x) => /bank/.test(x)));
+  assert.ok(v({ objectives: [{ type: 'damage', inflict: 0 }] }).some((x) => /damage/.test(x)));
+  assert.ok(v({ winCheck: 'turn', checkTurn: 9 }).some((x) => /checked on/.test(x)));
+  assert.deepEqual(v({ objectives: [{ type: 'bank', ipc: 30 }, { side: 'opponent', type: 'damage', inflict: 10 }] }), []);
+});

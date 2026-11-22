@@ -160,7 +160,7 @@ Free play and play tests are never recorded.
 - **Share text:** before recording, the result screen reads the day's counts and adds
   "🌍 62% of other players won today" as the second-to-last line. The snapshot is kept, so
   the line doesn't change on reload.
-- **Authoring tool (Test tab → Player results):** lists each puzzle's real win rate next to
+- **Authoring tool (Edit Map → Test → Player results):** lists each puzzle's real win rate next to
   its balance check.
   - The balance check is now saved with the puzzle as `balance.winRate`; generated puzzles
     already carry `generator.winRate`.
@@ -170,7 +170,7 @@ Free play and play tests are never recorded.
     giving a wild curve, and the slope is fitted only from 3 puzzles up.
   - Example: if players won 85% of a puzzle the check put at 50%, the curve maps a check of
     5% → 22%, 20% → 58%, 80% → 96% and 95% → 99%.
-- **Generate tab:** "Aim for real players" maps the target band through the inverse curve. For
+- **Generate a puzzle (Select Map):** "Aim for real players" maps the target band through the inverse curve. For
   players to win a medium puzzle 45–72% of the time in that example, the check aims at 13–32%.
 - **Privacy and reliability:** GoatCounter keeps no cookies and nothing beyond a page view
   is sent. Anyone could send fake hits, so treat the numbers as a guide. With the code
@@ -179,59 +179,106 @@ Free play and play tests are never recorded.
 ## Authoring
 
 Run `node tools/serve.js` and open `author.html`. The page autosaves a draft in the
-browser; **Save** (<kbd>Ctrl</kbd>+<kbd>S</kbd>) writes `puzzles/<id>.json` and
-refreshes `puzzles/index.json`.
-
-**Map tools** (toolbar, or keys):
-
-| Tool | Key | Click | Shift-click | Right-click |
-|---|---|---|---|---|
-| Select | <kbd>S</kbd> | inspect/edit a territory in the right panel | | |
-| Playable | <kbd>P</kbd> | toggle in/out of play; a unit icon removes one of those units (a transport takes the cargo that no longer fits) | add it **and all neighbours** | remove |
-| Owner | <kbd>O</kbd> | set owner to the brush power (Alt: map default) | | neutral |
-| Units | <kbd>U</kbd>, <kbd>1</kbd>–<kbd>9</kbd> pick a unit | +1 (Ctrl: clear) | +5 | −1 |
-| Move | <kbd>M</kbd> | unit icon: pick that unit (again: one fewer; other icon: add it); territory: pick everything, or drop the picked units here | | cancel |
-| Objective | <kbd>J</kbd> | toggle territory in the chosen objective | | remove from it |
-
-Toolbar shortcuts in Playable mode: **+ Neighbours** grows the area by one ring,
-**+ Seas** adds sea zones that touch two or more playable coasts. Making a territory
-playable fills in its map owner and any factory. Powers are added automatically when
-you use them. Taking a territory out of play also takes it out of any objective. Only the
-Select tool selects; switching tools clears the selection. Undo and redo:
+browser. Four tabs on the left take a puzzle from map to calendar: **Select Map**,
+**Edit Map**, **Schedule** and **Files**. Undo and redo work everywhere:
 <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd>.
+
+**Select Map.** A scrollable list of the maps, each with a small picture. Click one to see
+it full size on the right, then **Select Map** (bottom right) to start a puzzle on it and
+go to Edit Map. Picking the map the current puzzle already uses just continues editing it.
+Below the list:
+
+- **Import base map…**: TripleA's map catalogue (see [Maps](#maps)), or a TripleA map from
+  files on your computer.
+- **Import existing scenario…**: open a saved puzzle, or a puzzle JSON file.
+- **Generate a puzzle…**: a new puzzle on the map being looked at: theatre, size,
+  difficulty, player side, optional fleets and transports, and on TripleA maps the option
+  to **use the map's own starting armies**. It plays computer-vs-computer games in a Web
+  Worker and adjusts the armies toward a target win rate (easy 70–92 %, medium 45–72 %,
+  hard 22–48 % for the computer playing your side).
+
+**Edit Map** has five steps. A step shows ✓ once it has what a puzzle needs, and each has
+**Next: <step> →** at the bottom right, next to the file name and **Save**.
+
+| Step | Key | On the map |
+|---|---|---|
+| 1. Select Territories | <kbd>P</kbd> | Click: in/out of play (a unit icon removes one of those units; a transport takes the cargo that no longer fits). Shift-click: it **and all neighbours**. Right-click: out of play. |
+| 2. Select Owners | <kbd>O</kbd> | Click: give it to the chosen power (or Neutral). Alt-click: the map's owner. Right-click: neutral. |
+| 3. Place Units | <kbd>U</kbd> place, <kbd>S</kbd> select, <kbd>M</kbd> move, <kbd>1</kbd>–<kbd>9</kbd> pick a unit | See below. |
+| 4. Set Objectives | <kbd>J</kbd> | Click: add or remove the territory in the chosen objective. |
+| 5. Test | <kbd>T</kbd> | |
+
+1. **Select Territories.** **+ Neighbours** grows the area by one ring; **+ Seas** adds sea
+   zones that touch two or more coasts in play; **Remove all** empties it. A territory put in play brings its map owner,
+   its factory and the map's starting units. Taking it out of play also takes it out of any
+   objective. Moving on to a later step frames the map on the area in play.
+2. **Select Owners.** Pick a power (or Neutral), then click territories. Below: the powers in
+   the puzzle in turn order (player or computer, team, starting IPCs, capital). Powers join
+   automatically when they own a territory or units.
+3. **Place Units.** Pick a unit from the pictures, then click territories: each click adds
+   one for whoever controls the territory (Shift +5, right-click −1, Ctrl-click clears). At
+   sea the unit goes to the power chosen under "Units placed at sea belong to". Click the
+   picked unit again, or press <kbd>Esc</kbd>, to stop placing. Then a click selects a
+   territory, and the right-hand panel changes its units with − and +, including **troops of
+   another country** (friendly powers are listed first). **Auto Populate** gives every
+   territory in play that has no troops the map's starting units; a territory with a new
+   owner gets its map owner's units. **Move units** moves units between territories, as on
+   the player page.
+4. **Set Objectives.** Each objective belongs to **You** or the **Opponent**:
+   - *Capture*: control the territories when objectives are checked.
+   - *Hold*: never lose them (the game runs to its last turn). Player only.
+   - *Clear*: no enemy units left in them.
+   - *IPC in the bank*: have that much unspent money, e.g. "Have 20 IPC in the bank".
+   - *Inflict damage*: destroy that much enemy unit value (IPC cost) while losing no more
+     than a limit, e.g. "Inflict 15 IPC of damage while losing no more than 10".
+
+   The player wins when all their objectives are met at the check. **Needed to win** can
+   lower that to "any N of M" (saved as `"objectivesNeeded": N`). The opponent wins as soon
+   as all its objectives are met at the end of one of its turns. Also here: the number of
+   turns; **when objectives are checked** (at the end of each of the player's turns, at the
+   end of one chosen turn, which also ends the game, or after all opponents can
+   counter-attack); rules, income and buying; and the title, briefing ("Write from
+   objectives" drafts one), author and difficulty.
+5. **Test.**
+   - **Checks** come first, each with a link to the step that fixes it. Problems marked ✖
+     stop the puzzle from starting, so the Play buttons wait until they are fixed; ⚠ marks
+     things to look at, such as a missing title or briefing.
+   - **Play** in a new tab as the player, as the opponent (the computer plays the player's
+     side), or both sides. Test games are kept apart from the daily save; results are the
+     player side's.
+   - **Win odds** runs *N* computer-vs-computer games and keeps the rate with the puzzle.
+   - Also: the computer opponent (standard or earlier), the checks, **Make a variant**
+     (armies nudged, an objective moved to a neighbour, turn limit ±1, tuned the same way),
+     player results, a battle-odds calculator and a share-text preview (the last three fold
+     away).
+
+**Saving.** Type a file name above **Save** (<kbd>Ctrl</kbd>+<kbd>S</kbd>, or Enter in the
+field); the file it will write shows as you type. Saving writes `puzzles/<name>.json` and
+refreshes `puzzles/index.json`; the button then reads **Saved** until the next change. If another puzzle already has that name, the first click only warns
+("A save file with this name exists, click again to overwrite it") and the second click
+saves. After a save, **Schedule It** opens the Schedule tab with a button that puts the
+puzzle on the first free day.
+
+**Schedule.** A calendar of the next weeks: pick a puzzle per day, set the first day
+(puzzle #1), or use "Fill empty days with unscheduled puzzles".
+
+- **Saving:** every change saves `schedule.json` by itself, through the local server or a
+  connected folder.
+- **Without either** (e.g. on GitHub Pages): changes are kept in the browser and survive a
+  reload. **Download schedule.json** to publish them, or **Discard changes**.
+
+**Undo and questions.** Edits that remove things (Remove all, deleting an objective,
+removing a power, rewriting the briefing) happen at once with **Undo** in the message that
+reports them. Steps that cannot be undone (replacing a puzzle that has unsaved changes,
+deleting a saved file) ask first in the page; the safe answer, such as **Keep editing**,
+has the focus, so Enter or Esc never throws work away.
+
+**Files.** Open, delete, save a copy, download and import JSON. Without the server, Chrome and
+Edge can **connect the repository folder** and write files directly; other browsers
+download the files for you to copy in.
 
 If the draft cannot be opened at start-up (usually because its map is missing), the page
 starts a new puzzle and keeps the draft; **Files** offers to open it once the map is back.
-
-**Tabs:**
-
-- **Scenario**: id, title, briefing ("Write from objectives" drafts one), map, rule set,
-  max turns, win check (end of player's turn, or end of the round after the enemy's
-  counter-attack), income and purchasing switches, and **Browse TripleA maps…**.
-- **Powers**: player or computer, team, starting IPCs, capital, and turn order.
-- **Objectives**: *Capture* (control at the check), *Hold* (lose immediately if lost at
-  the end of any turn; the game runs to the last turn), *Clear* (no enemy units left).
-  The player wins when every objective is met at the check. With several capture or clear
-  territories, **Needed to win** can lower that to "any N of M" (saved as
-  `"objectivesNeeded": N`).
-- **Generate**: a **new** puzzle (theatre or "around the selected territory", size,
-  difficulty, player side, optional fleets and transports, and on TripleA maps the option
-  to **use the map's own starting armies**), or a **variant** of the
-  current one (armies nudged, an objective moved to a neighbour, turn limit ±1). Both run
-  AI-vs-AI games in a Web Worker and adjust the armies toward a target win rate (easy
-  70–92 %, medium 45–72 %, hard 22–48 % for the computer playing your side).
-- **Test**: **Play test** opens the player page with the current scenario (saved
-  separately from daily progress). The **balance check** runs *N* computer-vs-computer
-  games. A **battle odds** calculator is included.
-- **Schedule**: a calendar of the next weeks. Pick a puzzle per day, set the first day
-  (puzzle #1), or use "Fill empty days with unscheduled puzzles".
-  - **Saving:** every change saves `schedule.json` by itself, through the local server or a
-    connected folder.
-  - **Without either** (e.g. on GitHub Pages): changes are kept in the browser and survive a
-    reload. **Download schedule.json** to publish them, or **Discard changes**.
-- **Files**: open, delete, save-as, download and import JSON. Without the server, Chrome
-  and Edge can **connect the repository folder** and write files directly; other browsers
-  download the files for you to copy in.
 
 ### File formats
 
@@ -265,6 +312,17 @@ starts a new puzzle and keeps the draft; **Files** offers to open it once the ma
 
 Land units listed in a sea zone start aboard that power's transports. A power may also
 set `"capital": "<territory id>"` (or `null` for none).
+
+Objectives:
+
+- `{ "type": "capture" | "hold" | "destroy", "territories": [ … ] }`
+- `{ "type": "bank", "ipc": 20 }` and `{ "type": "damage", "inflict": 15, "maxLoss": 10 }`
+  (`maxLoss` is optional).
+- `"side": "opponent"` makes it the computer's objective (any type but `hold`).
+
+`"winCheck"` is `"turnEnd"` (the end of each of the player's turns), `"roundEnd"` (after the
+counter-attack), or `"turn"` with `"checkTurn": N` (only at the end of the player's turn N,
+which also ends the game).
 
 ## Rules
 
@@ -363,8 +421,8 @@ by a genetic search (`AI.ROLES.defend`):
   the objectives don't need) into the strongest safe stack.
 
 The attacking side keeps the defaults, because these settings make it a poor attacker. A
-puzzle can keep the earlier opponent with `"opponent": "earlier"` (authoring tool, Scenario
-tab).
+puzzle can keep the earlier opponent with `"opponent": "earlier"` (authoring tool, Edit Map
+→ Test).
 
 **How the settings were chosen.** `tools/ai_bench.js` plays a fixed set of scenarios (the
 saved puzzles plus 36 generated ones) with fixed seeds, the player's side and the computer's
@@ -449,7 +507,7 @@ node tools/ai_evolve.js --pop 10 --gens 8          # genetic search; result in t
 | Total World War: December 1941 | `maps/total_world_war.json` | map by Rolf Larsson and Hepster |
 | World At War | `maps/world_at_war.json` | map by Sieg |
 
-**Importing more:** in the authoring tool, **Scenario → Browse TripleA maps…** loads
+**Importing more:** in the authoring tool, **Select Map → Import base map…** loads
 `triplea_maps.yaml`, the catalogue TripleA's "Download maps" screen uses (about 300 maps).
 Search it, open a map, pick one of its games (starting setups), and **Import**. The tool
 reads the map's text files straight from `raw.githubusercontent.com/triplea-maps/…`:

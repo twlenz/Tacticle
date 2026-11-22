@@ -288,7 +288,7 @@
         if (t.type === 'sea') continue;
         if (hl || sel || obj) {
           const o = this.offset[id] || 0;
-          el('path', { d: t.path, class: `outline${hl ? ' hl-' + hl : ''}${sel ? ' selected' : ''}${obj ? ' obj' : ''}`, transform: o ? `translate(${o},0)` : '', 'fill-rule': 'evenodd', 'stroke-width': (sel ? 3.2 : 2.4) * k }, this.gOver);
+          el('path', { d: t.path, class: `outline${hl ? ' hl-' + hl : ''}${sel ? ' selected' : ''}${obj ? ' obj' : ''}${obj === 'enemy' ? ' enemy' : ''}`, transform: o ? `translate(${o},0)` : '', 'fill-rule': 'evenodd', 'stroke-width': (sel ? 3.2 : 2.4) * k }, this.gOver);
         }
       }
       const showLabels = s.labels !== 'none';
@@ -309,9 +309,9 @@
         let y0 = cy - (rows * (size + 2 * k)) / 2 + (showLabels ? fs * 0.6 : 0);
         if (showLabels && (s.labels === 'all' || !play || play.has(id))) {
           const obj = s.objectives && s.objectives[id];
-          const name = (obj ? '★ ' : '') + t.name + (t.type === 'land' && t.ipc ? ` (${t.ipc})` : '');
+          const name = (obj === 'enemy' ? '⚑ ' : obj ? '★ ' : '') + t.name + (t.type === 'land' && t.ipc ? ` (${t.ipc})` : '');
           const ty = chips.length ? y0 - fs * 0.45 : cy + fs * 0.35;
-          const tx = el('text', { x: cx, y: ty, 'font-size': fs, class: 'tlabel ' + t.type + (obj ? ' obj' : '') }, this.gLabels);
+          const tx = el('text', { x: cx, y: ty, 'font-size': fs, class: 'tlabel ' + t.type + (obj ? ' obj' : '') + (obj === 'enemy' ? ' enemy' : '') }, this.gLabels);
           tx.textContent = name;
         }
         chips.forEach((c, i) => {

@@ -139,14 +139,14 @@
     const need = Math.max(1, g.objectivesNeeded());
     const cap = targets.filter((t) => t.type !== 'hold');
     const met = cap.filter((t) => t.met).length;
-    const missing = cap.filter((t) => !t.met).map((t) => {
+    const missing = cap.filter((t) => !t.met && t.id).map((t) => {
       const d = t.type === 'destroy' ? defence(g, t.id, isE) : defence(g, t.id, isE);
       return { r1: Math.log((reach(g, t.id, isH, 1) + 1) / (d + 1)), r2: Math.log((reach(g, t.id, isH, 2) + 1) / (d + 1)) };
     }).sort((a, b) => b.r1 - a.r1);
     const k = Math.max(1, need - met);
     const top = missing.slice(0, k);
     const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
-    const held = cap.filter((t) => t.met).map((t) => Math.log((reach(g, t.id, isE, 1) + 1) / (defence(g, t.id, isH) + 1)));
+    const held = cap.filter((t) => t.met && t.id).map((t) => Math.log((reach(g, t.id, isE, 1) + 1) / (defence(g, t.id, isH) + 1)));
     const holds = targets.filter((t) => t.type === 'hold').map((t) => Math.log((reach(g, t.id, isE, 1) + 1) / (defence(g, t.id, isH) + 1)));
     let incH = 0, incE = 0, moneyH = 0, moneyE = 0, facH = false, facE = false;
     for (const p of Object.keys(g.s.powers)) {
@@ -160,9 +160,9 @@
     }
     const buy = g.sc.purchase !== false;
     // battle odds: taking what is still needed next turn, and keeping what is held
-    const take = cap.filter((t) => !t.met).map((t) => takeOdds(g, t.id, isH, isE)).sort((a, b) => b - a);
+    const take = cap.filter((t) => !t.met && t.id).map((t) => takeOdds(g, t.id, isH, isE)).sort((a, b) => b - a);
     const takeNeeded = take.slice(0, k).reduce((a, b) => a * b, take.length >= k ? 1 : 0);
-    const keepHeld = cap.filter((t) => t.met).reduce((a, t) => a * (1 - takeOdds(g, t.id, isE, isH)), 1);
+    const keepHeld = cap.filter((t) => t.met && t.id).reduce((a, t) => a * (1 - takeOdds(g, t.id, isE, isH)), 1);
     const keepHolds = targets.filter((t) => t.type === 'hold').reduce((a, t) => a * (1 - takeOdds(g, t.id, isE, isH)), 1);
     return [
       met / need, Math.max(0, need - met) / need, left / 4, left <= 1 ? 1 : 0, isH(g.current()) ? 1 : 0,
