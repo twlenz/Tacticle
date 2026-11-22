@@ -73,6 +73,15 @@
       "difficulty": "hard"
     },
     {
+      "id": "over-there",
+      "file": "puzzles/over-there.json",
+      "title": "Untitled puzzle",
+      "map": "world_war_ii_v5_1942_second_edition",
+      "ruleset": "1942",
+      "maxTurns": 4,
+      "difficulty": "medium"
+    },
+    {
       "id": "ponape-landing",
       "file": "puzzles/ponape-landing.json",
       "title": "Ponape Landing",

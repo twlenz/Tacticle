@@ -7,17 +7,18 @@
   "author": "Tacticle",
   "map": "world_at_war",
   "ruleset": "1942",
+  "difficulty": "medium",
   "playable": [
+    "92_sea_zone",
+    "fukien",
+    "hong_kong",
+    "hunan",
+    "kiangsi",
     "kwangsi",
     "kwangtung",
-    "kiangsi",
-    "hunan",
-    "hong_kong",
     "n_french_indochina",
-    "fukien",
     "s_french_indochina",
-    "yunnan",
-    "92_sea_zone"
+    "yunnan"
   ],
   "maxTurns": 3,
   "winCheck": "turnEnd",
@@ -124,7 +125,12 @@
       }
     },
     "92_sea_zone": {
-      "units": {}
+      "units": {
+        "China": {
+          "transport": 1,
+          "destroyer": 4
+        }
+      }
     }
   },
   "objectives": [
@@ -142,6 +148,5 @@
     "size": 9,
     "naval": false,
     "winRate": 0.6875
-  },
-  "difficulty": "medium"
+  }
 }

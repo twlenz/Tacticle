@@ -43,6 +43,48 @@
       }
     },
     {
+      "id": "world_war_ii_v3_1942",
+      "name": "World War II v3 1942",
+      "file": "maps/world_war_ii_v3_1942.json",
+      "territories": 162,
+      "source": "TripleA",
+      "credit": "",
+      "origin": {
+        "repo": "world_war_ii_v3",
+        "branch": "master",
+        "game": "WW2v3-1942.xml",
+        "map": "World War II v3"
+      }
+    },
+    {
+      "id": "world_war_ii_v4",
+      "name": "World War II v4",
+      "file": "maps/world_war_ii_v4.json",
+      "territories": 145,
+      "source": "TripleA",
+      "credit": "",
+      "origin": {
+        "repo": "world_war_ii_v4",
+        "branch": "master",
+        "game": "WW2v4.xml",
+        "map": "World War II v4"
+      }
+    },
+    {
+      "id": "world_war_ii_v5_1942_second_edition",
+      "name": "World War II v5 1942 Second Edition",
+      "file": "maps/world_war_ii_v5_1942_second_edition.json",
+      "territories": 161,
+      "source": "TripleA",
+      "credit": "",
+      "origin": {
+        "repo": "world_war_ii_v5_1942",
+        "branch": "master",
+        "game": "WW2v5_1942_2nd.xml",
+        "map": "World War II v5 1942"
+      }
+    },
+    {
       "id": "world1942",
       "name": "World 1942 (Tacticle original)",
       "file": "maps/world1942.json",
