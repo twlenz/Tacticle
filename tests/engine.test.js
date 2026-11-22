@@ -228,6 +228,27 @@ test('purchase, placement at factory with capacity, income', () => {
   assert.equal(g.s.powers.Germany.money, 8 + 6, 'income from A1, A2, A3');
 });
 
+test('IPCs per turn: a set amount, changed by captures unless fixed', () => {
+  const run = (pw, capture) => {
+    const sc = scenario();
+    Object.assign(sc.powers.Germany, pw);
+    const g = E.Game.create(map, Object.assign(sc, { purchase: false }), { seed: 7 });
+    g.nextPhase();
+    if (capture) assert.ok(g.move('A1', ids(g, 'A1', 'infantry').slice(0, 1), 'B1').ok);
+    const before = g.s.powers.Germany.money;
+    let n = 0;
+    while (g.current() === 'Germany' && n++ < 10) g.nextPhase();
+    return g.s.powers.Germany.money - before;
+  };
+  assert.equal(run({}, false), 6, 'by default, the land held (3 + 2 + 1)');
+  assert.equal(run({ income: 10 }, false), 10, 'the set amount');
+  assert.equal(run({ income: 10 }, true), 10 + 2, 'plus what was captured (B1 is worth 2)');
+  assert.equal(run({ income: 10, incomeFixed: true }, true), 10, 'fixed: captures change nothing');
+  assert.equal(run({ income: 0 }, false), 0, 'none at all');
+  const errs = E.Game.validate(map, Object.assign(scenario(), { powers: Object.assign(scenario().powers, { Germany: Object.assign({}, scenario().powers.Germany, { income: -2 }) }) }));
+  assert.ok(errs.some((e) => e.level === 'error' && /per turn/.test(e.msg)));
+});
+
 test('capturing a capital takes the treasury', () => {
   const g = newGame({ setup: Object.assign(scenario().setup, { B2: { owner: 'Soviet Union', units: {} } }) });
   g.nextPhase();

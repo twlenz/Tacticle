@@ -66,9 +66,11 @@ changes and push them.
   - Tap the **territory** itself (outside the icons) to pick everything; tap again to
     clear.
   - The −/+ steppers in the panel fine-tune counts.
-- Moving: highlighted territories are legal destinations (red outline = attack). Moving land
-  units into a sea zone loads them onto your transport; select the sea zone and tap a
-  coast to unload. Drag to pan, pinch or scroll to zoom, <kbd>Esc</kbd> cancels,
+- Moving: highlighted territories are legal destinations (red outline = attack). A dashed
+  outline means only some of the selected units can go there (tanks two spaces away with
+  infantry selected too, say): tapping it moves those, and the rest stay where they are.
+  Moving land units into a sea zone loads them onto your transport; select the sea zone and
+  tap a coast to unload. Drag to pan, pinch or scroll to zoom, <kbd>Esc</kbd> cancels,
   <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes a move.
 - Ending combat movement asks for confirmation in an in-page popup that lists the battles
   about to be fought.
@@ -213,8 +215,13 @@ Below the list:
    its factory and the map's starting units. Taking it out of play also takes it out of any
    objective. Moving on to a later step frames the map on the area in play.
 2. **Select Owners.** Pick a power (or Neutral), then click territories. Below: the powers in
-   the puzzle in turn order (player or computer, team, starting IPCs, capital). Powers join
-   automatically when they own a territory or units.
+   the puzzle in turn order (player or computer, team, starting IPCs, IPCs per turn, capital).
+   Powers join automatically when they own a territory or units.
+   - **IPCs per turn** is by default the value of the territories the power holds in play.
+     **Set amount** fixes what it collects instead. Captured territories still add their value
+     and lost ones take it away, unless "The same every turn, whatever is captured or lost" is
+     ticked. Losing the capital still stops income, and nobody collects anything when income
+     is off (Set Objectives → Game rules).
 3. **Place Units.** Pick a unit from the pictures, then click territories: each click adds
    one for whoever controls the territory (Shift +5, right-click −1, Ctrl-click clears). At
    sea the unit goes to the power chosen under "Units placed at sea belong to". Click the
@@ -311,7 +318,9 @@ starts a new puzzle and keeps the draft; **Files** offers to open it once the ma
 ```
 
 Land units listed in a sea zone start aboard that power's transports. A power may also
-set `"capital": "<territory id>"` (or `null` for none).
+set `"capital": "<territory id>"` (or `null` for none), and `"income": N` to collect N IPCs a
+turn instead of its territories' value. Captures and losses still change that by the
+territories' values, unless `"incomeFixed": true`.
 
 Objectives:
 

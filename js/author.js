@@ -558,7 +558,7 @@
     const msgs = validate();
     return `<div class="h">Scenario summary</div>
       <p class="hint">${land} land territories and ${play.length - land} sea zones in play. ${A.sc.maxTurns} turns. Rules: ${esc(R().name)}.</p>
-      <div class="list">${Object.keys(A.sc.powers).map((p) => `<div class="urow"><span class="swatch" style="background:${powerInfo(p).color}"></span><span class="nm">${esc(p)}<small>${A.sc.powers[p].controller === 'human' ? 'Player' : 'Computer'} · ${A.sc.powers[p].team} · ${A.sc.powers[p].money} IPC</small></span><b title="Army value in IPCs">${val[p] || 0}</b></div>`).join('')}</div>
+      <div class="list">${Object.keys(A.sc.powers).map((p) => `<div class="urow"><span class="swatch" style="background:${powerInfo(p).color}"></span><span class="nm">${esc(p)}<small>${A.sc.powers[p].controller === 'human' ? 'Player' : 'Computer'} · ${A.sc.powers[p].team} · ${A.sc.powers[p].money} IPC${A.sc.income !== false ? `, +${perTurn(p)} a turn` : ''}</small></span><b title="Army value in IPCs">${val[p] || 0}</b></div>`).join('')}</div>
       <div class="h">Checks</div>${checksHtml(msgs)}
       ${A.lastSim ? `<div class="h">Last balance check</div><p class="hint">Computer-as-player won ${Math.round(100 * A.lastSim.won / A.lastSim.games)}% of ${A.lastSim.games} games.</p>` : ''}
       <div class="h">Shortcuts</div><div class="kbd-help"><kbd>P</kbd> territories <kbd>O</kbd> owners <kbd>U</kbd> place units <kbd>S</kbd> select <kbd>M</kbd> move <kbd>J</kbd> objectives <kbd>T</kbd> test · <kbd>1</kbd>–<kbd>9</kbd> pick a unit · <kbd>Esc</kbd> stop placing · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> undo/redo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> play test</div>`;
@@ -859,6 +859,28 @@
     el.querySelectorAll('[data-own]').forEach((b) => b.onclick = () => { A.brush.owner = b.dataset.own || null; renderTab(); renderToolbar(); });
     powersPanel($('powersPanel'));
   }
+  /** The IPC value of the land a power starts with in play (what it collects by default). */
+  function landIncomeOf(p) {
+    return A.sc.playable.reduce((a, id) => a + (A.T[id] && A.T[id].type === 'land' && ownerOf(id) === p ? A.T[id].ipc || 0 : 0), 0);
+  }
+  /** What a power collects at the end of each turn, as shown in summaries. */
+  function perTurn(p) { const pw = A.sc.powers[p]; return pw.income != null ? pw.income : landIncomeOf(p); }
+  /** IPCs per turn: the territories' value (the default), or an amount the author sets. */
+  function incomeFields(p, pw, i, capitalOptions) {
+    const land = landIncomeOf(p);
+    const set = pw.income != null;
+    const off = A.sc.income === false;
+    const note = off
+      ? `<span class="warnink">Income is off for this puzzle, so nobody collects any.</span> <button class="small link" data-incon>Turn income on</button>`
+      : !set ? `The IPC value of the territories it holds in play: ${land} now. Captures add to it, losses take from it.`
+        : pw.incomeFixed ? `${pw.income} every turn, whatever it captures or loses.`
+          : `${pw.income} to start. Captured territories add their value, lost ones take it away.`;
+    return `${field('IPCs per turn', `<select id="pw${i}inc" data-pw="${esc(p)}" data-k="incomeMode"><option value="">Territories (${land})</option><option value="set" ${set ? 'selected' : ''}>Set amount</option></select>`)}
+      ${set ? field('Amount per turn', `<input type="number" min="0" id="pw${i}amt" data-pw="${esc(p)}" data-k="income" value="${pw.income}">`) : ''}
+      ${field('Capital', `<select id="pw${i}cap" data-pw="${esc(p)}" data-k="capital">${capitalOptions}</select>`)}
+      ${set ? `<label class="chk" style="grid-column:1/-1;margin:2px 0"><input type="checkbox" data-pw="${esc(p)}" data-k="incomeFixed" ${pw.incomeFixed ? 'checked' : ''}> The same every turn, whatever is captured or lost</label>` : ''}
+      <p class="hint" style="grid-column:1/-1;margin:2px 0 0">${note}</p>`;
+  }
   function powersPanel(el) {
     const sc = A.sc;
     const playLand = sc.playable.filter((id) => A.T[id] && A.T[id].type === 'land');
@@ -867,10 +889,10 @@
       const pw = sc.powers[p];
       return `<div class="objbox"><div class="row"><span class="swatch" style="background:${powerInfo(p).color}"></span><b>${i + 1}. ${esc(p)}</b><div class="grow"></div>
           <button class="small" data-up="${i}" title="Earlier in turn order" ${i ? '' : 'disabled'}>↑</button><button class="small" data-del="${esc(p)}" title="Remove ${esc(p)} from the puzzle" aria-label="Remove ${esc(p)}">✕</button></div>
-        <div class="two">${field('Played by', `<select data-pw="${esc(p)}" data-k="controller"><option value="human" ${pw.controller === 'human' ? 'selected' : ''}>Player</option><option value="ai" ${pw.controller !== 'human' ? 'selected' : ''}>Computer</option></select>`)}
-          ${field('Team', `<select data-pw="${esc(p)}" data-k="team"><option ${pw.team === 'Axis' ? 'selected' : ''}>Axis</option><option ${pw.team === 'Allies' ? 'selected' : ''}>Allies</option></select>`)}
-          ${field('Starting IPCs', `<input type="number" min="0" data-pw="${esc(p)}" data-k="money" value="${pw.money || 0}">`)}
-          ${field('Capital', `<select data-pw="${esc(p)}" data-k="capital">${capOpts(p, pw)}</select>`)}</div></div>`;
+        <div class="two">${field('Played by', `<select id="pw${i}ctl" data-pw="${esc(p)}" data-k="controller"><option value="human" ${pw.controller === 'human' ? 'selected' : ''}>Player</option><option value="ai" ${pw.controller !== 'human' ? 'selected' : ''}>Computer</option></select>`)}
+          ${field('Team', `<select id="pw${i}team" data-pw="${esc(p)}" data-k="team"><option ${pw.team === 'Axis' ? 'selected' : ''}>Axis</option><option ${pw.team === 'Allies' ? 'selected' : ''}>Allies</option></select>`)}
+          ${field('Starting IPCs', `<input type="number" min="0" id="pw${i}money" data-pw="${esc(p)}" data-k="money" value="${pw.money || 0}">`)}
+          ${incomeFields(p, pw, i, capOpts(p, pw))}</div></div>`;
     }).join('');
     el.innerHTML = `<p class="hint">In turn order. The player controls every “Player” power (they must share a team). Losing the capital stops income; capturing one takes its treasury.</p>
       ${cards || '<p class="hint">None yet: powers join when they own a territory or units in play.</p>'}
@@ -879,6 +901,10 @@
     el.querySelectorAll('[data-pw]').forEach((c) => c.onchange = () => edit(() => {
       const p = c.dataset.pw, k = c.dataset.k;
       if (k === 'money') sc.powers[p].money = Math.max(0, +c.value || 0);
+      // a set amount starts from what the territories give now, so choosing it changes nothing until edited
+      else if (k === 'incomeMode') { if (c.value === 'set') sc.powers[p].income = landIncomeOf(p); else { delete sc.powers[p].income; delete sc.powers[p].incomeFixed; } }
+      else if (k === 'income') sc.powers[p].income = Math.max(0, Math.round(+c.value || 0));
+      else if (k === 'incomeFixed') { if (c.checked) sc.powers[p].incomeFixed = true; else delete sc.powers[p].incomeFixed; }
       else if (k === 'capital') { if (c.value === '') delete sc.powers[p].capital; else sc.powers[p].capital = c.value === '__none' ? null : c.value; }
       else sc.powers[p][k] = c.value;
     }));
@@ -896,6 +922,7 @@
       undoable(`Removed ${p}, its territories and its units`);
     });
     $('pwAdd').onchange = (e) => { if (e.target.value) edit(() => ensurePower(e.target.value)); };
+    el.querySelectorAll('[data-incon]').forEach((b) => b.onclick = () => edit(() => { sc.income = true; }));
     $('pwDefault').onclick = () => edit(() => { const o = mapOrder(); sc.turnOrder.sort((a, b) => idxOr(o, a) - idxOr(o, b)); });
   }
 

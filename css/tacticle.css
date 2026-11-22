@@ -88,6 +88,8 @@ button.small { padding: 3px 8px; font-size: 13px; }
 .tmap .outline.hl-attack, .tmap .outline.hl-amphibious, .tmap .outline.hl-capture, .tmap .outline.hl-blitz { stroke: var(--hl-attack); }
 .tmap .outline.hl-move, .tmap .outline.hl-unload, .tmap .outline.hl-place { stroke: #fff; }
 .tmap .outline.hl-battle { stroke: var(--hl-attack); stroke-dasharray: 6 4; }
+/* only some of the selected units can go there */
+.tmap .outline.part { stroke-dasharray: 2.5 2.5; }
 .tmap .outline.hl-paint { stroke: #fff; }
 .tmap .outline.selected { stroke: var(--hl-sel); }
 .tmap .hit { fill: transparent; }

@@ -116,7 +116,7 @@
     S.g.s.uiHold = true;
     S.g.s.autoCasualties = true;
     S.ai = new TAI(S.g, TAI.opponentOptions(S.sc));
-    S.sel = null; S.dest = {}; S.unload = {}; S.placeType = null; S.edit = null; S.anim = {}; S.retreat = null;
+    S.sel = null; S.dest = {}; S.unload = {}; S.part = {}; S.placeType = null; S.edit = null; S.anim = {}; S.retreat = null;
     $('puzzleNo').textContent = (S.puzzleLabel || '') + (S.mode === 'free' ? ' · free play' : '');
   }
   async function enterFreePlay(fresh) {
@@ -253,6 +253,7 @@
   function computeDest() {
     S.dest = {};
     S.unload = {};
+    S.part = {};
     if (!S.sel) return;
     const g = G();
     const ids = selIds();
@@ -261,9 +262,50 @@
     if (cargo.length && !(ids.length && ids.every((id) => cargo.includes(id)))) {
       S.unload = g.destinations(S.sel.from, cargo);
     }
+    S.part = partialDest();
+  }
+  /**
+   * Places only some of the selected units can reach (tanks two spaces away, say, with infantry
+   * selected too). A click there moves the ones that can: S.part[to] = { kind, ids }.
+   */
+  function partialDest() {
+    const g = G();
+    const from = S.sel.from;
+    const groups = groupsAt(from).filter((gr) => (S.sel.n[gr.key] || 0) > 0);
+    if (groups.length < 2) return {};
+    // units in a group are alike, so one of each shows where the group can go
+    const reach = {};
+    for (const gr of groups) {
+      for (const to of Object.keys(g.destinations(from, [gr.ids[0]]))) {
+        if (!S.dest[to] && !S.unload[to]) (reach[to] = reach[to] || []).push(gr);
+      }
+    }
+    const out = {};
+    for (const to of Object.keys(reach)) {
+      let take = [];
+      for (const gr of reach[to]) take.push(...gr.ids.slice(0, S.sel.n[gr.key]));
+      let chk = g.checkMove(from, take, to);
+      if (!chk.ok) {
+        // together they may not all fit (a transport's room, say): keep each one that still does
+        const fit = [];
+        for (const id of take) if (g.checkMove(from, fit.concat([id]), to).ok) fit.push(id);
+        take = fit;
+        chk = take.length ? g.checkMove(from, take, to) : chk;
+      }
+      if (chk.ok && take.length) out[to] = { kind: chk.kind, ids: take };
+    }
+    return out;
+  }
+  /** "2 tanks and 1 fighter" for a list of unit ids. */
+  function unitsText(ids) {
+    const g = G();
+    const n = {};
+    for (const id of ids) { const u = g.unit(id); if (u) n[u.t] = (n[u.t] || 0) + 1; }
+    const parts = Object.keys(n).map((t) => `${n[t]} ${uname(t).toLowerCase()}${n[t] === 1 ? '' : /y$/.test(uname(t)) ? '' : 's'}`);
+    return parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1] : parts[0] || '';
   }
   function clearSel(silent) {
-    S.sel = null; S.dest = {}; S.unload = {};
+    S.sel = null; S.dest = {}; S.unload = {}; S.part = {};
     if (!silent) render();
   }
 
@@ -329,7 +371,7 @@
     // a click on one of your own movable unit icons always adjusts the selection
     if (chip && chip.o === g.current() && chipSelect(id, chip.t)) return;
     // otherwise a click on the territory: move there if it is a destination...
-    if (S.sel && id !== S.sel.from && (S.dest[id] || S.unload[id])) return doMove(id);
+    if (S.sel && id !== S.sel.from && (S.dest[id] || S.unload[id] || S.part[id])) return doMove(id);
     // ...or select everything there (a second click clears it)
     if (allSelected(id)) { clearSel(); return; }
     if (selectAt(id, true)) { render(); return; }
@@ -344,7 +386,10 @@
     const from = S.sel.from;
     let ids = selIds();
     let kind = S.dest[to];
+    let left = [];
     if (!kind && S.unload[to]) { ids = selIds(true).length ? selIds(true) : allCargo(); kind = S.unload[to]; }
+    // not all of the selection can go there: the ones that can do
+    else if (!kind && S.part[to]) { left = ids.filter((x) => !S.part[to].ids.includes(x)); ids = S.part[to].ids; kind = S.part[to].kind; }
     const chk = g.checkMove(from, ids, to);
     if (!chk.ok) { toast(chk.error); return; }
     pushUndo();
@@ -352,6 +397,7 @@
     if (!r.ok) { S.undo.pop(); toast(r.error); return; }
     S.mv.arrows([{ path: chk.plan[0].path }]);
     setTimeout(() => S.mv.arrows([]), 900);
+    if (left.length) toast(`${unitsText(ids)} went; ${unitsText(left)} can't ${kind === 'attack' ? 'join that attack' : 'make that move'} and stay${left.length === 1 ? 's' : ''} in ${S.mv.T[from].name}`, 4500);
     clearSel(true);
     save();
     render();
@@ -374,6 +420,7 @@
     }
     const kind = S.dest[id] || S.unload[id];
     if (kind) html += `<div class="hint">Click: ${kindText(kind)}</div>`;
+    else if (S.part && S.part[id]) html += `<div class="hint">Click: ${kindText(S.part[id].kind)} with ${unitsText(S.part[id].ids)} (the rest can't)</div>`;
     tip.innerHTML = html;
     tip.style.display = 'block';
     tip.style.left = Math.min(ev.clientX + 14, innerWidth - 270) + 'px';
@@ -434,6 +481,8 @@
     }
     for (const id of Object.keys(S.dest)) hl[id] = S.dest[id];
     for (const id of Object.keys(S.unload || {})) if (!hl[id]) hl[id] = S.unload[id];
+    // only some of the selection can go: same colour, dashed outline
+    for (const id of Object.keys(S.part || {})) if (!hl[id]) hl[id] = S.part[id].kind + ' part';
     if (g.phase === 'combat') for (const id of g.s.battles) hl[id] = 'battle';
     if (S.retreat) for (const id of S.retreat.opts) hl[id] = 'move';
     if (g.phase === 'place' && S.placeType && humanTurn()) for (const id of g.placeTargets(S.placeType)) hl[id] = 'place';
@@ -566,7 +615,7 @@
       const sub = gr.cargo ? 'aboard transport' : (d.domain === 'air' || d.move > 1) ? `${gr.ml} move${gr.ml === 1 ? '' : 's'} left` : '';
       return `<div class="urow"><span class="ic" style="background:${color(p)}">${I.svg(gr.t, 22, '#fff')}</span><span class="nm">${esc(d.name)}<small>${sub}</small></span>
         <span class="stepper"><button data-sel="${gr.key}" data-d="-1">−</button><output>${n}/${gr.ids.length}</output><button data-sel="${gr.key}" data-d="1">+</button></span></div>`;
-    }).join('') + '</div><p class="hint">Highlighted territories are valid destinations. Esc or right-click to cancel.</p>';
+    }).join('') + `</div><p class="hint">Highlighted territories are valid destinations${Object.keys(S.part || {}).length ? '; a dashed outline means only some of these units can go, and those that can will' : ''}. Esc or right-click to cancel.</p>`;
   }
 
   function bindPanel() {
@@ -1205,7 +1254,8 @@
     const g = G();
     const by = {};
     for (const p of Object.keys(g.s.powers)) (by[g.s.powers[p].ai ? 'ai' : 'you'] = by[g.s.powers[p].ai ? 'ai' : 'you'] || []).push(p);
-    const fmt = (ps) => (ps || []).map((p) => `<span class="swatch" style="background:${color(p)}"></span> ${esc(p)} <span class="hint">(${g.s.powers[p].team}, ${g.s.powers[p].money} IPC)</span>`).join('<br>');
+    const inc = (p) => (S.sc.income !== false ? `, +${g.income(p)} a turn` : '');
+    const fmt = (ps) => (ps || []).map((p) => `<span class="swatch" style="background:${color(p)}"></span> ${esc(p)} <span class="hint">(${g.s.powers[p].team}, ${g.s.powers[p].money} IPC${inc(p)})</span>`).join('<br>');
     return `<p><b>You command</b><br>${fmt(by.you)}</p><p><b>The computer commands</b><br>${fmt(by.ai) || '—'}</p>`;
   }
   function showBriefing() {
