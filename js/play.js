@@ -61,11 +61,10 @@
     S.mv.setFocus(S.sc.playable);
     S.fullFocus = true;
     if ($('map').clientWidth < 600) {
-      // phones: start on the objectives, what borders them, and the player's own forces
+      // phones: start on the objectives and what borders them
       const objs = (S.sc.objectives || []).flatMap((o) => o.territories || []);
       const near = new Set(objs);
       for (const id of objs) for (const n of (S.mv.T[id] ? S.mv.T[id].adj : [])) if (S.sc.playable.includes(n) && S.mv.T[n].type === 'land') near.add(n);
-      for (const id of Object.keys(S.g.s.terr)) if (S.g.units(id).some((u) => S.g.isHuman(u.o))) near.add(id);
       if (near.size) { S.mv.setFocus([...near], 0.04); S.fullFocus = false; }
     }
     wire();
@@ -497,6 +496,9 @@
     const p = g.current();
     const parts = [];
     // objectives
+    // on a phone, picked units and the move controls come first, right under the map
+    const selFirst = S.sel && humanTurn() && !S.retreat && innerWidth <= 760;
+    if (selFirst) parts.push(phasePanel());
     const st = g.objectiveStatus();
     const total = g.objectiveTargets().filter((t) => t.type !== 'hold').length;
     parts.push(`<div class="h">${asOpponent() ? 'The player side wins by' : 'Objectives'}${g.objectivesNeeded() < total ? ` (need ${g.objectivesNeeded()})` : ''}</div><ul class="objlist">${objectiveRows(st, false)}</ul>`);
@@ -518,7 +520,7 @@
       parts.push(`<div class="h">Retreat from ${esc(from)}</div><p>Click a highlighted territory on the map. Every unit that can retreat goes there together${G().units(S.retreat.from).some((u) => u.o === G().s.battle.att && u.amph) ? '; units that landed from the sea cannot retreat and fight on' : ''}.</p><div class="actions"><button id="pRetBack">Back to the battle</button></div>`);
     } else if (!humanTurn()) {
       parts.push(`<div class="h">${esc(p)}'s turn</div><p class="hint">The computer is moving…</p>`);
-    } else {
+    } else if (!selFirst) {
       parts.push(phasePanel());
     }
     parts.push('<div class="log" id="log">' + g.s.log.slice(-40).reverse().map((l) => `<div>${esc(l.m)}</div>`).join('') + '</div>');

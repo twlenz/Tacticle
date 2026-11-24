@@ -262,6 +262,8 @@
 
   // undo / redo / draft
   function commit() {
+    // a new edit retires any Undo button still showing for the previous one
+    if ($('toast').classList.contains('act')) { $('toast').classList.remove('on', 'act'); }
     A.hist.push(JSON.stringify(A.sc));
     if (A.hist.length > 150) A.hist.shift();
     A.fut = [];
@@ -802,7 +804,7 @@
       <p class="hint dkhint" id="dkHint">${fileHint(A.sc.id)}</p>
       <p class="dkwarn" id="dkWarn" role="alert">${esc(warn)}</p>
       <div class="row"><button class="primary ${saved ? 'saved' : ''}" id="dkSave" title="Save (Ctrl+S)">${saved ? 'Saved' : 'Save'}</button>${i < SUBS.length - 1 ? `<button id="dkNext" title="${SUBS[i + 1][1]} (${SUBS[i + 1][4]})">Next: ${SUBS[i + 1][3]} →</button>` : ''}</div>
-      ${saved && A.justSaved ? '<button id="dkSched">Schedule It</button>' : ''}`;
+      ${saved && A.justSaved ? '<button class="primary" id="dkSched">Schedule It</button>' : ''}`;
     $('dkName').oninput = (e) => {
       $('dkHint').innerHTML = fileHint(slug(e.target.value));
       // the warnings were about the name before this change
@@ -915,14 +917,14 @@
     const off = A.sc.income === false;
     const note = off
       ? `<span class="warnink">Income is off for this puzzle, so nobody collects any.</span> <button class="small link" data-incon>Turn income on</button>`
-      : !set ? `The IPC value of the territories it holds in play: ${land} now. Captures add to it, losses take from it.`
+      : !set ? ''
         : pw.incomeFixed ? `${pw.income} every turn, whatever it captures or loses.`
           : `${pw.income} to start. Captured territories add their value, lost ones take it away.`;
     return `${field('IPCs per turn', `<select id="pw${i}inc" data-pw="${esc(p)}" data-k="incomeMode"><option value="">Territories (${land})</option><option value="set" ${set ? 'selected' : ''}>Set amount</option></select>`)}
       ${set ? field('Amount per turn', `<input type="number" min="0" id="pw${i}amt" data-pw="${esc(p)}" data-k="income" value="${pw.income}">`) : ''}
       ${field('Capital', `<select id="pw${i}cap" data-pw="${esc(p)}" data-k="capital">${capitalOptions}</select>`)}
       ${set ? `<label class="chk" style="grid-column:1/-1;margin:2px 0"><input type="checkbox" data-pw="${esc(p)}" data-k="incomeFixed" ${pw.incomeFixed ? 'checked' : ''}> The same every turn, whatever is captured or lost</label>` : ''}
-      <p class="hint" style="grid-column:1/-1;margin:2px 0 0">${note}</p>`;
+      ${note ? `<p class="hint" style="grid-column:1/-1;margin:2px 0 0">${note}</p>` : ''}`;
   }
   function powersPanel(el) {
     const sc = A.sc;
