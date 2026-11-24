@@ -193,6 +193,19 @@
       }
     }
   }
+  /**
+   * Units of the other side cannot stay in a territory that changes hands, so the new owner takes them over.
+   * Returns what changed hands ("Germany's 6 units now belong to Soviet Union"), or null.
+   */
+  function takeOverArmy(id, p) {
+    if (!p || A.T[id].type === 'sea') return null;
+    const us = (A.sc.setup[id] && A.sc.setup[id].units) || {};
+    const team = (q) => (A.sc.powers[q] && A.sc.powers[q].team) || powerInfo(q).team;
+    const from = Object.keys(us).filter((q) => q !== p && team(q) !== team(p));
+    let n = 0;
+    for (const q of from) for (const k of Object.keys(us[q])) { if (k === 'factory') continue; n += us[q][k]; addUnit(id, p, k, us[q][k]); addUnit(id, q, k, -us[q][k]); }
+    return n ? `${from.join(' and ')}'s ${n} unit${n === 1 ? '' : 's'} now belong to ${p}` : null;
+  }
   function addUnit(id, p, t, n) {
     const st = setupOf(id);
     st.units = st.units || {};
@@ -353,8 +366,12 @@
         return;
       case 'owner':
         if (t.type === 'sea') { toast('Sea zones have no owner'); return; }
-        edit(() => { if (!A.sc.playable.includes(id)) setPlayable(id, true); setOwner(id, ev && ev.altKey ? (t.owner || null) : A.brush.owner); });
+      {
+        let moved = null;
+        edit(() => { if (!A.sc.playable.includes(id)) setPlayable(id, true); const to = ev && ev.altKey ? (t.owner || null) : A.brush.owner; setOwner(id, to); moved = takeOverArmy(id, to); });
+        if (moved) undoable(`${t.name}: ${moved}`);
         return;
+      }
       case 'units': {
         const d = R().units[A.brush.unit];
         if (!d) return;
@@ -407,7 +424,7 @@
     const t = A.T[id];
     const o = ownerOf(id);
     const play = A.sc.playable.includes(id);
-    let h = `<b>${esc(t.name)}</b> <span class="hint">${t.type === 'sea' ? 'sea' : (o || 'neutral')}${t.ipc ? ' · ' + t.ipc + ' IPC' : ''}${play ? '' : ' · not playable'}</span>`;
+    let h = `<b>${esc(t.name)}</b> <span class="hint">${t.type === 'sea' ? 'sea' : (o || 'neutral')}${t.ipc ? ' · ' + t.ipc + ' IPC' : ''}${play ? '' : ' · not in play'}</span>`;
     const us = (A.sc.setup[id] && A.sc.setup[id].units) || {};
     const lines = [];
     for (const p of Object.keys(us)) for (const k of Object.keys(us[p])) lines.push(`<span class="swatch" style="background:${powerInfo(p).color}"></span> ${us[p][k]} ${esc((R().units[k] || {}).name || k)}`);
@@ -462,7 +479,7 @@
     const objectives = {};
     A.sc.objectives.forEach((o) => o.territories.forEach((id) => { if (!objectives[id] || o.side !== 'opponent') objectives[id] = o.side === 'opponent' ? 'enemy' : o.type; }));
     if (A.tool === 'objective' && A.sc.objectives[A.brush.obj]) for (const id of A.sc.objectives[A.brush.obj].territories) hl[id] = 'attack';
-    A.mv.update({ owners, units, highlight: hl, selected: A.selected, objectives, playable: play, dimInactive: false, labels: 'playable' });
+    A.mv.update({ owners, units, highlight: hl, selected: A.selected, objectives, playable: play, dimInactive: play.size > 0, labels: 'playable' });
   }
   /** A one-line hint over the map for what a click does now (the controls themselves are on the left). */
   function renderToolbar() {
@@ -526,7 +543,7 @@
     h.push('<p class="hint" style="margin-top:10px"><kbd>Esc</kbd> closes this panel.</p>');
     el.innerHTML = h.join('');
     $('iPlay').onchange = (e) => edit(() => setPlayable(id, e.target.checked));
-    const io = $('iOwner'); if (io) io.onchange = () => edit(() => setOwner(id, io.value || null));
+    const io = $('iOwner'); if (io) io.onchange = () => { let moved = null; edit(() => { setOwner(id, io.value || null); moved = takeOverArmy(id, io.value || null); }); if (moved) undoable(`${t.name}: ${moved}`); };
     el.querySelectorAll('[data-iobj]').forEach((c) => c.onchange = () => edit(() => {
       const ob = A.sc.objectives[+c.dataset.iobj];
       if (c.checked) { if (!ob.territories.includes(id)) ob.territories.push(id); if (!A.sc.playable.includes(id)) setPlayable(id, true); } else ob.territories = ob.territories.filter((x) => x !== id);
@@ -581,6 +598,14 @@
       }
     }
     const factories = A.sc.playable.some((id) => { const us = (A.sc.setup[id] && A.sc.setup[id].units) || {}; return Object.values(us).some((u) => u.factory); });
+    for (const id of A.sc.playable) {
+      const o = A.T[id] && A.T[id].type === 'land' ? ownerOf(id) : null;
+      if (!o) continue;
+      const team = (q) => (A.sc.powers[q] && A.sc.powers[q].team) || powerInfo(q).team;
+      const us = (A.sc.setup[id] && A.sc.setup[id].units) || {};
+      const foes = Object.keys(us).filter((q) => team(q) !== team(o) && Object.keys(us[q]).some((k) => k !== 'factory' && us[q][k] > 0));
+      if (foes.length) msgs.push({ level: 'warn', msg: `${A.T[id].name} belongs to ${o} but holds ${foes.join(' and ')}'s units` });
+    }
     if (A.sc.purchase !== false && !factories) msgs.push({ level: 'warn', msg: 'No factories in play, so nobody can place new units' });
     if (!A.sc.title || A.sc.title === 'Untitled puzzle') msgs.push({ level: 'warn', msg: 'Give the puzzle a title' });
     if (!String(A.sc.description || '').trim()) msgs.push({ level: 'warn', msg: 'Write a briefing for players (Write from objectives drafts one)' });
@@ -784,13 +809,31 @@
       if (A.overwrite || A.dockMsg) { A.overwrite = null; A.dockMsg = null; $('dkWarn').textContent = ''; e.target.removeAttribute('aria-invalid'); }
     };
     $('dkName').onkeydown = (e) => { if (e.key === 'Enter') dockSave(); };
+    // commits the name in place: redrawing the dock here would swallow a click on Save that ended the typing
     $('dkName').onchange = (e) => {
       const id = slug(e.target.value);
-      if (id !== A.sc.id) { A.overwrite = null; edit(() => { A.sc.id = id; }); } else if (e.target.value !== id) renderDock(); // show the name as saved
+      e.target.value = id;
+      if (id === A.sc.id) return;
+      A.overwrite = null;
+      commit();
+      A.sc.id = id;
+      renderHeader();
+      draft();
+      syncSaveButton();
     };
     $('dkSave').onclick = dockSave;
     const nx = $('dkNext'); if (nx) nx.onclick = () => goSub(SUBS[i + 1][0]);
     const sc = $('dkSched'); if (sc) sc.onclick = () => { A.schedFocus = { file: `puzzles/${A.sc.id}.json`, title: A.sc.title }; goPage('schedule'); };
+  }
+  /** Save / Saved on the dock's existing button, without rebuilding the dock. */
+  function syncSaveButton() {
+    const b = $('dkSave');
+    if (!b) return;
+    const saved = !!A.sc.id && !!A.savedJSON && !dirty();
+    b.textContent = saved ? 'Saved' : 'Save';
+    b.classList.toggle('saved', saved);
+    const sch = $('dkSched');
+    if (sch && !saved) sch.remove();
   }
   function fileHint(id) { return id ? `Saves as <code>puzzles/${esc(id)}.json</code>` : 'Letters, numbers and dashes'; }
   /** Save from the dock: names an existing file only after a second click. */
@@ -1522,7 +1565,12 @@
       if (kept && !A.puzzles.some((p) => p.id === sc.id)) A.puzzles.push(kept); // a download is not listed by the site yet
       renderAll();
       return true;
-    } catch (e) { toast('Save failed: ' + e.message, 4000); return false; }
+    } catch (e) {
+      A.dockMsg = 'Not saved: ' + e.message;
+      toast('Save failed: ' + e.message, 4000);
+      renderDock();
+      return false;
+    }
   }
   async function saveSchedule(quiet) {
     // one save at a time; a change made while saving is saved right after

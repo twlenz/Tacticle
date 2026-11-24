@@ -29,6 +29,7 @@
       this.wrap = false;
       this.offset = {};
       this.state = {};
+      this._touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
       this.svg = el('svg', { class: 'tmap', xmlns: NS, preserveAspectRatio: 'xMidYMid meet' });
       this.c.appendChild(this.svg);
       const defs = el('defs', null, this.svg);
@@ -70,7 +71,7 @@
     /** Fit the view to these territories; wraps across the seam when that is tighter. */
     setFocus(ids, pad) {
       ids = (ids || []).filter((id) => this.T[id]);
-      if (!ids.length) { this.full = { x: 0, y: 0, w: this.W, h: this.H }; this._showBox(this.full); this._relayout(); return; }
+      if (!ids.length) { this.full = { x: 0, y: 0, w: this.W, h: this.H }; this._showBox(this.full); this.kHome = this.k; this._relayout(); return; }
       const box = (shift) => {
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
         for (const id of ids) {
@@ -91,6 +92,7 @@
       const w = Math.max(60, r.x1 - r.x0), h = Math.max(40, r.y1 - r.y0);
       this.full = { x: r.x0 - w * p, y: r.y0 - h * p, w: w * (1 + 2 * p), h: h * (1 + 2 * p) };
       this._showBox(this.full);
+      this.kHome = this.k;
       this._relayout();
     }
     _setWrap(on) {
@@ -168,7 +170,7 @@
       });
       window.addEventListener('pointermove', (ev) => {
         if (!pts.has(ev.pointerId)) {
-          if (this.opts.onHover) { const id = this._idAt(ev); if (id !== this._hover) { this._hover = id; this.opts.onHover(id, ev); } }
+          if (this.opts.onHover) { this._hoverEv = ev; const id = this._idAt(ev); if (id !== this._hover) { this._hover = id; this.opts.onHover(id, ev); } }
           return;
         }
         pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
@@ -264,6 +266,8 @@
         }
       }
       this._relayout();
+      // the hover text describes the territory as it is now, not as it was before a click changed it
+      if (this.opts.onHover && this._hover && this._hoverEv) this.opts.onHover(this._hover, this._hoverEv);
     }
     _relayoutSoon() {
       if (this._rl) return;
@@ -273,6 +277,8 @@
       const s = this.state || {};
       const k = this.k || 1;
       const scale = (this.opts.unitScale || 1) * ((this.c.clientWidth || 800) < 600 ? 0.84 : 1);
+      // on touch screens, zooming in past the starting view makes unit icons bigger, so fingers can hit them
+      const ku = this._touch && this.kHome ? Math.max(k, this.kHome) : k;
       this.gUnits.textContent = '';
       this.gLabels.textContent = '';
       this.gOver.textContent = '';
@@ -303,7 +309,7 @@
         if (t.type !== 'sea' && Math.max(bw, bh) < 18 * k) el('circle', { cx, cy, r: 16 * k, 'data-id': id, class: 'hit' }, this.gHit);
         const units = (s.units && s.units[id]) || [];
         const chips = units.slice().sort((a, b) => (a.o === b.o ? 0 : a.o < b.o ? -1 : 1) || ORDER.indexOf(a.t) - ORDER.indexOf(b.t));
-        const size = 27 * k * scale;
+        const size = 27 * ku * scale;
         const per = Math.min(chips.length, chips.length > 6 ? 4 : 3) || 1;
         const rows = Math.ceil(chips.length / per);
         let y0 = cy - (rows * (size + 2 * k)) / 2 + (showLabels ? fs * 0.6 : 0);

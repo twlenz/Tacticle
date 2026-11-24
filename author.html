@@ -23,7 +23,7 @@
   .subtabs button { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; text-align: left; padding: 6px 8px; border-radius: 8px; font-size: 14px; color: var(--muted); }
   .subtabs button.on { background: var(--bg); color: var(--ink); font-weight: 650; }
   .subtabs .num { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 99px; background: var(--line); color: var(--ink); font-size: 12px; font-weight: 700; }
-  .subtabs button.on .num { background: var(--accent); color: #fff; }
+  .subtabs button.on .num { background: var(--ink); color: var(--bg); }
   .aside.left .tabbody { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
   /* Select Map */
   .maplist { flex: 1; min-height: 160px; overflow: auto; display: flex; flex-direction: column; gap: 8px; margin: 6px 0 10px; padding-right: 2px; }
@@ -52,7 +52,7 @@
   .warnink { color: var(--warn-ink); }
   /* finished steps */
   .subtabs button.done .num { background: var(--good); color: #fff; }
-  .subtabs button.on .num { background: var(--accent); color: #fff; }
+  .subtabs button.on .num { background: var(--ink); color: var(--bg); }
   /* checks with a link to the step that fixes them */
   .msg { display: flex; gap: 6px; align-items: baseline; justify-content: space-between; }
   button.link { flex: none; border-color: transparent; background: transparent; color: var(--accent); text-decoration: underline; padding: 0 2px; font-size: 12.5px; white-space: nowrap; }
@@ -92,8 +92,8 @@
   body[data-page="schedule"] .mapwrap, body[data-page="files"] .mapwrap { display: none; }
   body[data-page="select"] #preview, body[data-page="select"] .pvinfo { display: block; }
   body[data-page="select"] .toolbar, body[data-page="select"] .zoombar { display: none; }
-  body:not([data-page="edit"]) .amain, body[data-page="edit"]:not([data-sub="units"]) .amain { grid-template-columns: 340px 1fr; }
-  body:not([data-page="edit"]) .aside.right, body[data-page="edit"]:not([data-sub="units"]) .aside.right { display: none; }
+  body:not([data-page="edit"]) .amain { grid-template-columns: 340px 1fr; }
+  body:not([data-page="edit"]) .aside.right { display: none; }
   #page .wide { max-width: 860px; }
   .aside.right { border-left: 1px solid var(--line); padding: 12px; }
   .tabbody { padding: 12px; }

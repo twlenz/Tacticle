@@ -38,6 +38,9 @@ button.small { padding: 3px 8px; font-size: 13px; }
 .top { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .brand { font-weight: 800; letter-spacing: .14em; font-size: 20px; }
 .brand small { font-weight: 500; letter-spacing: 0; color: var(--muted); font-size: 13px; margin-left: 6px; }
+/* the puzzle number and date stay on one line; on a narrow phone the date gives way first */
+.brand { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.top .icon-btn { flex: none; }
 .top .spacer { flex: 1; }
 .status { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 6px 12px; font-size: 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .status b { font-weight: 650; }
@@ -54,11 +57,14 @@ button.small { padding: 3px 8px; font-size: 13px; }
   .main { flex-direction: column; }
   /* a fixed height so the map above never resizes as the panel's content changes */
   .side { width: auto; max-width: none; border-left: 0; border-top: 1px solid var(--line); height: 38vh; height: 38dvh; flex: none; padding: 10px 12px; }
-  .brand { font-size: 17px; }
+  .brand { font-size: 17px; letter-spacing: .06em; }
+  .top { gap: 2px; padding: 6px 8px 6px 12px; }
   .status { font-size: 13px; padding: 5px 10px; }
   .log { max-height: 90px; }
   .side .hint { font-size: 12.5px; }
   .side .h { margin-top: 10px; }
+  /* the phase's main button stays in reach while the panel scrolls */
+  .side .phasebar { position: sticky; bottom: -10px; z-index: 2; background: var(--panel); margin: 8px -12px -10px; padding: 8px 12px 10px; border-top: 1px solid var(--line); }
 }
 
 /* map */
@@ -124,6 +130,11 @@ button.small { padding: 3px 8px; font-size: 13px; }
 .urow .nm small { color: var(--muted); display: block; font-size: 12px; }
 .stepper { display: flex; align-items: center; gap: 4px; }
 .stepper button { width: 30px; height: 30px; padding: 0; border-radius: 8px; font-weight: 700; }
+/* fingers need bigger targets than a mouse pointer */
+@media (pointer: coarse) {
+  .stepper button, .icon-btn, .zoombar button { width: 44px; height: 44px; }
+}
+.oneshot { font-weight: 600; margin: 10px 0 0; }
 .stepper output { min-width: 26px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 650; }
 .hint { color: var(--muted); font-size: 13px; line-height: 1.45; }
 .warn { color: var(--warn); font-size: 13px; }

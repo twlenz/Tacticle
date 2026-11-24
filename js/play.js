@@ -61,10 +61,11 @@
     S.mv.setFocus(S.sc.playable);
     S.fullFocus = true;
     if ($('map').clientWidth < 600) {
-      // phones: start on the objectives and what borders them
+      // phones: start on the objectives, what borders them, and the player's own forces
       const objs = (S.sc.objectives || []).flatMap((o) => o.territories || []);
       const near = new Set(objs);
       for (const id of objs) for (const n of (S.mv.T[id] ? S.mv.T[id].adj : [])) if (S.sc.playable.includes(n) && S.mv.T[n].type === 'land') near.add(n);
+      for (const id of Object.keys(S.g.s.terr)) if (S.g.units(id).some((u) => S.g.isHuman(u.o))) near.add(id);
       if (near.size) { S.mv.setFocus([...near], 0.04); S.fullFocus = false; }
     }
     wire();
@@ -448,7 +449,7 @@
       `<span class="pill">Turn <b>${Math.min(g.s.round, g.s.maxTurns)}</b>/${g.s.maxTurns}</span>`,
       g.phase === 'gameOver' ? '<span class="pill"><b>Game over</b></span>'
         : `<span class="pill"><span class="swatch" style="background:${color(p)}"></span><b>${esc(p)}</b> · ${E.PHASE_NAMES[g.phase]}</span>`,
-      `<span class="pill">💰 ${money} IPC</span>`,
+      `<span class="pill" title="Your money">💰 You: ${money} IPC</span>`,
       `<span class="pill">★ ${done}/${tot} objectives</span>`,
     ].join('');
   }
@@ -501,7 +502,10 @@
     parts.push(`<div class="h">${asOpponent() ? 'The player side wins by' : 'Objectives'}${g.objectivesNeeded() < total ? ` (need ${g.objectivesNeeded()})` : ''}</div><ul class="objlist">${objectiveRows(st, false)}</ul>`);
     const opp = g.opponentStatus();
     if (opp.length) parts.push(`<div class="h">${asOpponent() ? 'You win if you' : 'The enemy wins if it'}</div><ul class="objlist enemy">${objectiveRows(opp, true)}</ul>`);
-    parts.push(`<div class="hint" style="margin-top:4px">${winCheckText()}</div>`);
+    // with no objectives of its own, the computer's aim is to stop yours
+    const foes = Object.keys(g.s.powers).filter((q) => g.s.powers[q].ai && g.team(q) !== g.humanTeam());
+    const stop = !opp.length && foes.length && !asOpponent() ? ` If you fall short, ${esc(foes.join(' and '))} win${foes.length === 1 ? 's' : ''}.` : '';
+    parts.push(`<div class="hint" style="margin-top:4px">${winCheckText()}${stop}</div>`);
 
     if (S.mode === 'free' && !S.busy) {
       parts.push('<div class="h">Free play</div><p class="hint">Practice on today\'s setup. It does not change your result or stats.</p><div class="actions"><button id="pFreeReset">↺ Reset board</button><button id="pDaily">Back to my result</button></div>');
@@ -567,29 +571,31 @@
           const d = g.R.units[t];
           const n = g.s.buy[t] || 0;
           return `<div class="urow"><span class="ic" style="background:${color(p)}">${I.svg(t, 22, '#fff')}</span><span class="nm">${esc(d.name)}<small>${d.cost} IPC · ${d.att}/${d.def}/${d.move}</small></span>
-            <span class="stepper"><button data-buy="${t}" data-d="-1">−</button><output>${n}</output><button data-buy="${t}" data-d="1">+</button></span></div>`;
+            <span class="stepper"><button data-buy="${t}" data-d="-1" aria-label="Buy one fewer ${esc(d.name)}">−</button><output>${n}</output><button data-buy="${t}" data-d="1" aria-label="Buy one more ${esc(d.name)}">+</button></span></div>`;
         }).join('') + '</div>');
       }
-      h.push(`<div class="actions"><button class="primary" id="pNext">Done buying →</button></div>`);
+      h.push(`<div class="actions phasebar"><button class="primary" id="pNext">Done buying →</button></div>`);
     } else if (g.phase === 'combatMove' || g.phase === 'noncombatMove') {
       const combat = g.phase === 'combatMove';
       h.push(`<div class="h">${combat ? 'Combat move' : 'Noncombat move'}</div>`);
-      h.push(`<p class="hint">${combat
-        ? 'Tap a unit icon to pick those units (tap again to drop one), or tap the territory to pick everything. Then tap where to send them. Moving into enemy territory starts a battle; empty enemy land is captured; tanks can blitz through it.'
-        : 'Reposition units that did not fight. Aircraft must end on friendly land held since the start of the turn, or on a carrier.'}</p>`);
+      if (!S.sel) {
+        h.push(`<p class="hint">${combat
+          ? 'Tap a unit icon to pick those units (again: one fewer), or a territory for all of them. Then tap where they go; red outlines are attacks.'
+          : 'Reposition units that did not fight. Aircraft must end on friendly land held since the start of the turn, or on a carrier.'}</p>`);
+      }
       if (combat) {
         // ships sharing a sea zone with enemy warships fight there unless they leave (rulebook p. 9)
         const shared = Object.keys(g.s.terr).filter((id) => S.mv.T[id] && S.mv.T[id].type === 'sea' && g.hostileSurface(id, g.current()) && g.units(id).some((u) => u.o === g.current() && !u.tr && g.def(u).domain === 'sea'));
         if (shared.length) h.push(`<p class="picknote">Your ships in ${shared.map((id) => esc(S.mv.T[id].name)).join(', ')} share the sea with enemy warships. They fight there unless you move them away.</p>`);
       }
       if (S.sel) h.push(selPanel());
-      h.push(`<div class="actions">${undoBtn}<button class="primary" id="pNext">${combat ? 'Done moving → battles' : 'Done moving →'}</button></div>`);
+      h.push(`<div class="actions phasebar">${undoBtn}<button class="primary" id="pNext">${combat ? 'Done moving → battles' : 'Done moving →'}</button></div>`);
     } else if (g.phase === 'combat') {
       const ready = g.readyBattles();
       h.push('<div class="h">Battles</div>');
       if (!g.s.battles.length) h.push('<p class="hint">All battles fought.</p>');
       h.push('<div class="list">' + g.s.battles.map((id) => `<div class="urow"><span class="nm">⚔️ ${esc(S.mv.T[id].name)}</span><button class="small ${ready.includes(id) ? 'primary' : ''}" data-fight="${id}" ${ready.includes(id) ? '' : 'disabled'}>Fight</button></div>`).join('') + '</div>');
-      h.push(`<div class="actions"><button class="primary" id="pNext" ${g.s.battles.length ? 'disabled' : ''}>Continue →</button></div>`);
+      h.push(`<div class="actions phasebar"><button class="primary" id="pNext" ${g.s.battles.length ? 'disabled' : ''}>Continue →</button></div>`);
     } else if (g.phase === 'place') {
       const left = g.toPlace();
       const types = Object.keys(left);
@@ -601,7 +607,7 @@
           types.map((t) => `<div class="urow" style="${S.placeType === t ? 'border-color:var(--accent)' : ''}"><span class="ic" style="background:${color(p)}">${I.svg(t, 22, '#fff')}</span><span class="nm">${esc(uname(t))}</span><b>${left[t]}</b><button class="small" data-ptype="${t}">${S.placeType === t ? 'Selected' : 'Select'}</button></div>`).join('') + '</div>');
         h.push('<div class="actions"><button id="pAuto">Auto-place</button></div>');
       }
-      h.push(`<div class="actions">${undoBtn}<button class="primary" id="pNext">End turn ✓</button></div>`);
+      h.push(`<div class="actions phasebar">${undoBtn}<button class="primary" id="pNext">End turn ✓</button></div>`);
     }
     return h.join('');
   }
@@ -614,7 +620,7 @@
       const d = g.def(gr.t);
       const sub = gr.cargo ? 'aboard transport' : (d.domain === 'air' || d.move > 1) ? `${gr.ml} move${gr.ml === 1 ? '' : 's'} left` : '';
       return `<div class="urow"><span class="ic" style="background:${color(p)}">${I.svg(gr.t, 22, '#fff')}</span><span class="nm">${esc(d.name)}<small>${sub}</small></span>
-        <span class="stepper"><button data-sel="${gr.key}" data-d="-1">−</button><output>${n}/${gr.ids.length}</output><button data-sel="${gr.key}" data-d="1">+</button></span></div>`;
+        <span class="stepper"><button data-sel="${gr.key}" data-d="-1" aria-label="Pick one fewer ${esc(d.name)}">−</button><output>${n}/${gr.ids.length}</output><button data-sel="${gr.key}" data-d="1" aria-label="Pick one more ${esc(d.name)}">+</button></span></div>`;
     }).join('') + `</div><p class="hint">Highlighted territories are valid destinations${Object.keys(S.part || {}).length ? '; a dashed outline means only some of these units can go, and those that can will' : ''}. Esc or right-click to cancel.</p>`;
   }
 
@@ -1240,6 +1246,8 @@
     $('modal').classList.remove('open');
     S.battleOpen = false;
     S.modalClosable = false;
+    if (S.focusBack && document.contains(S.focusBack)) S.focusBack.focus();
+    S.focusBack = null;
   }
 
   // ------------------------------------------------------------------ dialogs
@@ -1247,7 +1255,10 @@
     $('dialog').innerHTML = html;
     S.modalClosable = closable !== false;
     S.battleOpen = false;
+    if (!$('modal').classList.contains('open')) S.focusBack = document.activeElement;
     $('modal').classList.add('open');
+    const first = $('dialog').querySelector('button.primary') || $('dialog').querySelector('button');
+    if (first) first.focus({ preventScroll: true });
     $('dialog').querySelectorAll('[data-close]').forEach((b) => b.onclick = () => { closeModal(); if (b.dataset.close === 'go') continueFlow(); });
   }
   function sidesText() {
@@ -1269,8 +1280,8 @@
       ${sc.description ? `<p>${esc(sc.description)}</p>` : ''}
       ${sidesText()}
       <h3>${asOpponent() ? 'The player side wins by (stop it)' : 'Objectives'}</h3><ul>${objs}</ul>
-      <p class="hint">${winCheckText()} Rules: ${esc(R.name)}. Your moves are saved as you play, so you get one attempt per day.</p>
-      ${mapCredit() ? `<p class="hint">Map: ${esc(mapCredit())}</p>` : ''}
+      <p class="hint">${esc(R.name)} rules${mapCredit() ? ` · Map: ${esc(mapCredit())}` : ''}</p>
+      ${!S.test && S.mode === 'daily' ? '<p class="oneshot">One attempt per day: your moves are saved as you play.</p>' : ''}
       <div class="actions"><button data-close="help" id="brHelp">How to play</button><button class="primary" data-close="go">Start</button></div>`, false);
     $('brHelp').onclick = showHelp;
   }
