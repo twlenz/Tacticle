@@ -43,6 +43,20 @@
       }
     },
     {
+      "id": "world_war_ii_global_1940_original",
+      "name": "World War II Global 1940 Original",
+      "file": "maps/world_war_ii_global_1940_original.json",
+      "territories": 333,
+      "source": "TripleA",
+      "credit": "",
+      "origin": {
+        "repo": "world_war_ii_global",
+        "branch": "master",
+        "game": "ww2global40.xml",
+        "map": "World War II Global"
+      }
+    },
+    {
       "id": "world_war_ii_v3_1942",
       "name": "World War II v3 1942",
       "file": "maps/world_war_ii_v3_1942.json",

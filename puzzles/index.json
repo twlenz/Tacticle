@@ -1,6 +1,15 @@
 {
   "puzzles": [
     {
+      "id": "clear-the-seas",
+      "file": "puzzles/clear-the-seas.json",
+      "title": "Clear the Seas",
+      "map": "world_war_ii_v5_1942_second_edition",
+      "ruleset": "1942",
+      "maxTurns": 2,
+      "difficulty": "medium"
+    },
+    {
       "id": "desert-sweep",
       "file": "puzzles/desert-sweep.json",
       "title": "Desert Sweep",
