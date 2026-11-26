@@ -65,7 +65,9 @@
       const objs = (S.sc.objectives || []).flatMap((o) => o.territories || []);
       const near = new Set(objs);
       for (const id of objs) for (const n of (S.mv.T[id] ? S.mv.T[id].adj : [])) if (S.sc.playable.includes(n) && S.mv.T[n].type === 'land') near.add(n);
-      if (near.size) { S.mv.setFocus([...near], 0.04); S.fullFocus = false; }
+      const own = Object.keys(S.g.s.terr).filter((id) => S.g.units(id).some((u) => !S.g.s.powers[u.o].ai));
+      const frame = own.length && !own.some((id) => near.has(id)) ? own : [...near];
+      if (frame.length) { S.mv.setFocus(frame, 0.04); S.fullFocus = false; }
     }
     wire();
     render();
@@ -368,10 +370,10 @@
       return;
     }
     if (ph !== 'combatMove' && ph !== 'noncombatMove') return;
-    // a click on one of your own movable unit icons always adjusts the selection
-    if (chip && chip.o === g.current() && chipSelect(id, chip.t, chip.aboard)) return;
-    // otherwise a click on the territory: move there if it is a destination...
+    // with units picked, a tap anywhere in a destination moves them there, icons included (loading onto your transport)
     if (S.sel && id !== S.sel.from && (S.dest[id] || S.unload[id] || S.part[id])) return doMove(id);
+    // otherwise a click on one of your own movable unit icons adjusts the selection
+    if (chip && chip.o === g.current() && chipSelect(id, chip.t, chip.aboard)) return;
     // ...or select everything there (a second click clears it)
     if (allSelected(id)) { clearSel(); return; }
     if (selectAt(id, true)) { render(); return; }
@@ -442,7 +444,8 @@
     const p = g.current();
     const st = g.objectiveStatus();
     const done = st.reduce((a, o) => a + o.done, 0), tot = st.reduce((a, o) => a + o.total, 0);
-    const money = humanPowers().map((h) => `${h === p || humanPowers().length > 1 ? '' : ''}${g.s.powers[h].money}`).join(' / ');
+    const many = humanPowers().length > 1;
+    const money = humanPowers().map((h) => `${many ? `<span class="swatch" style="background:${color(h)}" title="${esc(h)}"></span>` : ''}${h === p && many ? `<b>${g.s.powers[h].money}</b>` : g.s.powers[h].money}`).join(' ');
     $('status').innerHTML = [
       S.mode === 'free' ? '<span class="pill" style="border-color:var(--accent);color:var(--accent)"><b>Free play</b></span>' : '',
       `<span class="pill">Turn <b>${Math.min(g.s.round, g.s.maxTurns)}</b>/${g.s.maxTurns}</span>`,
@@ -614,7 +617,7 @@
       const sub = gr.cargo ? 'aboard transport' : (d.domain === 'air' || d.move > 1) ? `${gr.ml} move${gr.ml === 1 ? '' : 's'} left` : '';
       return `<div class="urow"><span class="ic" style="background:${color(p)}">${I.svg(gr.t, 22, '#fff')}</span><span class="nm">${esc(d.name)}<small>${sub}</small></span>
         <span class="stepper"><button data-sel="${gr.key}" data-d="-1" aria-label="Pick one fewer ${esc(d.name)}">−</button><output>${n}/${gr.ids.length}</output><button data-sel="${gr.key}" data-d="1" aria-label="Pick one more ${esc(d.name)}">+</button></span></div>`;
-    }).join('') + `</div><p class="hint">Highlighted territories are valid destinations${Object.keys(S.part || {}).length ? '; a dashed outline means only some of these units can go, and those that can will' : ''}. Esc or right-click to cancel.</p>`;
+    }).join('') + `</div><p class="hint">Highlighted territories are valid destinations${Object.keys(S.part || {}).length ? '; a dashed outline means only some of these units can go, and those that can will' : ''}. Tap the territory again to drop the selection.</p>`;
   }
 
   function bindPanel() {
@@ -1409,7 +1412,7 @@
     const free = S.mode === 'free';
     openDialog(`<h2>${free ? 'Free play: ' : ''}${verdict(g.s.result.won)}</h2><p>${esc(g.s.result.reason)}.</p>
       <div class="share" id="shareText">${esc(text)}</div>
-      <div class="actions"><button class="primary" id="copyShare">Copy result</button></div>
+      <div class="actions"><button class="primary" id="copyShare">Share result</button></div>
       ${S.test || free ? '' : statsHtml() + `<p class="hint">Next puzzle in ${Math.floor(mins / 60)}h ${mins % 60}m.</p>`}
       ${S.test ? '' : free
         ? '<div class="actions"><button id="rFreeAgain">Play again</button><button id="rDaily">Back to my result</button></div>'
@@ -1420,6 +1423,7 @@
     on('rFreeAgain', () => enterFreePlay(true));
     on('rDaily', exitFreePlay);
     $('copyShare').onclick = async () => {
+      if (navigator.share && matchMedia('(pointer: coarse)').matches) { try { await navigator.share({ text: shareText() }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
       try { await navigator.clipboard.writeText(shareText()); toast('Copied to clipboard'); } catch (e) {
         const r = document.createRange(); r.selectNodeContents($('shareText'));
         const s = getSelection(); s.removeAllRanges(); s.addRange(r);

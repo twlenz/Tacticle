@@ -4,7 +4,7 @@
  */
 (function () {
   'use strict';
-  var VERSION = '2026.11.26';
+  var VERSION = '2026.11.26.2';
   if (typeof module === 'object' && module.exports) { module.exports = VERSION; return; }
   window.TACTICLE_VERSION = VERSION;
   var show = function () { var el = document.getElementById('version'); if (el) el.textContent = 'v' + VERSION; };

@@ -1240,6 +1240,12 @@
   function bindChecks(el) {
     el.querySelectorAll('[data-fix]').forEach((b) => b.onclick = () => {
       if (b.dataset.fix === 'name') { const n = $('dkName'); if (n) { n.focus(); n.select(); } return; }
+      if (/title|briefing/i.test(b.closest('.msg').textContent)) {
+        goSub('objectives');
+        const f = $(/title/i.test(b.closest('.msg').textContent) ? 'sTitle' : 'sDesc');
+        if (f) { f.scrollIntoView({ block: 'center' }); f.focus(); }
+        return;
+      }
       goSub(b.dataset.fix);
     });
   }
@@ -1360,7 +1366,7 @@
     };
     const opts = (sel, d) => `<option value="">${esc(replayLabel(d))}</option>` + A.puzzles.map((p) => `<option value="${esc(p.file)}" ${sel === p.file ? 'selected' : ''}>${esc(p.id)}${used[p.file] ? ' ✓' : ''}</option>`).join('') + (sel && !files.includes(sel) ? `<option selected value="${esc(sel)}">${esc(sel)} (missing)</option>` : '');
     const focus = A.schedFocus && files.includes(A.schedFocus.file) ? A.schedFocus : null;
-    const free = firstFree(today);
+    const free = firstFree(D.addDays(today, 1));
     el.innerHTML = `<h2 style="margin-top:0">Schedule</h2>${focus ? `<div class="objbox on"><b>Schedule “${esc(focus.title || focus.file)}”</b>${used[focus.file] ? ' <span class="hint">(already scheduled ✓)</span>' : ''}<div class="actions"><button class="primary small" id="schPut" style="flex:none">Put it on ${esc(free)}</button><button class="small" id="schFocusX">Done</button></div><p class="hint" style="margin:0">Or pick it in any day's list below.</p></div>` : ''}<p class="hint">One puzzle per day, by the player's local date. Puzzle numbers count from the first day. Saved puzzles marked ✓ are already scheduled.</p>
       <p class="hint" id="schStatus"></p>
       ${field('First day (puzzle #1)', `<input type="date" id="schEpoch" value="${esc(sch.epoch || today)}">`)}
