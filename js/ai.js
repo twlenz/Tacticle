@@ -569,12 +569,21 @@
         const threat = this._threat(id, p);
         if (threat > 0) keep[id] = (this._guarding(id, sit) ? threat * 1.5 : Math.min(threat, v * 2) * 0.6) * this.opts.garrison;
       }
-      const garrisonOk = (from, u) => {
-        if (!keep[from]) return true;
-        const rest = g.units(from).filter((x) => g.team(x.o) === g.team(p) && !used.has(x.id) && x.id !== u.id && !x.tr);
+      // an aircraft that can strike and still fly home in noncombat moves is back in time to defend
+      const back = new Set();
+      const flyHome = (from, u, to) => {
+        if (!this.opts.strike || g.def(u).domain !== 'air' || !to || !g.s.startOwned[from] || g.team(g.s.startOwned[from]) !== g.team(p)) return false;
+        const d = g.airDist(from, u.ml)[to];
+        return d !== undefined && 2 * d <= u.ml;
+      };
+      const garrisonOk = (from, u, to) => {
+        if (!keep[from] || flyHome(from, u, to)) return true;
+        const rest = g.units(from).filter((x) => g.team(x.o) === g.team(p) && (!used.has(x.id) || back.has(x.id)) && x.id !== u.id && !x.tr);
         const def = rest.reduce((a, x) => a + g.def(x).def, 0);
         return def >= keep[from];
       };
+      // a strike: wiping out exposed units for little loss is worth it without the usual odds of taking the ground
+      const strike = (o) => this.opts.strike > 0 && o.defLoss - o.attLoss >= this.opts.strike && o.defLoss >= 2.5 * Math.max(1, o.attLoss);
       for (let iter = 0; iter < 12; iter++) {
         let best = null;
         for (const to of g.B.playable) {
@@ -583,7 +592,7 @@
           const foes = g.enemies(to, p).filter((e) => !g.def(e).infrastructure || g.def(e).aa);
           if (isSea && !foes.length) continue;
           if (!isSea && (g.friendlyOwner(to, p) || !g.s.terr[to].o)) continue;
-          const cand = this._attackersFor(to, used).filter((c) => garrisonOk(c.from, c.u));
+          const cand = this._attackersFor(to, used).filter((c) => garrisonOk(c.from, c.u, to));
           if (!cand.length) continue;
           const value = this._gain(to);
           const bonus = this._objBonus(to, sit);
@@ -606,9 +615,11 @@
           let attSet = null;
           const counterLoss = (o) => {
             if (!counterTh || !attSet) return 0;
-            const val = this._unitValue(attSet.map((c) => c.u));
+            // aircraft fly off after the battle; only land units stay to face the counterattack
+            const stay = this.opts.strike ? attSet.filter((c) => g.def(c.u).domain === 'land') : attSet;
+            const val = this._unitValue(stay.map((c) => c.u));
             const left = Math.max(0, val - o.attLoss);
-            const def = attSet.reduce((a, c) => a + g.def(c.u).def, 0) * (val ? left / val : 0);
+            const def = stay.reduce((a, c) => a + g.def(c.u).def, 0) * (val ? left / val : 0);
             const pLose = Math.max(0, Math.min(1, (counterTh - def) / (counterTh + def + 1) * 1.5));
             return pLose * (left + value);
           };
@@ -618,7 +629,7 @@
           let set = cand.slice();
           attSet = set;
           let odds = sim(set);
-          if (odds.win < minOdds) continue;
+          if (odds.win < minOdds && !strike(odds)) continue;
           let score = scoreOf(odds);
           // try leaving out the most expensive units; keep whichever force scores best
           set.sort((a, b) => g.def(b.u).cost - g.def(a.u).cost);
@@ -629,7 +640,7 @@
             attSet = trial;
             const s2 = scoreOf(o2);
             attSet = set;
-            if (o2.win >= minOdds && s2 >= score - this.opts.trimSlack) { set = trial; odds = o2; score = s2; k--; attSet = set; }
+            if ((o2.win >= minOdds || strike(o2)) && s2 >= score - this.opts.trimSlack) { set = trial; odds = o2; score = s2; k--; attSet = set; }
           }
           if (!isSea && !set.some((c) => g.def(c.u).domain === 'land')) continue;
           if (score > 0 && (!best || score > best.score)) best = { to, score, units: set };
@@ -637,7 +648,7 @@
         if (!best) break;
         committed.add(best.to);
         const byFrom = {};
-        for (const c of best.units) { used.add(c.u.id); (byFrom[c.from] = byFrom[c.from] || []).push(c.u.id); }
+        for (const c of best.units) { used.add(c.u.id); if (flyHome(c.from, c.u, best.to)) back.add(c.u.id); (byFrom[c.from] = byFrom[c.from] || []).push(c.u.id); }
         for (const from of Object.keys(byFrom)) {
           const r = g.move(from, byFrom[from], best.to);
           if (r.ok) this._lastMoves = (this._lastMoves || []).concat([{ from, to: best.to, uids: byFrom[from] }]);
@@ -903,6 +914,7 @@
     defBuy: false, // the computer's side buys infantry only
     objGuard: 1.5, // noncombat: objectives a side must keep are stacked to this many times the threat
     frontPull: 3, // noncombat: pull of idle land units toward the front
+    strike: 8, // attack exposed units without the usual odds when the expected trade gains this many IPC (0 = off)
   };
   /**
    * Settings by role. 'defend' was found by tools/ai_evolve.js (a genetic search) and checked on scenarios
