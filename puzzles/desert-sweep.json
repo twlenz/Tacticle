@@ -7,28 +7,31 @@
   "author": "Tacticle",
   "map": "world1942",
   "ruleset": "1942",
+  "difficulty": "medium",
   "playable": [
-    "egypt",
-    "cyrenaica",
-    "tripolitania",
-    "sudan",
-    "palestine",
-    "syria",
-    "french_equatorial_africa",
-    "sicily",
+    "adriatic_sea",
+    "aegean_sea",
     "albania",
+    "angola_basin",
+    "central_mediterranean",
+    "cyrenaica",
     "east_africa",
     "eastern_mediterranean",
-    "red_sea",
-    "aegean_sea",
-    "central_mediterranean",
-    "ionian_sea",
-    "angola_basin",
+    "egypt",
+    "french_equatorial_africa",
+    "gulf_of_aden",
     "gulf_of_guinea",
-    "tyrrhenian_sea",
-    "adriatic_sea",
+    "ionian_sea",
+    "italy",
+    "mozambique_channel",
+    "palestine",
+    "red_sea",
+    "sicily",
     "somali_basin",
-    "mozambique_channel"
+    "sudan",
+    "syria",
+    "tripolitania",
+    "tyrrhenian_sea"
   ],
   "maxTurns": 3,
   "winCheck": "turnEnd",
@@ -97,8 +100,7 @@
       }
     },
     "syria": {
-      "owner": "United Kingdom",
-      "units": {}
+      "owner": "United Kingdom"
     },
     "french_equatorial_africa": {
       "owner": "United Kingdom",
@@ -133,37 +135,14 @@
         }
       }
     },
-    "eastern_mediterranean": {
-      "units": {}
-    },
-    "red_sea": {
-      "units": {}
-    },
-    "aegean_sea": {
-      "units": {}
-    },
     "central_mediterranean": {
       "units": {
         "Italy": {
           "destroyer": 1,
-          "submarine": 1
+          "submarine": 1,
+          "transport": 1
         }
       }
-    },
-    "ionian_sea": {
-      "units": {}
-    },
-    "angola_basin": {
-      "units": {}
-    },
-    "gulf_of_guinea": {
-      "units": {}
-    },
-    "tyrrhenian_sea": {
-      "units": {}
-    },
-    "adriatic_sea": {
-      "units": {}
     },
     "somali_basin": {
       "units": {
@@ -175,8 +154,15 @@
         }
       }
     },
-    "mozambique_channel": {
-      "units": {}
+    "italy": {
+      "units": {
+        "Italy": {
+          "factory": 1,
+          "artillery": 1,
+          "infantry": 1
+        }
+      },
+      "owner": "Italy"
     }
   },
   "objectives": [
@@ -195,6 +181,5 @@
     "size": 10,
     "naval": true,
     "winRate": 0.65
-  },
-  "difficulty": "medium"
+  }
 }

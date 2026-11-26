@@ -7,25 +7,26 @@
   "author": "Tacticle",
   "map": "total_world_war",
   "ruleset": "1942",
+  "difficulty": "hard",
   "playable": [
-    "crete",
-    "tobruk",
-    "cyrenaica",
-    "al_kufrah",
-    "tunisia",
-    "western_egypt",
-    "greece",
-    "syria",
-    "malta",
-    "trans_jordan",
+    "45_sea_zone",
+    "48_sea_zone",
+    "49_sea_zone",
+    "50_sea_zone",
     "51_sea_zone",
     "52_sea_zone",
     "53_sea_zone",
-    "48_sea_zone",
-    "45_sea_zone",
-    "49_sea_zone",
-    "50_sea_zone",
-    "54_sea_zone"
+    "54_sea_zone",
+    "al_kufrah",
+    "crete",
+    "cyrenaica",
+    "greece",
+    "malta",
+    "syria",
+    "tobruk",
+    "trans_jordan",
+    "tunisia",
+    "western_egypt"
   ],
   "maxTurns": 2,
   "winCheck": "turnEnd",
@@ -41,16 +42,21 @@
       "team": "Allies",
       "controller": "ai",
       "money": 0
+    },
+    "Turkey": {
+      "team": "Neutral",
+      "controller": "ai",
+      "money": 1
     }
   },
   "turnOrder": [
     "Germany",
-    "United Kingdom"
+    "United Kingdom",
+    "Turkey"
   ],
   "setup": {
     "crete": {
-      "owner": "Germany",
-      "units": {}
+      "owner": "Germany"
     },
     "tobruk": {
       "owner": "United Kingdom",
@@ -128,15 +134,6 @@
         }
       }
     },
-    "51_sea_zone": {
-      "units": {}
-    },
-    "52_sea_zone": {
-      "units": {}
-    },
-    "53_sea_zone": {
-      "units": {}
-    },
     "48_sea_zone": {
       "units": {
         "United Kingdom": {
@@ -154,15 +151,6 @@
           "fighter": 1
         }
       }
-    },
-    "49_sea_zone": {
-      "units": {}
-    },
-    "50_sea_zone": {
-      "units": {}
-    },
-    "54_sea_zone": {
-      "units": {}
     }
   },
   "objectives": [
@@ -186,6 +174,5 @@
     "size": 10,
     "naval": true,
     "winRate": 0.5
-  },
-  "difficulty": "hard"
+  }
 }
