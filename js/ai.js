@@ -968,7 +968,7 @@
    * 50% over 360 held-out games. It makes a poor attacker, so the attacking side keeps the defaults.
    */
   AI.ROLES = {
-    defend: { swingOdds: 0.79, objOdds: 1.13, trimSlack: 1.31, garrison: 1.63, counter: 0.47, deadZone: 1.77, objGuard: 3, frontPull: 2.58 },
+    defend: { swingOdds: 0.79, objOdds: 1.13, trimSlack: 1.31, garrison: 1.63, counter: 0.47, deadZone: 1.77, objGuard: 3, frontPull: 2.58, seaOccupy: true },
     attack: {},
   };
   /** Candidate policies for lookahead (settings on top of the role's). */
@@ -981,7 +981,8 @@
   ];
   AI.VERSION = 2;
   /** Settings a puzzle asks for: "opponent": "earlier" keeps the strategy from before the role settings. */
-  AI.opponentOptions = (sc) => (sc && sc.opponent === 'earlier' ? { roles: false } : {});
+  // "fleet": "basic" keeps the fleets from before seaOccupy (for puzzles balanced against them)
+  AI.opponentOptions = (sc) => Object.assign(sc && sc.opponent === 'earlier' ? { roles: false } : {}, sc && sc.fleet === 'basic' ? { seaOccupy: false } : {});
 
   // queue entries of type 'shown' were already executed during planning; report them one by one
   const baseDo = AI.prototype._do;

@@ -440,6 +440,20 @@ The attacking side keeps the defaults, because these settings make it a poor att
 puzzle can keep the earlier opponent with `"opponent": "earlier"` (authoring tool, Edit Map
 → Test).
 
+**Fleets in clear-the-sea puzzles.** When the player must clear sea zones, the defending computer
+sends a spare ship (a submarine first) into any target zone left empty, since any unit there keeps
+it uncleared (`seaOccupy`). A genetic search (`tools/ai_evolve.js --genes …`) over this and three
+other fleet settings (`seaHold`, `subDive`, `seaBuy`) on 24 variants of Clear the Seas found
+`seaOccupy` was the one that mattered. On 16 held-out variants the player side's win rate fell from
+about 70% to 29% (41 games turned to losses, 2 to wins); on the general scenarios nothing changed.
+A puzzle balanced against the earlier fleets can keep them with `"fleet": "basic"` (Clear the Seas
+does).
+
+**Strikes.** The computer attacks exposed units without its usual odds when the expected trade gains
+at least 8 IPC and destroys at least 2.5 times what it loses (`strike`); aircraft that can still fly
+home count as part of the garrison they left. Example: three tanks pushed ahead of their infantry
+are hit by infantry and fighters, which then fly back to defend.
+
 **How the settings were chosen.** `tools/ai_bench.js` plays a fixed set of scenarios (the
 saved puzzles plus 36 generated ones) with fixed seeds, the player's side and the computer's
 side each with their own settings. Lower player win rates mean a stronger computer.
