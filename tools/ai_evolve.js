@@ -34,8 +34,16 @@ const GENES = {
   tuvEndgame: 'bool',
   defBuy: 'bool',
 };
-const BASELINE = { swingOdds: 0.6, objOdds: 1, trimSlack: 0.5, garrison: 1, counter: 0, deadZone: 0, objGuard: 1.5, frontPull: 3, incomeAware: false, tuvEndgame: false, defBuy: false };
-const HAND = Object.assign({}, BASELINE, { incomeAware: true, tuvEndgame: true, counter: 0.5, deadZone: 2, defBuy: true });
+let BASELINE = { swingOdds: 0.6, objOdds: 1, trimSlack: 0.5, garrison: 1, counter: 0, deadZone: 0, objGuard: 1.5, frontPull: 3, incomeAware: false, tuvEndgame: false, defBuy: false };
+let HAND = Object.assign({}, BASELINE, { incomeAware: true, tuvEndgame: true, counter: 0.5, deadZone: 2, defBuy: true });
+// --genes JSON / --baseline JSON / --hand JSON: evolve other settings (the rest keep the role's values)
+if (flag('genes')) {
+  const G = JSON.parse(flag('genes'));
+  for (const k of Object.keys(GENES)) delete GENES[k];
+  Object.assign(GENES, G);
+  BASELINE = JSON.parse(flag('baseline', '{}'));
+  HAND = JSON.parse(flag('hand', flag('baseline', '{}')));
+}
 
 /** Settings for js/ai.js from a genome (dead zones under 0.9 are off; numbers rounded). */
 function decode(g) {

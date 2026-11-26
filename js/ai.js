@@ -244,7 +244,8 @@
       const owner = (g._side('D').find((u) => g.def(u).sub) || {}).o;
       if (!owner || !g.s.powers[owner].ai) return;
       const odds = E.simulate(count(g.survivors('A')), count(g.survivors('D')), { sea: b.sea, ruleset: g.R.id, trials: 40, seed: g.s.rng ^ 0x51b });
-      if (odds.win >= 0.75) g.battleSubmerge('D');
+      const keep = this.opts.subDive && g.team(owner) !== g.humanTeam() && (g.sc.objectives || []).some((o) => o.side !== 'opponent' && o.type === 'destroy' && (o.territories || []).includes(b.id));
+      if (odds.win >= (keep ? 0.75 * (1 - this.opts.subDive) : 0.75)) g.battleSubmerge('D');
       else g.battleKeepSubs('D');
     }
     /** At the end of a round: where the attacking computer retreats to, or null to press the attack. */
@@ -383,6 +384,11 @@
       return sit.forPlayer ? t.some((x) => x.type === 'hold' || x.met) : t.some((x) => x.type !== 'hold' && !x.met);
     }
     _unitValue(units) { return units.reduce((a, u) => a + (this.g.def(u).cost || 0), 0); }
+    /** Sea zones the player must clear (the computer's side keeps each one by keeping any unit in it). */
+    _seaTargets(sit) {
+      if (sit.forPlayer) return [];
+      return sit.targets.filter((t) => t.id && t.type === 'destroy' && this.g.B.isSea(t.id)).map((t) => t.id);
+    }
     /** Bonus for wiping out enemy units at `to` that could reach an objective we guard next turn. */
     _spoilValue(to, sit) {
       const g = this.g;
@@ -489,6 +495,10 @@
       const buy = {};
       let n = 0;
       const add = (t) => { if (!U[t] || U[t].cost > money || n >= capacity) return false; buy[t] = (buy[t] || 0) + 1; money -= U[t].cost; n++; return true; };
+      if (this.opts.seaBuy && U.submarine) {
+        const seas = this._seaTargets(sit).filter((z) => g.B.adj[z].some((x) => fac[x]));
+        for (let k = 0; k < seas.length && money >= U.submarine.cost + U.infantry.cost; k++) add('submarine');
+      }
       let i = 0;
       while (n < capacity && money >= U.infantry.cost && i++ < 100) {
         if (!threatened && n % 3 === 2) {
@@ -547,7 +557,8 @@
         const foes = g.enemies(z, p).filter((e) => !g.def(e).infrastructure);
         const odds = E.simulate(count(mine), count(foes), { sea: true, ruleset: g.R.id, trials: 60, seed: hash(z) ^ g.s.round });
         for (const u of mine) used.add(u.id);
-        if (odds.win >= 0.5) continue; // stay and fight
+        const hold = this._seaTargets(sit).includes(z) ? 0.5 * (1 - (this.opts.seaHold || 0)) : 0.5;
+        if (odds.win >= hold) continue; // stay and fight
         const away = g.B.adj[z].filter((y) => g.B.isSea(y) && !g.hostileSurface(y, p))
           .sort((a, c) => g.units(c).filter((u) => g.team(u.o) === g.team(p)).length - g.units(a).filter((u) => g.team(u.o) === g.team(p)).length);
         for (const u of mine) {
@@ -745,6 +756,32 @@
       }
     }
 
+    /**
+     * Fleet (seaOccupy): every sea zone the player must clear that holds none of our units gets one, the
+     * cheapest ship that can reach it (subs first: they can submerge), taken from a zone that can spare it.
+     */
+    _occupySeas(doMove, sit) {
+      const g = this.g;
+      const p = g.current();
+      const targets = this._seaTargets(sit);
+      const ours = (z) => g.units(z).filter((u) => g.team(u.o) === g.team(p) && !g.def(u).infrastructure);
+      const pref = (u) => (g.def(u).sub ? 0 : 1) * 100 + (g.def(u).cost || 0);
+      for (const z of targets) {
+        if (ours(z).length) continue;
+        let best = null;
+        for (const from of g.B.playable) {
+          if (!g.B.isSea(from) || from === z) continue;
+          // a target zone keeps its last unit
+          if (targets.includes(from) && ours(from).length <= 1) continue;
+          for (const u of g.units(from)) {
+            if (u.o !== p || g.def(u).domain !== 'sea' || g.def(u).transport || !g.canUnitMove(u, from)) continue;
+            if (!g.checkMove(from, [u.id], z).ok) continue;
+            if (!best || pref(u) < pref(best.u)) best = { u, from };
+          }
+        }
+        if (best) doMove(best.from, [best.u.id], z);
+      }
+    }
     _planNoncombat() {
       const g = this.g;
       const p = g.current();
@@ -757,6 +794,7 @@
         return r.ok;
       };
       if (this.opts.valueMoves && V && V.model) this._valueMoves(doMove, D);
+      if (this.opts.seaOccupy) this._occupySeas(doMove, sit);
       // need score per friendly land territory
       const need = () => {
         const out = {};
@@ -886,6 +924,9 @@
           const targets = g.placeTargets(t);
           if (!targets.length) break;
           let pick = order.find((id) => targets.includes(id));
+          // a sub bought for a sea zone the player must clear goes into the emptiest such zone it can reach
+          const seaT = this.opts.seaBuy && g.def(t).sub ? this._seaTargets(this._situation()).filter((z) => targets.includes(z)) : [];
+          if (seaT.length) pick = seaT.sort((a, c) => g.units(a).filter((u) => g.team(u.o) === g.team(p)).length - g.units(c).filter((u) => g.team(u.o) === g.team(p)).length)[0];
           if (!pick) {
             // sea zones: next to the factory that most needs help, away from enemy warships when possible
             const rank = (z) => (g.hostileSurface(z, p) ? 100 : 0) + Math.min(...g.B.adj[z].map((x) => (order.indexOf(x) < 0 ? 99 : order.indexOf(x))));
@@ -915,6 +956,11 @@
     objGuard: 1.5, // noncombat: objectives a side must keep are stacked to this many times the threat
     frontPull: 3, // noncombat: pull of idle land units toward the front
     strike: 8, // attack exposed units without the usual odds when the expected trade gains this many IPC (0 = off)
+    // fleets, in sea zones the player must clear (any unit left there keeps the zone):
+    seaHold: 0, // 0–1: how readily ships stay and fight instead of fleeing (0 = flee below even odds)
+    subDive: 0, // 0–1: how readily defending subs submerge (0 = only when the attacker wins 75% or more)
+    seaOccupy: false, // send a spare ship into any such zone left empty
+    seaBuy: false, // buy submarines for such zones next to a factory and place them there
   };
   /**
    * Settings by role. 'defend' was found by tools/ai_evolve.js (a genetic search) and checked on scenarios
