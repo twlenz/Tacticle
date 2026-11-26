@@ -15,8 +15,8 @@
 
   const PHASES = ['purchase', 'combatMove', 'combat', 'noncombatMove', 'place'];
   const PHASE_NAMES = {
-    purchase: 'Purchase', combatMove: 'Combat Move', combat: 'Battles',
-    noncombatMove: 'Noncombat Move', place: 'Place Units', gameOver: 'Game Over',
+    purchase: 'Buying', combatMove: 'Combat Moves', combat: 'Battling',
+    noncombatMove: 'Noncombat Moves', place: 'Unit Placement', gameOver: 'Game Over',
   };
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
@@ -320,6 +320,8 @@
       for (const id of Object.keys(terr)) if (terr[id].o) s.origOwner[id] = terr[id].o;
       for (const p of Object.keys(powers)) if (!s.stats[powers[p].team]) s.stats[powers[p].team] = { exp: 0, act: 0, v: 0, n: 0 };
       g.s = s;
+      // a set income per turn changes from here as territories change hands
+      for (const p of Object.keys(powers)) powers[p].startInc = g.landIncome(p);
       // load setup cargo onto transports
       for (const id of Object.keys(terr)) {
         if (!g.B.isSea(id)) continue;
@@ -347,6 +349,11 @@
       const teams = new Set(humans.map((p) => sc.powers[p].team));
       // a play test of both sides fixes the player's team instead (sc.playerTeam)
       if (teams.size > 1 && !sc.playerTeam) err('All player powers must be on the same team');
+      for (const p of Object.keys(sc.powers || {})) {
+        const inc = sc.powers[p].income;
+        if (inc != null && !(inc >= 0)) err(`${p}: IPCs per turn must be 0 or more`);
+        else if (inc != null && sc.income === false) warn(`Income is off, so ${p} does not collect its ${inc} IPCs per turn`);
+      }
       const ais = Object.keys(sc.powers || {}).filter((p) => sc.powers[p].controller !== 'human');
       if (!ais.length) warn('There is no computer opponent');
       if (!sc.playable || !sc.playable.length) err('No playable territories');
@@ -458,7 +465,7 @@
     // ---------------- turn flow ----------------
     _startTurn() {
       const p = this.current();
-      this.s.phase = 'purchase';
+      this.s.phase = this.sc.purchase === false ? 'combatMove' : 'purchase';
       this.s.buy = {};
       this.s.battles = [];
       this.s.battle = null;
@@ -499,6 +506,10 @@
       }
       if (s.phase === 'noncombatMove') {
         const lost = this.crashAir();
+        if (this.sc.purchase === false && !Object.values(s.buy || {}).some((n) => n > 0) && !Object.values(s.powers[this.current()].unplaced || {}).some((n) => n > 0)) {
+          this.endTurn();
+          return { ok: true, lost };
+        }
         s.phase = 'place';
         return { ok: true, lost };
       }
@@ -539,10 +550,24 @@
       this._startTurn();
     }
 
-    income(p) {
+    /** IPC value of the territories `p` holds in play. */
+    landIncome(p) {
       let n = 0;
       for (const id of Object.keys(this.s.terr)) if (this.s.terr[id].o === p) n += this.B.ipc(id);
       return n;
+    }
+    /**
+     * What `p` collects at the end of its turn. By default, the value of the territories it holds. A
+     * scenario can set the amount per turn instead (powers[p].income); captures and losses then still
+     * change it by those territories' values, unless powers[p].incomeFixed keeps it the same throughout.
+     */
+    income(p) {
+      const land = this.landIncome(p);
+      const sp = (this.sc.powers || {})[p];
+      if (!sp || sp.income == null || !(sp.income >= 0)) return land;
+      if (sp.incomeFixed) return sp.income | 0;
+      const start = this.s.powers[p].startInc != null ? this.s.powers[p].startInc : land;
+      return Math.max(0, (sp.income | 0) + land - start);
     }
 
     // ---------------- objectives ----------------

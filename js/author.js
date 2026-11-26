@@ -193,6 +193,19 @@
       }
     }
   }
+  /**
+   * Units of the other side cannot stay in a territory that changes hands, so the new owner takes them over.
+   * Returns what changed hands ("Germany's 6 units now belong to Soviet Union"), or null.
+   */
+  function takeOverArmy(id, p) {
+    if (!p || A.T[id].type === 'sea') return null;
+    const us = (A.sc.setup[id] && A.sc.setup[id].units) || {};
+    const team = (q) => (A.sc.powers[q] && A.sc.powers[q].team) || powerInfo(q).team;
+    const from = Object.keys(us).filter((q) => q !== p && team(q) !== team(p));
+    let n = 0;
+    for (const q of from) for (const k of Object.keys(us[q])) { if (k === 'factory') continue; n += us[q][k]; addUnit(id, p, k, us[q][k]); addUnit(id, q, k, -us[q][k]); }
+    return n ? `${from.join(' and ')}'s ${n} unit${n === 1 ? '' : 's'} now belong to ${p}` : null;
+  }
   function addUnit(id, p, t, n) {
     const st = setupOf(id);
     st.units = st.units || {};
@@ -249,6 +262,8 @@
 
   // undo / redo / draft
   function commit() {
+    // a new edit retires any Undo button still showing for the previous one
+    if ($('toast').classList.contains('act')) { $('toast').classList.remove('on', 'act'); }
     A.hist.push(JSON.stringify(A.sc));
     if (A.hist.length > 150) A.hist.shift();
     A.fut = [];
@@ -353,8 +368,12 @@
         return;
       case 'owner':
         if (t.type === 'sea') { toast('Sea zones have no owner'); return; }
-        edit(() => { if (!A.sc.playable.includes(id)) setPlayable(id, true); setOwner(id, ev && ev.altKey ? (t.owner || null) : A.brush.owner); });
+      {
+        let moved = null;
+        edit(() => { if (!A.sc.playable.includes(id)) setPlayable(id, true); const to = ev && ev.altKey ? (t.owner || null) : A.brush.owner; setOwner(id, to); moved = takeOverArmy(id, to); });
+        if (moved) undoable(`${t.name}: ${moved}`);
         return;
+      }
       case 'units': {
         const d = R().units[A.brush.unit];
         if (!d) return;
@@ -407,7 +426,7 @@
     const t = A.T[id];
     const o = ownerOf(id);
     const play = A.sc.playable.includes(id);
-    let h = `<b>${esc(t.name)}</b> <span class="hint">${t.type === 'sea' ? 'sea' : (o || 'neutral')}${t.ipc ? ' · ' + t.ipc + ' IPC' : ''}${play ? '' : ' · not playable'}</span>`;
+    let h = `<b>${esc(t.name)}</b> <span class="hint">${t.type === 'sea' ? 'sea' : (o || 'neutral')}${t.ipc ? ' · ' + t.ipc + ' IPC' : ''}${play ? '' : ' · not in play'}</span>`;
     const us = (A.sc.setup[id] && A.sc.setup[id].units) || {};
     const lines = [];
     for (const p of Object.keys(us)) for (const k of Object.keys(us[p])) lines.push(`<span class="swatch" style="background:${powerInfo(p).color}"></span> ${us[p][k]} ${esc((R().units[k] || {}).name || k)}`);
@@ -448,21 +467,20 @@
       const us = (A.sc.setup[t.id] && A.sc.setup[t.id].units) || {};
       if (!play.has(t.id)) continue;
       const list = [];
-      const cargo = {};
       for (const p of Object.keys(us)) {
         for (const k of Object.keys(us[p])) {
-          if (t.type === 'sea' && R().units[k] && R().units[k].domain === 'land') { cargo[p] = (cargo[p] || 0) + us[p][k]; continue; }
-          const sel = A.msel && A.msel.from === t.id ? A.msel.n[p + '|' + k] || 0 : 0;
-          list.push({ o: p, t: k, n: us[p][k], dim: !R().units[k], sel: sel || undefined });
+          // land units in a sea zone are aboard that power's transports
+          const aboard = t.type === 'sea' && R().units[k] && R().units[k].domain === 'land';
+          const sel = !aboard && A.msel && A.msel.from === t.id ? A.msel.n[p + '|' + k] || 0 : 0;
+          list.push({ o: p, t: k, n: us[p][k], dim: !R().units[k], sel: sel || undefined, aboard });
         }
       }
-      for (const c of list) if (c.t === 'transport' && cargo[c.o]) { c.cargo = cargo[c.o]; cargo[c.o] = 0; }
       units[t.id] = list;
     }
     const objectives = {};
     A.sc.objectives.forEach((o) => o.territories.forEach((id) => { if (!objectives[id] || o.side !== 'opponent') objectives[id] = o.side === 'opponent' ? 'enemy' : o.type; }));
     if (A.tool === 'objective' && A.sc.objectives[A.brush.obj]) for (const id of A.sc.objectives[A.brush.obj].territories) hl[id] = 'attack';
-    A.mv.update({ owners, units, highlight: hl, selected: A.selected, objectives, playable: play, dimInactive: false, labels: 'playable' });
+    A.mv.update({ owners, units, highlight: hl, selected: A.selected, objectives, playable: play, dimInactive: play.size > 0, labels: 'playable' });
   }
   /** A one-line hint over the map for what a click does now (the controls themselves are on the left). */
   function renderToolbar() {
@@ -526,7 +544,7 @@
     h.push('<p class="hint" style="margin-top:10px"><kbd>Esc</kbd> closes this panel.</p>');
     el.innerHTML = h.join('');
     $('iPlay').onchange = (e) => edit(() => setPlayable(id, e.target.checked));
-    const io = $('iOwner'); if (io) io.onchange = () => edit(() => setOwner(id, io.value || null));
+    const io = $('iOwner'); if (io) io.onchange = () => { let moved = null; edit(() => { setOwner(id, io.value || null); moved = takeOverArmy(id, io.value || null); }); if (moved) undoable(`${t.name}: ${moved}`); };
     el.querySelectorAll('[data-iobj]').forEach((c) => c.onchange = () => edit(() => {
       const ob = A.sc.objectives[+c.dataset.iobj];
       if (c.checked) { if (!ob.territories.includes(id)) ob.territories.push(id); if (!A.sc.playable.includes(id)) setPlayable(id, true); } else ob.territories = ob.territories.filter((x) => x !== id);
@@ -558,7 +576,7 @@
     const msgs = validate();
     return `<div class="h">Scenario summary</div>
       <p class="hint">${land} land territories and ${play.length - land} sea zones in play. ${A.sc.maxTurns} turns. Rules: ${esc(R().name)}.</p>
-      <div class="list">${Object.keys(A.sc.powers).map((p) => `<div class="urow"><span class="swatch" style="background:${powerInfo(p).color}"></span><span class="nm">${esc(p)}<small>${A.sc.powers[p].controller === 'human' ? 'Player' : 'Computer'} · ${A.sc.powers[p].team} · ${A.sc.powers[p].money} IPC</small></span><b title="Army value in IPCs">${val[p] || 0}</b></div>`).join('')}</div>
+      <div class="list">${Object.keys(A.sc.powers).map((p) => `<div class="urow"><span class="swatch" style="background:${powerInfo(p).color}"></span><span class="nm">${esc(p)}<small>${A.sc.powers[p].controller === 'human' ? 'Player' : 'Computer'} · ${A.sc.powers[p].team} · ${A.sc.powers[p].money} IPC${A.sc.income !== false ? `, +${perTurn(p)} a turn` : ''}</small></span><b title="Army value in IPCs">${val[p] || 0}</b></div>`).join('')}</div>
       <div class="h">Checks</div>${checksHtml(msgs)}
       ${A.lastSim ? `<div class="h">Last balance check</div><p class="hint">Computer-as-player won ${Math.round(100 * A.lastSim.won / A.lastSim.games)}% of ${A.lastSim.games} games.</p>` : ''}
       <div class="h">Shortcuts</div><div class="kbd-help"><kbd>P</kbd> territories <kbd>O</kbd> owners <kbd>U</kbd> place units <kbd>S</kbd> select <kbd>M</kbd> move <kbd>J</kbd> objectives <kbd>T</kbd> test · <kbd>1</kbd>–<kbd>9</kbd> pick a unit · <kbd>Esc</kbd> stop placing · <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> undo/redo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> play test</div>`;
@@ -581,6 +599,14 @@
       }
     }
     const factories = A.sc.playable.some((id) => { const us = (A.sc.setup[id] && A.sc.setup[id].units) || {}; return Object.values(us).some((u) => u.factory); });
+    for (const id of A.sc.playable) {
+      const o = A.T[id] && A.T[id].type === 'land' ? ownerOf(id) : null;
+      if (!o) continue;
+      const team = (q) => (A.sc.powers[q] && A.sc.powers[q].team) || powerInfo(q).team;
+      const us = (A.sc.setup[id] && A.sc.setup[id].units) || {};
+      const foes = Object.keys(us).filter((q) => team(q) !== team(o) && Object.keys(us[q]).some((k) => k !== 'factory' && us[q][k] > 0));
+      if (foes.length) msgs.push({ level: 'warn', msg: `${A.T[id].name} belongs to ${o} but holds ${foes.join(' and ')}'s units` });
+    }
     if (A.sc.purchase !== false && !factories) msgs.push({ level: 'warn', msg: 'No factories in play, so nobody can place new units' });
     if (!A.sc.title || A.sc.title === 'Untitled puzzle') msgs.push({ level: 'warn', msg: 'Give the puzzle a title' });
     if (!String(A.sc.description || '').trim()) msgs.push({ level: 'warn', msg: 'Write a briefing for players (Write from objectives drafts one)' });
@@ -777,20 +803,38 @@
       <p class="hint dkhint" id="dkHint">${fileHint(A.sc.id)}</p>
       <p class="dkwarn" id="dkWarn" role="alert">${esc(warn)}</p>
       <div class="row"><button class="primary ${saved ? 'saved' : ''}" id="dkSave" title="Save (Ctrl+S)">${saved ? 'Saved' : 'Save'}</button>${i < SUBS.length - 1 ? `<button id="dkNext" title="${SUBS[i + 1][1]} (${SUBS[i + 1][4]})">Next: ${SUBS[i + 1][3]} →</button>` : ''}</div>
-      ${saved && A.justSaved ? '<button id="dkSched">Schedule It</button>' : ''}`;
+      ${saved && A.justSaved ? '<button class="primary" id="dkSched">Schedule It</button>' : ''}`;
     $('dkName').oninput = (e) => {
       $('dkHint').innerHTML = fileHint(slug(e.target.value));
       // the warnings were about the name before this change
       if (A.overwrite || A.dockMsg) { A.overwrite = null; A.dockMsg = null; $('dkWarn').textContent = ''; e.target.removeAttribute('aria-invalid'); }
     };
     $('dkName').onkeydown = (e) => { if (e.key === 'Enter') dockSave(); };
+    // commits the name in place: redrawing the dock here would swallow a click on Save that ended the typing
     $('dkName').onchange = (e) => {
       const id = slug(e.target.value);
-      if (id !== A.sc.id) { A.overwrite = null; edit(() => { A.sc.id = id; }); } else if (e.target.value !== id) renderDock(); // show the name as saved
+      e.target.value = id;
+      if (id === A.sc.id) return;
+      A.overwrite = null;
+      commit();
+      A.sc.id = id;
+      renderHeader();
+      draft();
+      syncSaveButton();
     };
     $('dkSave').onclick = dockSave;
     const nx = $('dkNext'); if (nx) nx.onclick = () => goSub(SUBS[i + 1][0]);
     const sc = $('dkSched'); if (sc) sc.onclick = () => { A.schedFocus = { file: `puzzles/${A.sc.id}.json`, title: A.sc.title }; goPage('schedule'); };
+  }
+  /** Save / Saved on the dock's existing button, without rebuilding the dock. */
+  function syncSaveButton() {
+    const b = $('dkSave');
+    if (!b) return;
+    const saved = !!A.sc.id && !!A.savedJSON && !dirty();
+    b.textContent = saved ? 'Saved' : 'Save';
+    b.classList.toggle('saved', saved);
+    const sch = $('dkSched');
+    if (sch && !saved) sch.remove();
   }
   function fileHint(id) { return id ? `Saves as <code>puzzles/${esc(id)}.json</code>` : 'Letters, numbers and dashes'; }
   /** Save from the dock: names an existing file only after a second click. */
@@ -859,6 +903,40 @@
     el.querySelectorAll('[data-own]').forEach((b) => b.onclick = () => { A.brush.owner = b.dataset.own || null; renderTab(); renderToolbar(); });
     powersPanel($('powersPanel'));
   }
+  /** The IPC value of the land a power starts with in play (what it collects by default). */
+  function landIncomeOf(p) {
+    return A.sc.playable.reduce((a, id) => a + (A.T[id] && A.T[id].type === 'land' && ownerOf(id) === p ? A.T[id].ipc || 0 : 0), 0);
+  }
+  /** What a power collects at the end of each turn, as shown in summaries. */
+  function perTurn(p) { const pw = A.sc.powers[p]; return pw.income != null ? pw.income : landIncomeOf(p); }
+  /** IPCs per turn: the territories' value (the default), or an amount the author sets. */
+  function incomeFields(p, pw, i, capitalOptions) {
+    const land = landIncomeOf(p);
+    const base = pw.income != null ? pw.income : land;
+    const off = A.sc.income === false;
+    // the base starts as what the territories in play give; a different number is the author's own
+    const note = off
+      ? `<span class="warnink">Income is off for this puzzle.</span> <button class="small link" data-incon>Turn income on</button>`
+      : pw.income != null && pw.income !== land ? `Territories in play give ${land}. <button class="small link" data-incbase="${esc(p)}">Use ${land}</button>` : '';
+    return `${field('Base IPCs per turn', `<input type="number" min="0" id="pw${i}inc" data-pw="${esc(p)}" data-k="income" value="${base}">`)}
+      ${field('Capital', `<select id="pw${i}cap" data-pw="${esc(p)}" data-k="capital">${capitalOptions}</select>`)}
+      <label class="chk" style="grid-column:1/-1;margin:4px 0 0"><input type="checkbox" data-pw="${esc(p)}" data-k="incomeMoves" ${pw.incomeFixed ? '' : 'checked'}> Captured or lost territories change income</label>
+      ${note ? `<p class="hint" style="grid-column:1/-1;margin:2px 0 0">${note}</p>` : ''}`;
+  }
+  /**
+   * Stores a power's income from its card: nothing when it is the territories' value and changes with
+   * them (the default); otherwise the base amount, and incomeFixed when captures should not change it.
+   */
+  function setIncome(p, card) {
+    const pw = A.sc.powers[p];
+    const box = card.querySelector('[data-k="income"]');
+    const moves = card.querySelector('[data-k="incomeMoves"]').checked;
+    const land = landIncomeOf(p);
+    const base = box.value === '' ? land : Math.max(0, Math.round(+box.value || 0));
+    if (base === land && moves) { delete pw.income; delete pw.incomeFixed; return; }
+    pw.income = base;
+    if (moves) delete pw.incomeFixed; else pw.incomeFixed = true;
+  }
   function powersPanel(el) {
     const sc = A.sc;
     const playLand = sc.playable.filter((id) => A.T[id] && A.T[id].type === 'land');
@@ -867,10 +945,10 @@
       const pw = sc.powers[p];
       return `<div class="objbox"><div class="row"><span class="swatch" style="background:${powerInfo(p).color}"></span><b>${i + 1}. ${esc(p)}</b><div class="grow"></div>
           <button class="small" data-up="${i}" title="Earlier in turn order" ${i ? '' : 'disabled'}>↑</button><button class="small" data-del="${esc(p)}" title="Remove ${esc(p)} from the puzzle" aria-label="Remove ${esc(p)}">✕</button></div>
-        <div class="two">${field('Played by', `<select data-pw="${esc(p)}" data-k="controller"><option value="human" ${pw.controller === 'human' ? 'selected' : ''}>Player</option><option value="ai" ${pw.controller !== 'human' ? 'selected' : ''}>Computer</option></select>`)}
-          ${field('Team', `<select data-pw="${esc(p)}" data-k="team"><option ${pw.team === 'Axis' ? 'selected' : ''}>Axis</option><option ${pw.team === 'Allies' ? 'selected' : ''}>Allies</option></select>`)}
-          ${field('Starting IPCs', `<input type="number" min="0" data-pw="${esc(p)}" data-k="money" value="${pw.money || 0}">`)}
-          ${field('Capital', `<select data-pw="${esc(p)}" data-k="capital">${capOpts(p, pw)}</select>`)}</div></div>`;
+        <div class="two">${field('Played by', `<select id="pw${i}ctl" data-pw="${esc(p)}" data-k="controller"><option value="human" ${pw.controller === 'human' ? 'selected' : ''}>Player</option><option value="ai" ${pw.controller !== 'human' ? 'selected' : ''}>Computer</option></select>`)}
+          ${field('Team', `<select id="pw${i}team" data-pw="${esc(p)}" data-k="team"><option ${pw.team === 'Axis' ? 'selected' : ''}>Axis</option><option ${pw.team === 'Allies' ? 'selected' : ''}>Allies</option></select>`)}
+          ${field('Starting IPCs', `<input type="number" min="0" id="pw${i}money" data-pw="${esc(p)}" data-k="money" value="${pw.money || 0}">`)}
+          ${incomeFields(p, pw, i, capOpts(p, pw))}</div></div>`;
     }).join('');
     el.innerHTML = `<p class="hint">In turn order. The player controls every “Player” power (they must share a team). Losing the capital stops income; capturing one takes its treasury.</p>
       ${cards || '<p class="hint">None yet: powers join when they own a territory or units in play.</p>'}
@@ -879,6 +957,8 @@
     el.querySelectorAll('[data-pw]').forEach((c) => c.onchange = () => edit(() => {
       const p = c.dataset.pw, k = c.dataset.k;
       if (k === 'money') sc.powers[p].money = Math.max(0, +c.value || 0);
+      // a set amount starts from what the territories give now, so choosing it changes nothing until edited
+      else if (k === 'income' || k === 'incomeMoves') setIncome(p, c.closest('.objbox'));
       else if (k === 'capital') { if (c.value === '') delete sc.powers[p].capital; else sc.powers[p].capital = c.value === '__none' ? null : c.value; }
       else sc.powers[p][k] = c.value;
     }));
@@ -896,6 +976,11 @@
       undoable(`Removed ${p}, its territories and its units`);
     });
     $('pwAdd').onchange = (e) => { if (e.target.value) edit(() => ensurePower(e.target.value)); };
+    el.querySelectorAll('[data-incon]').forEach((b) => b.onclick = () => edit(() => { sc.income = true; }));
+    el.querySelectorAll('[data-incbase]').forEach((b) => b.onclick = () => edit(() => {
+      const pw = sc.powers[b.dataset.incbase];
+      if (pw.incomeFixed) pw.income = landIncomeOf(b.dataset.incbase); else delete pw.income;
+    }));
     $('pwDefault').onclick = () => edit(() => { const o = mapOrder(); sc.turnOrder.sort((a, b) => idxOr(o, a) - idxOr(o, b)); });
   }
 
@@ -1495,7 +1580,12 @@
       if (kept && !A.puzzles.some((p) => p.id === sc.id)) A.puzzles.push(kept); // a download is not listed by the site yet
       renderAll();
       return true;
-    } catch (e) { toast('Save failed: ' + e.message, 4000); return false; }
+    } catch (e) {
+      A.dockMsg = 'Not saved: ' + e.message;
+      toast('Save failed: ' + e.message, 4000);
+      renderDock();
+      return false;
+    }
   }
   async function saveSchedule(quiet) {
     // one save at a time; a change made while saving is saved right after

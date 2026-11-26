@@ -57,8 +57,11 @@ changes and push them.
   nothing scheduled").
 - `?date=YYYY-MM-DD`
   opens a past day; future dates are capped at today.
-- Turn: **buy → combat move → battles → noncombat move → place**, then income. The
-  computer then takes its turns with animated moves (with a "Skip" button).
+- Turn: **Buying → Combat Moves → Battling → Noncombat Moves → Unit Placement**, then
+  income. The phase's name heads the side panel, and its button reads "End Buying", "End
+  Combat Moves", "End Battling", "End Noncombat Moves" or "End Unit Placement". A puzzle
+  without buying has no Buying or Unit Placement phase. The computer then takes its turns with
+  animated moves (with a "Skip" button).
 - Selecting units:
   - Tap a **unit icon** to pick all of that unit type there. Tap it again to drop one,
     and again to drop another.
@@ -66,9 +69,12 @@ changes and push them.
   - Tap the **territory** itself (outside the icons) to pick everything; tap again to
     clear.
   - The −/+ steppers in the panel fine-tune counts.
-- Moving: highlighted territories are legal destinations (red outline = attack). Moving land
-  units into a sea zone loads them onto your transport; select the sea zone and tap a
-  coast to unload. Drag to pan, pinch or scroll to zoom, <kbd>Esc</kbd> cancels,
+- Moving: highlighted territories are legal destinations (red outline = attack). A dashed
+  outline means only some of the selected units can go there (tanks two spaces away with
+  infantry selected too, say): tapping it moves those, and the rest stay where they are.
+  Moving land units into a sea zone loads them onto your transport. Units aboard show as
+  their own icons with a dashed frame, right after their transport; tap them (or the
+  transport, or the sea zone) and then a coast to unload. Drag to pan, pinch or scroll to zoom, <kbd>Esc</kbd> cancels,
   <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes a move.
 - Ending combat movement asks for confirmation in an in-page popup that lists the battles
   about to be fought.
@@ -213,8 +219,13 @@ Below the list:
    its factory and the map's starting units. Taking it out of play also takes it out of any
    objective. Moving on to a later step frames the map on the area in play.
 2. **Select Owners.** Pick a power (or Neutral), then click territories. Below: the powers in
-   the puzzle in turn order (player or computer, team, starting IPCs, capital). Powers join
-   automatically when they own a territory or units.
+   the puzzle in turn order (player or computer, team, starting IPCs, IPCs per turn, capital).
+   Powers join automatically when they own a territory or units.
+   - **Base IPCs per turn** starts as the value of the territories the power holds in play;
+     type another number to set it. **Captured or lost territories change income** (on by
+     default) adds a captured territory's value and takes away a lost one's; untick it for the
+     same income every turn. Losing the capital still stops income, and nobody collects
+     anything when income is off (Set Objectives → Game rules).
 3. **Place Units.** Pick a unit from the pictures, then click territories: each click adds
    one for whoever controls the territory (Shift +5, right-click −1, Ctrl-click clears). At
    sea the unit goes to the power chosen under "Units placed at sea belong to". Click the
@@ -311,7 +322,9 @@ starts a new puzzle and keeps the draft; **Files** offers to open it once the ma
 ```
 
 Land units listed in a sea zone start aboard that power's transports. A power may also
-set `"capital": "<territory id>"` (or `null` for none).
+set `"capital": "<territory id>"` (or `null` for none), and `"income": N` to collect N IPCs a
+turn instead of its territories' value. Captures and losses still change that by the
+territories' values, unless `"incomeFixed": true`.
 
 Objectives:
 
