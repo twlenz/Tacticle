@@ -1060,8 +1060,11 @@
       }
       const names = {};
       for (const u of moved) names[u.t] = (names[u.t] || 0) + 1;
-      this.log(`${p} ${r.kind === 'load' ? 'loads' : r.kind === 'unload' ? 'unloads' : r.kind === 'amphibious' ? 'lands' : 'moves'} ${Object.keys(names).map((k) => names[k] + ' ' + this.R.units[k].short).join(', ')} ${from === to ? '' : this.B.name(from) + ' → '}${this.B.name(to)}`);
-      return { ok: true, kind: r.kind, warn: r.warn };
+      const path = r.plan.reduce((a, s) => (s.path && s.path.length > a.length ? s.path : a), [from, to]);
+      // a blitz names the territories it passes through
+      const via = path.slice(1, -1).map((x) => this.B.name(x) + ' → ').join('');
+      this.log(`${p} ${r.kind === 'load' ? 'loads' : r.kind === 'unload' ? 'unloads' : r.kind === 'amphibious' ? 'lands' : 'moves'} ${Object.keys(names).map((k) => names[k] + ' ' + this.R.units[k].short).join(', ')} ${from === to ? '' : this.B.name(from) + ' → ' + via}${this.B.name(to)}`);
+      return { ok: true, kind: r.kind, warn: r.warn, path };
     }
     _moveUnit(u, from, to) {
       const a = this.s.terr[from].u;
@@ -1335,8 +1338,18 @@
         for (const u of units) support += this.def(u).supports || 0;
       }
       const enemyHasSub = enemyUnits.some((u) => this.def(u).sub);
+      // a unit with nothing it may hit does not roll: aircraft facing only submarines with no friendly
+      // destroyer, submarines facing only aircraft (so no "hit" ever shows against a unit it cannot touch)
+      const canTarget = (d) => opts.bombard || enemyUnits.some((t) => {
+        const td = this.def(t);
+        if (td.infrastructure) return false;
+        if (d.sub && td.domain === 'air') return false;
+        if (d.domain === 'air' && td.sub && this.R.airNeedsDestroyerVsSub && !destroyer) return false;
+        return true;
+      });
       for (const u of units) {
         const d = this.def(u);
+        if (!canTarget(d)) continue;
         let v = opts.bombard ? d.bombard : (role === 'A' ? d.att : d.def);
         if (role === 'A' && d.supportable && support > 0 && !opts.bombard) { v += 1; support--; }
         if (v <= 0) continue;

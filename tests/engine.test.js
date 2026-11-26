@@ -44,6 +44,18 @@ test('tanks blitz through empty enemy land; infantry cannot pass', () => {
   assert.ok(!g.checkMove('A1', inf, 'B2').ok, 'infantry has 1 move');
 });
 
+test('tanks cannot blitz through occupied land; a move reports the route it took', () => {
+  const g = newGame({ setup: Object.assign(scenario().setup, { B1: { owner: 'Soviet Union', units: { 'Soviet Union': { infantry: 1 } } } }) });
+  g.nextPhase();
+  const tank = ids(g, 'A1', 'tank');
+  assert.equal(g.checkMove('A1', tank, 'B2').ok, false, 'B1 holds an infantry');
+  const g2 = newGame();
+  g2.nextPhase();
+  const r = g2.move('A1', ids(g2, 'A1', 'tank'), 'B2');
+  assert.deepEqual(r.path, ['A1', 'B1', 'B2']);
+  assert.match(g2.s.log[g2.s.log.length - 1].m, /A1 → B1 → B2/);
+});
+
 test('neutral territory is impassable and noncombat cannot enter enemy land', () => {
   const g = newGame();
   g.nextPhase();
@@ -110,6 +122,32 @@ test('subs cannot hit aircraft; aircraft need a destroyer to hit subs', () => {
   assert.equal(E.maxAssignable(R, sea, { any: 0, notAir: 3, notSub: 0 }), 2, 'sub hits skip the fighter');
   assert.equal(E.maxAssignable(R, sea, { any: 0, notAir: 0, notSub: 3 }), 2, 'air hits skip the sub');
   assert.ok(E.validatePicks(R, sea, { any: 0, notAir: 1, notSub: 0 }, [1]));
+});
+
+test('in battle, aircraft facing only subs (no destroyer) and subs facing only aircraft do not roll', () => {
+  // a sea battle on a two-zone board, like the odds simulator's
+  const map = { id: 'm', powers: [{ id: 'A', team: 'Axis' }, { id: 'D', team: 'Allies' }],
+    territories: [{ id: 'L', type: 'land', ipc: 0, adj: ['S'] }, { id: 'S', type: 'sea', adj: ['L', 'S0'] }, { id: 'S0', type: 'sea', adj: ['S'] }] };
+  const battle = (att, def) => {
+    const sc = { ruleset: '1942', playable: ['L', 'S', 'S0'], maxTurns: 3, objectives: [{ type: 'destroy', territories: ['S'] }],
+      powers: { A: { team: 'Axis', controller: 'human', money: 0 }, D: { team: 'Allies', controller: 'ai', money: 0 } },
+      setup: { L: { owner: 'A', units: {} } }, turnOrder: ['A', 'D'] };
+    const g = E.Game.create(map, sc, { seed: 3, force: true });
+    let id = g.s.nextId;
+    for (const [t, n] of Object.entries(def)) for (let j = 0; j < n; j++) g.s.terr.S.u.push({ id: id++, t, o: 'D', ml: 0, h: 0 });
+    for (const [t, n] of Object.entries(att)) for (let j = 0; j < n; j++) g.s.terr.S.u.push({ id: id++, t, o: 'A', ml: 0, h: 0, cm: true, prev: 'S0' });
+    g.s.nextId = id; g.s.phase = 'combat'; g.s.battles = ['S'];
+    g.startBattle('S');
+    let guard = 0;
+    while (g.s.battle && g.s.battle.need === 'roll' && guard++ < 6) g.battleRoll();
+    return g.s.battle || g.s.lastBattle;
+  };
+  const b1 = battle({ fighter: 2 }, { submarine: 1 });
+  assert.ok(!(b1.dice && b1.dice.A || []).some((d) => d.t === 'fighter'), 'fighters roll no dice at a lone sub');
+  const b2 = battle({ submarine: 2 }, { fighter: 1 });
+  assert.ok(!(b2.dice && b2.dice.A || []).some((d) => d.t === 'submarine'), 'subs roll no dice at a lone fighter');
+  const b3 = battle({ fighter: 1, destroyer: 1 }, { submarine: 1 });
+  assert.ok((b3.dice && b3.dice.A || []).some((d) => d.t === 'fighter'), 'with a destroyer, fighters roll');
 });
 
 test('battleship takes two hits; first hit is free by default', () => {

@@ -179,7 +179,7 @@
         if (!here.length) return null;
         const r = g.move(a.from, here, a.to);
         if (!r.ok) return null;
-        return { type: 'move', from: a.from, to: a.to, uids: here, kind: r.kind };
+        return { type: 'move', from: a.from, to: a.to, uids: here, kind: r.kind, path: r.path };
       }
       if (a.type === 'buy') {
         for (const k of Object.keys(a.units)) g.buy(k, a.units[k]);
@@ -554,7 +554,7 @@
           const to = away.find((y) => g.checkMove(z, [u.id], y).ok);
           if (!to) continue;
           const r = g.move(z, [u.id], to);
-          if (r.ok) this._lastMoves.push({ from: z, to, uids: [u.id] });
+          if (r.ok) this._lastMoves.push({ from: z, to, uids: [u.id], path: r.path });
         }
       }
       // garrison: keep a defender in threatened capitals/objectives/factories
@@ -651,7 +651,7 @@
         for (const c of best.units) { used.add(c.u.id); if (flyHome(c.from, c.u, best.to)) back.add(c.u.id); (byFrom[c.from] = byFrom[c.from] || []).push(c.u.id); }
         for (const from of Object.keys(byFrom)) {
           const r = g.move(from, byFrom[from], best.to);
-          if (r.ok) this._lastMoves = (this._lastMoves || []).concat([{ from, to: best.to, uids: byFrom[from] }]);
+          if (r.ok) this._lastMoves = (this._lastMoves || []).concat([{ from, to: best.to, uids: byFrom[from], path: r.path }]);
         }
       }
       this._planAmphibious(used, committed);
@@ -665,7 +665,7 @@
     _planAmphibious(used, committed) {
       const g = this.g;
       const p = g.current();
-      const record = (from, to, uids) => { this._lastMoves = (this._lastMoves || []).concat([{ from, to, uids }]); };
+      const record = (from, to, uids, path) => { this._lastMoves = (this._lastMoves || []).concat([{ from, to, uids, path }]); };
       for (let iter = 0; iter < 3; iter++) {
         let best = null;
         for (const z0 of g.B.playable) {
@@ -725,22 +725,22 @@
         for (const c of loads) (byFrom[c.from] = byFrom[c.from] || []).push(c.u.id);
         for (const from of Object.keys(byFrom)) {
           const r = g.move(from, byFrom[from], z0, { transport: tr.id });
-          if (r.ok) { record(from, z0, byFrom[from]); byFrom[from].forEach((id) => used.add(id)); }
+          if (r.ok) { record(from, z0, byFrom[from], r.path); byFrom[from].forEach((id) => used.add(id)); }
         }
         if (z1 !== z0) {
           const r = g.move(z0, [tr.id], z1);
-          if (r.ok) record(z0, z1, [tr.id]);
+          if (r.ok) record(z0, z1, [tr.id], r.path);
         }
         const cargoIds = g.units(z1).filter((u) => u.tr === tr.id).map((u) => u.id);
         if (cargoIds.length) {
           const r = g.move(z1, cargoIds, to);
-          if (r.ok) { record(z1, to, cargoIds); cargoIds.forEach((id) => used.add(id)); }
+          if (r.ok) { record(z1, to, cargoIds, r.path); cargoIds.forEach((id) => used.add(id)); }
         }
         const ex = {};
         for (const c of extra) if (!used.has(c.u.id)) (ex[c.from] = ex[c.from] || []).push(c.u.id);
         for (const from of Object.keys(ex)) {
           const r = g.move(from, ex[from], to);
-          if (r.ok) { record(from, to, ex[from]); ex[from].forEach((id) => used.add(id)); }
+          if (r.ok) { record(from, to, ex[from], r.path); ex[from].forEach((id) => used.add(id)); }
         }
       }
     }
@@ -753,7 +753,7 @@
       const sit = this._situation();
       const doMove = (from, uids, to) => {
         const r = g.move(from, uids, to);
-        if (r.ok) moves.push({ type: 'shown', from, to, uids });
+        if (r.ok) moves.push({ type: 'shown', from, to, uids, path: r.path });
         return r.ok;
       };
       if (this.opts.valueMoves && V && V.model) this._valueMoves(doMove, D);
@@ -940,7 +940,7 @@
   // queue entries of type 'shown' were already executed during planning; report them one by one
   const baseDo = AI.prototype._do;
   AI.prototype._do = function (a) {
-    if (a.type === 'shown') return { type: 'move', from: a.from, to: a.to, uids: a.uids };
+    if (a.type === 'shown') return { type: 'move', from: a.from, to: a.to, uids: a.uids, path: a.path };
     if (a.type === 'shownPlace') return { type: 'place', unit: a.unit, at: a.at };
     if (a.type === 'noop') return null;
     return baseDo.call(this, a);

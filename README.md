@@ -46,6 +46,9 @@ Deploy from a branch → `main` / root. The player page needs only `index.html`,
 it can't write files without the local server, so commit new puzzles and schedule
 changes and push them.
 
+The footer of both pages shows the site version from `js/version.js` (e.g. `v2026.11.26`), so you
+can tell when an update has reached your browser. Bump it with each change that goes live.
+
 ## Playing
 
 - The puzzle for the player's **local** date is chosen from `schedule.json`.

@@ -395,7 +395,7 @@
     pushUndo();
     const r = g.move(from, ids, to);
     if (!r.ok) { S.undo.pop(); toast(r.error); return; }
-    S.mv.arrows([{ path: chk.plan[0].path }]);
+    S.mv.arrows([{ path: r.path || chk.plan[0].path }]);
     setTimeout(() => S.mv.arrows([]), 900);
     if (left.length) toast(`${unitsText(ids)} went; ${unitsText(left)} can't ${kind === 'attack' ? 'join that attack' : 'make that move'} and stay${left.length === 1 ? 's' : ''} in ${S.mv.T[from].name}`, 4500);
     clearSel(true);
@@ -740,7 +740,8 @@
         if (!a) break;
         save();
         if (a.type === 'move') {
-          S.mv.arrows([{ path: [a.from, a.to], cls: 'enemy' }]);
+          // the route the units actually took, so a blitz never looks as if it crossed occupied land
+          S.mv.arrows([{ path: a.path || [a.from, a.to], cls: 'enemy' }]);
           $('bannerText').textContent = `${p}: ${S.mv.T[a.from].name} → ${S.mv.T[a.to].name}`;
         }
         if (g.s.battle && g.s.battle.hold) openBattle();
