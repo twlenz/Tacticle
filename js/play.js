@@ -313,9 +313,9 @@
    * Clicking one of your unit icons: first click selects every unit of that type there,
    * each further click on it drops one, and clicking another type adds all of that type.
    */
-  function chipSelect(id, t) {
+  function chipSelect(id, t, aboard) {
     const groups = groupsAt(id);
-    const mine = groups.filter((gr) => gr.t === t && !gr.cargo);
+    const mine = groups.filter((gr) => gr.t === t && !!gr.cargo === !!aboard);
     if (!mine.length) return false;
     if (!S.sel || S.sel.from !== id) {
       const n = {};
@@ -369,7 +369,7 @@
     }
     if (ph !== 'combatMove' && ph !== 'noncombatMove') return;
     // a click on one of your own movable unit icons always adjusts the selection
-    if (chip && chip.o === g.current() && chipSelect(id, chip.t)) return;
+    if (chip && chip.o === g.current() && chipSelect(id, chip.t, chip.aboard)) return;
     // otherwise a click on the territory: move there if it is a destination...
     if (S.sel && id !== S.sel.from && (S.dest[id] || S.unload[id] || S.part[id])) return doMove(id);
     // ...or select everything there (a second click clears it)
@@ -415,8 +415,8 @@
     const us = g.units(id);
     if (us.length) {
       const c = {};
-      for (const u of us) { const k = u.o + '|' + u.t; c[k] = (c[k] || 0) + 1; }
-      html += '<div>' + Object.keys(c).map((k) => { const [p, ty] = k.split('|'); return `<span class="swatch" style="background:${color(p)}"></span> ${c[k]} ${esc(uname(ty))}`; }).join('<br>') + '</div>';
+      for (const u of us) { const k = u.o + '|' + u.t + (u.tr ? '|aboard' : ''); c[k] = (c[k] || 0) + 1; }
+      html += '<div>' + Object.keys(c).map((k) => { const [p, ty, ab] = k.split('|'); return `<span class="swatch" style="background:${color(p)}"></span> ${c[k]} ${esc(uname(ty))}${ab ? ' aboard' : ''}`; }).join('<br>') + '</div>';
     }
     const kind = S.dest[id] || S.unload[id];
     if (kind) html += `<div class="hint">Click: ${kindText(kind)}</div>`;
@@ -460,16 +460,13 @@
     for (const id of Object.keys(g.s.terr)) {
       owners[id] = g.s.terr[id].o;
       const c = {};
-      const cargo = {};
       for (const u of g.s.terr[id].u) {
-        if (u.tr) { cargo[u.o] = (cargo[u.o] || 0) + 1; continue; }
-        const k = u.o + '|' + u.t + '|' + (u.h ? 1 : 0);
-        if (!c[k]) c[k] = { o: u.o, t: u.t, n: 0, dmg: !!u.h, ids: [] };
+        const k = u.o + '|' + u.t + '|' + (u.h ? 1 : 0) + (u.tr ? '|aboard' : '');
+        if (!c[k]) c[k] = { o: u.o, t: u.t, n: 0, dmg: !!u.h, ids: [], aboard: !!u.tr };
         c[k].n++;
         c[k].ids.push(u.id);
       }
       const list = Object.values(c);
-      for (const ch of list) if (ch.t === 'transport' && cargo[ch.o]) { ch.cargo = cargo[ch.o]; cargo[ch.o] = 0; }
       if (sel === id) {
         const picked = new Set(selIds());
         for (const ch of list) { const k = ch.ids.filter((x) => picked.has(x)).length; if (k) ch.sel = k; }
@@ -495,10 +492,21 @@
     const g = G();
     const p = g.current();
     const parts = [];
-    // objectives
-    // on a phone, picked units and the move controls come first, right under the map
-    const selFirst = S.sel && humanTurn() && !S.retreat && innerWidth <= 760;
-    if (selFirst) parts.push(phasePanel());
+    // what to do now comes first, under the phase's name; objectives and the log follow
+    if (S.mode === 'free' && !S.busy) {
+      parts.push('<div class="h">Free play</div><p class="hint">Practice on today\'s setup. It does not change your result or stats.</p><div class="actions"><button id="pFreeReset">↺ Reset board</button><button id="pDaily">Back to my result</button></div>');
+    }
+    if (g.phase === 'gameOver') {
+      parts.push(`<div class="phase-title">Result</div><p><b>${verdict(g.s.result.won)}</b> — ${esc(g.s.result.reason)}</p><div class="actions"><button class="primary" id="pResult">Share result</button>${!S.test && S.mode === 'daily' ? '<button id="pFree">Free play</button>' : ''}</div>`);
+      if (S.test) parts.push('<div class="actions"><button id="pRestart">Restart test</button></div>');
+    } else if (S.retreat) {
+      const from = S.mv.T[S.retreat.from].name;
+      parts.push(`<div class="phase-title">Retreat from ${esc(from)}</div><p>Click a highlighted territory on the map. Every unit that can retreat goes there together${G().units(S.retreat.from).some((u) => u.o === G().s.battle.att && u.amph) ? '; units that landed from the sea cannot retreat and fight on' : ''}.</p><div class="actions"><button id="pRetBack">Back to the battle</button></div>`);
+    } else if (!humanTurn()) {
+      parts.push(`<div class="phase-title">${esc(p)}'s turn</div><p class="hint">The computer is moving…</p>`);
+    } else {
+      parts.push(phasePanel());
+    }
     const st = g.objectiveStatus();
     const total = g.objectiveTargets().filter((t) => t.type !== 'hold').length;
     parts.push(`<div class="h">${asOpponent() ? 'The player side wins by' : 'Objectives'}${g.objectivesNeeded() < total ? ` (need ${g.objectivesNeeded()})` : ''}</div><ul class="objlist">${objectiveRows(st, false)}</ul>`);
@@ -508,21 +516,6 @@
     const foes = Object.keys(g.s.powers).filter((q) => g.s.powers[q].ai && g.team(q) !== g.humanTeam());
     const stop = !opp.length && foes.length && !asOpponent() ? ` If you fall short, ${esc(foes.join(' and '))} win${foes.length === 1 ? 's' : ''}.` : '';
     parts.push(`<div class="hint" style="margin-top:4px">${winCheckText()}${stop}</div>`);
-
-    if (S.mode === 'free' && !S.busy) {
-      parts.push('<div class="h">Free play</div><p class="hint">Practice on today\'s setup. It does not change your result or stats.</p><div class="actions"><button id="pFreeReset">↺ Reset board</button><button id="pDaily">Back to my result</button></div>');
-    }
-    if (g.phase === 'gameOver') {
-      parts.push(`<div class="h">Result</div><p><b>${verdict(g.s.result.won)}</b> — ${esc(g.s.result.reason)}</p><div class="actions"><button class="primary" id="pResult">Share result</button>${!S.test && S.mode === 'daily' ? '<button id="pFree">Free play</button>' : ''}</div>`);
-      if (S.test) parts.push('<div class="actions"><button id="pRestart">Restart test</button></div>');
-    } else if (S.retreat) {
-      const from = S.mv.T[S.retreat.from].name;
-      parts.push(`<div class="h">Retreat from ${esc(from)}</div><p>Click a highlighted territory on the map. Every unit that can retreat goes there together${G().units(S.retreat.from).some((u) => u.o === G().s.battle.att && u.amph) ? '; units that landed from the sea cannot retreat and fight on' : ''}.</p><div class="actions"><button id="pRetBack">Back to the battle</button></div>`);
-    } else if (!humanTurn()) {
-      parts.push(`<div class="h">${esc(p)}'s turn</div><p class="hint">The computer is moving…</p>`);
-    } else if (!selFirst) {
-      parts.push(phasePanel());
-    }
     parts.push('<div class="log" id="log">' + g.s.log.slice(-40).reverse().map((l) => `<div>${esc(l.m)}</div>`).join('') + '</div>');
     if (S.test && g.phase !== 'gameOver') parts.push('<div class="actions"><button class="small" id="pRestart">Restart test</button></div>');
     $('panel').innerHTML = parts.join('');
@@ -561,9 +554,10 @@
     const p = g.current();
     const h = [];
     const undoBtn = `<button id="pUndo" ${canUndo() ? '' : 'disabled'}>↶ Undo</button>`;
+    h.push(`<div class="phase-title">${E.PHASE_NAMES[g.phase]}</div>`);
     if (g.phase === 'purchase') {
       const money = g.s.powers[p].money;
-      h.push(`<div class="h">Buy units · ${money - g.spent()} of ${money} IPC left</div>`);
+      h.push(`<div class="h">${money - g.spent()} of ${money} IPC left</div>`);
       if (S.sc.purchase === false) h.push('<p class="hint">No purchasing in this puzzle.</p>');
       else {
         const fac = g.factories();
@@ -576,10 +570,9 @@
             <span class="stepper"><button data-buy="${t}" data-d="-1" aria-label="Buy one fewer ${esc(d.name)}">−</button><output>${n}</output><button data-buy="${t}" data-d="1" aria-label="Buy one more ${esc(d.name)}">+</button></span></div>`;
         }).join('') + '</div>');
       }
-      h.push(`<div class="actions phasebar"><button class="primary" id="pNext">Done buying →</button></div>`);
+      h.push(`<div class="actions phasebar"><button class="primary" id="pNext">End Buying</button></div>`);
     } else if (g.phase === 'combatMove' || g.phase === 'noncombatMove') {
       const combat = g.phase === 'combatMove';
-      h.push(`<div class="h">${combat ? 'Combat move' : 'Noncombat move'}</div>`);
       if (!S.sel) {
         h.push(`<p class="hint">${combat
           ? 'Tap a unit icon to pick those units (again: one fewer), or a territory for all of them. Then tap where they go; red outlines are attacks.'
@@ -591,17 +584,15 @@
         if (shared.length) h.push(`<p class="picknote">Your ships in ${shared.map((id) => esc(S.mv.T[id].name)).join(', ')} share the sea with enemy warships. They fight there unless you move them away.</p>`);
       }
       if (S.sel) h.push(selPanel());
-      h.push(`<div class="actions phasebar">${undoBtn}<button class="primary" id="pNext">${combat ? 'Done moving → battles' : 'Done moving →'}</button></div>`);
+      h.push(`<div class="actions phasebar">${undoBtn}<button class="primary" id="pNext">${combat ? 'End Combat Moves' : 'End Noncombat Moves'}</button></div>`);
     } else if (g.phase === 'combat') {
       const ready = g.readyBattles();
-      h.push('<div class="h">Battles</div>');
       if (!g.s.battles.length) h.push('<p class="hint">All battles fought.</p>');
       h.push('<div class="list">' + g.s.battles.map((id) => `<div class="urow"><span class="nm">⚔️ ${esc(S.mv.T[id].name)}</span><button class="small ${ready.includes(id) ? 'primary' : ''}" data-fight="${id}" ${ready.includes(id) ? '' : 'disabled'}>Fight</button></div>`).join('') + '</div>');
-      h.push(`<div class="actions phasebar"><button class="primary" id="pNext" ${g.s.battles.length ? 'disabled' : ''}>Continue →</button></div>`);
+      h.push(`<div class="actions phasebar"><button class="primary" id="pNext" ${g.s.battles.length ? 'disabled title="Fight every battle first"' : ''}>End Battling</button></div>`);
     } else if (g.phase === 'place') {
       const left = g.toPlace();
       const types = Object.keys(left);
-      h.push('<div class="h">Place new units</div>');
       if (!types.length) h.push('<p class="hint">Nothing to place.</p>');
       else {
         if (!S.placeType || !left[S.placeType]) S.placeType = types[0];
@@ -609,7 +600,7 @@
           types.map((t) => `<div class="urow" style="${S.placeType === t ? 'border-color:var(--accent)' : ''}"><span class="ic" style="background:${color(p)}">${I.svg(t, 22, '#fff')}</span><span class="nm">${esc(uname(t))}</span><b>${left[t]}</b><button class="small" data-ptype="${t}">${S.placeType === t ? 'Selected' : 'Select'}</button></div>`).join('') + '</div>');
         h.push('<div class="actions"><button id="pAuto">Auto-place</button></div>');
       }
-      h.push(`<div class="actions phasebar">${undoBtn}<button class="primary" id="pNext">End turn ✓</button></div>`);
+      h.push(`<div class="actions phasebar">${undoBtn}<button class="primary" id="pNext">End Unit Placement</button></div>`);
     }
     return h.join('');
   }
@@ -679,15 +670,15 @@
       const body = battles.length
         ? `<p>You will fight ${battles.length === 1 ? 'this battle' : `these ${battles.length} battles`}:</p><ul class="blines">${battles.map((id) => `<li>⚔️ ${esc(S.mv.T[id].name)}</li>`).join('')}</ul><p class="hint">Moves can't be changed once the dice roll.</p>`
         : '<p class="hint">No attacks are planned this turn.</p>';
-      if (!await ask(battles.length ? 'Ready for battle?' : 'End combat moves?', body, battles.length ? 'Fight ⚔️' : 'Continue', 'Back to moves')) return;
+      if (!await ask(battles.length ? 'Ready for battle?' : 'End combat moves?', body, battles.length ? 'Fight ⚔️' : 'End Combat Moves', 'Back to moves')) return;
     }
     if (g.phase === 'noncombatMove') {
       const lost = g.strandedAir();
-      if (lost.length && !await ask('Aircraft cannot land', `<p>${lost.length} aircraft ${lost.length === 1 ? 'has' : 'have'} no friendly territory or carrier to land on and will be lost.</p>`, 'End movement', 'Back to moves')) return;
+      if (lost.length && !await ask('Aircraft cannot land', `<p>${lost.length} aircraft ${lost.length === 1 ? 'has' : 'have'} no friendly territory or carrier to land on and will be lost.</p>`, 'End Noncombat Moves', 'Back to moves')) return;
     }
     if (g.phase === 'place') {
       const left = Object.values(g.s.buy).reduce((a, b) => a + b, 0);
-      if (left && !await ask('Units not placed', `<p>${left} unit${left === 1 ? ' is' : 's are'} not placed. They wait until your next turn.</p>`, 'End turn', 'Keep placing')) return;
+      if (left && !await ask('Units not placed', `<p>${left} unit${left === 1 ? ' is' : 's are'} not placed. They wait until your next turn.</p>`, 'End Unit Placement', 'Keep placing')) return;
       g.clearBorn();
     }
     const r = g.nextPhase();
@@ -713,6 +704,7 @@
       const noRoom = !Object.keys(g.factories()).length;
       if (g.phase === 'purchase' && (S.sc.purchase === false || noRoom || (pw.money < 3 && !Object.keys(pw.unplaced || {}).length))) {
         g.commitPurchase(); g.nextPhase(); save(); render();
+        toast(noRoom ? 'No factory in play, so there is nothing to buy this turn' : 'Not enough IPCs to buy anything this turn');
       }
       if (g.phase === 'combat' && !g.s.battle && g.s.battles.length === 1 && (g.s.battleCount || 1) === 1) fight(g.s.battles[0]);
       else if (g.phase === 'combat' && !g.s.battle && g.s.battles.length) toast('Pick your next battle');
@@ -1302,14 +1294,14 @@
       <p>Each day brings a small battle from the Second World War. Take the objectives before the turn limit, playing against the computer. Combat works like the classic board game: each unit rolls a die and hits on a roll at or under its attack (or defence) value.</p>
       <h3>Your turn</h3>
       <ol class="hint" style="padding-left:18px">
-        <li><b>Buy</b> units with IPCs. They appear at your factories at the end of the turn.</li>
-        <li><b>Combat move</b>: tap your units, then a highlighted territory. Red outline = attack.</li>
-        <li><b>Battles</b>: you roll, then the defender. Hits are outlined in red and stay until the round ends (defenders still fire back). Tap your units to change which are lost, then press the attack or retreat.</li>
-        <li><b>Noncombat move</b>: units that did not fight may reposition; aircraft must land.</li>
-        <li><b>Place</b> the units you bought, then end your turn. You collect income from your territories.</li>
+        <li><b>Buying</b>: spend IPCs on units. They appear at your factories at the end of the turn. (Some puzzles have no buying.)</li>
+        <li><b>Combat Moves</b>: tap your units, then a highlighted territory. Red outline = attack.</li>
+        <li><b>Battling</b>: you roll, then the defender. Hits are outlined in red and stay until the round ends (defenders still fire back). Tap your units to change which are lost, then press the attack or retreat.</li>
+        <li><b>Noncombat Moves</b>: units that did not fight may reposition; aircraft must land.</li>
+        <li><b>Unit Placement</b>: place the units you bought. Ending it ends your turn, and you collect income.</li>
       </ol>
       <h3>Controls</h3>
-      <p class="hint">Tap a unit icon to select those units; tap it again to drop one; tap another icon to add that type too. Tap the territory itself to select everything (again to clear). −/+ in the panel fine-tune counts. Tap a highlighted territory to move there. Load infantry or tanks by moving them into a sea zone with your transport; select the sea zone and tap a coast to unload. Drag to pan, pinch or scroll to zoom. <kbd>Esc</kbd> cancels, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes a move.</p>
+      <p class="hint">Tap a unit icon to select those units; tap it again to drop one; tap another icon to add that type too. Tap the territory itself to select everything (again to clear). −/+ in the panel fine-tune counts. Tap a highlighted territory to move there. Load infantry or tanks by moving them into a sea zone with your transport. Units aboard show as dashed icons next to their transport: tap them (or the transport) and then a coast to unload. Drag to pan, pinch or scroll to zoom. <kbd>Esc</kbd> cancels, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes a move.</p>
       <h3>Units (${esc(R.name)})</h3>
       <table class="hint" style="width:100%;border-collapse:collapse"><tr><th></th><th align="left">Unit</th><th>Cost</th><th>Att</th><th>Def</th><th>Move</th></tr>${rows}</table>
       <p class="hint">${esc(R.summary)}</p>

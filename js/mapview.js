@@ -228,7 +228,7 @@
     _chipAt(ev) {
       let t = ev.target;
       while (t && t !== this.svg) {
-        if (t.classList && t.classList.contains('chip')) return { t: t.getAttribute('data-t'), o: t.getAttribute('data-o') };
+        if (t.classList && t.classList.contains('chip')) return { t: t.getAttribute('data-t'), o: t.getAttribute('data-o'), aboard: t.getAttribute('data-c') === '1' };
         t = t.parentNode;
       }
       return null;
@@ -258,6 +258,8 @@
           if (!active) cls += ' inactive';
           if (s.highlight && s.highlight[t.id]) cls += ' hl-' + s.highlight[t.id];
           if (s.selected === t.id) cls += ' selected';
+          // sea zones to capture or clear get their own tint (land objectives keep their owner's colour)
+          if (t.type === 'sea' && s.objectives && s.objectives[t.id] && s.objectives[t.id] !== 'enemy') cls += ' obj';
           e.setAttribute('class', cls);
           if (t.type !== 'sea') {
             const o = s.owners ? s.owners[t.id] : t.owner;
@@ -308,7 +310,9 @@
         const bw = t.bbox[2] - t.bbox[0], bh = t.bbox[3] - t.bbox[1];
         if (t.type !== 'sea' && Math.max(bw, bh) < 18 * k) el('circle', { cx, cy, r: 16 * k, 'data-id': id, class: 'hit' }, this.gHit);
         const units = (s.units && s.units[id]) || [];
-        const chips = units.slice().sort((a, b) => (a.o === b.o ? 0 : a.o < b.o ? -1 : 1) || ORDER.indexOf(a.t) - ORDER.indexOf(b.t));
+        // units aboard transports sit right after the transports that carry them
+        const rank = (c) => (c.aboard ? ORDER.indexOf('transport') + 0.5 : ORDER.indexOf(c.t));
+        const chips = units.slice().sort((a, b) => (a.o === b.o ? 0 : a.o < b.o ? -1 : 1) || rank(a) - rank(b));
         const size = 27 * ku * scale;
         const per = Math.min(chips.length, chips.length > 6 ? 4 : 3) || 1;
         const rows = Math.ceil(chips.length / per);
@@ -325,15 +329,19 @@
           const inRow = Math.min(per, chips.length - r * per);
           const x = cx - (inRow * (size + 2 * k)) / 2 + col * (size + 2 * k);
           const y = y0 + r * (size + 2 * k);
-          const g = el('g', { transform: `translate(${x},${y})`, class: 'chip' + (c.dim ? ' dim' : '') + (c.sel ? ' sel' : ''), 'data-id': id, 'data-t': c.t, 'data-o': c.o }, this.gUnits);
+          const g = el('g', { transform: `translate(${x},${y})`, class: 'chip' + (c.dim ? ' dim' : '') + (c.sel ? ' sel' : '') + (c.aboard ? ' aboard' : ''), 'data-id': id, 'data-t': c.t, 'data-o': c.o, 'data-c': c.aboard ? '1' : '0' }, this.gUnits);
           el('rect', { width: size, height: size, rx: size * 0.22, fill: this.colors[c.o] || '#777', class: 'chipbg' }, g);
+          // marks stay inside the icon's own square, so they never cover the next icon
+          const line = Math.min(size * 0.12, 2.5 * k);
+          if (c.aboard) el('rect', { x: line * 1.2, y: line * 1.2, width: size - line * 2.4, height: size - line * 2.4, rx: size * 0.16, class: 'aboardmark', 'stroke-width': line * 0.7, 'stroke-dasharray': `${line * 1.6} ${line * 1.1}` }, g);
           const ic = el('g', { transform: `translate(${size / 2},${size / 2 - size * 0.05}) scale(${size / 30})`, fill: '#fff', color: '#fff' }, g);
           ic.innerHTML = (root.TacticleIcons && root.TacticleIcons.ICON[c.t]) || '';
+          if (c.sel) el('rect', { x: line / 2, y: line / 2, width: size - line, height: size - line, rx: size * 0.2, class: 'selring', 'stroke-width': line }, g);
           if (c.n > 1 || c.sel) {
             const lbl = c.sel ? `${c.sel}/${c.n}` : String(c.n);
-            const bw2 = size * (0.32 + 0.16 * lbl.length);
-            el('rect', { x: size - bw2 * 0.75, y: size - size * 0.42, width: bw2, height: size * 0.46, rx: size * 0.2, class: 'cnt' + (c.sel ? ' on' : '') }, g);
-            const tt = el('text', { x: size - bw2 * 0.75 + bw2 / 2, y: size - size * 0.07, 'font-size': size * 0.4, class: 'cnttext' }, g);
+            const bw2 = Math.min(size, size * (0.32 + 0.16 * lbl.length));
+            el('rect', { x: size - bw2, y: size - size * 0.44, width: bw2, height: size * 0.44, rx: size * 0.2, class: 'cnt' + (c.sel ? ' on' : '') }, g);
+            const tt = el('text', { x: size - bw2 / 2, y: size - size * 0.09, 'font-size': size * (lbl.length > 3 ? 0.32 : 0.38), class: 'cnttext' }, g);
             tt.textContent = lbl;
           }
           if (c.cargo) {

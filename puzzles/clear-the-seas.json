@@ -1,0 +1,312 @@
+{
+  "format": "tacticle-scenario",
+  "version": 1,
+  "id": "clear-the-seas",
+  "title": "Clear the Seas",
+  "description": "As Germany, clear enemies from nearby sea zones at the end of your second turn.",
+  "author": "Tommy",
+  "map": "world_war_ii_v5_1942_second_edition",
+  "ruleset": "1942",
+  "difficulty": "medium",
+  "playable": [
+    "10_sea_zone",
+    "11_sea_zone",
+    "12_sea_zone",
+    "13_sea_zone",
+    "14_sea_zone",
+    "15_sea_zone",
+    "16_sea_zone",
+    "17_sea_zone",
+    "18_sea_zone",
+    "1_sea_zone",
+    "22_sea_zone",
+    "23_sea_zone",
+    "24_sea_zone",
+    "2_sea_zone",
+    "32_sea_zone",
+    "33_sea_zone",
+    "34_sea_zone",
+    "3_sea_zone",
+    "4_sea_zone",
+    "5_sea_zone",
+    "6_sea_zone",
+    "7_sea_zone",
+    "8_sea_zone",
+    "9_sea_zone",
+    "algeria",
+    "baltic_states",
+    "brazil",
+    "bulgaria_romania",
+    "eastern_canada",
+    "eastern_united_states",
+    "finland",
+    "france",
+    "germany",
+    "gibraltar",
+    "italy",
+    "morocco",
+    "northwestern_europe",
+    "norway",
+    "poland",
+    "southern_europe",
+    "united_kingdom"
+  ],
+  "maxTurns": 2,
+  "winCheck": "turn",
+  "income": true,
+  "purchase": true,
+  "powers": {
+    "Germany": {
+      "team": "Axis",
+      "controller": "human",
+      "money": 0
+    },
+    "United Kingdom": {
+      "team": "Allies",
+      "controller": "ai",
+      "money": 0
+    },
+    "Soviet Union": {
+      "team": "Allies",
+      "controller": "ai",
+      "money": 0
+    },
+    "United States": {
+      "team": "Allies",
+      "controller": "ai",
+      "money": 0
+    }
+  },
+  "turnOrder": [
+    "Soviet Union",
+    "Germany",
+    "United Kingdom",
+    "United States"
+  ],
+  "setup": {
+    "5_sea_zone": {
+      "units": {
+        "Germany": {
+          "submarine": 2,
+          "transport": 1,
+          "destroyer": 1
+        }
+      }
+    },
+    "7_sea_zone": {
+      "units": {
+        "United Kingdom": {
+          "battleship": 1,
+          "transport": 1,
+          "submarine": 1
+        }
+      }
+    },
+    "4_sea_zone": {
+      "units": {
+        "Soviet Union": {
+          "submarine": 1,
+          "destroyer": 1
+        }
+      }
+    },
+    "9_sea_zone": {
+      "units": {
+        "Germany": {
+          "submarine": 2
+        }
+      }
+    },
+    "10_sea_zone": {
+      "units": {
+        "United Kingdom": {
+          "transport": 1,
+          "destroyer": 1,
+          "cruiser": 1
+        }
+      }
+    },
+    "11_sea_zone": {
+      "units": {
+        "United States": {
+          "transport": 2,
+          "destroyer": 2
+        }
+      }
+    },
+    "14_sea_zone": {
+      "units": {
+        "United Kingdom": {
+          "cruiser": 1,
+          "destroyer": 1
+        }
+      }
+    },
+    "15_sea_zone": {
+      "units": {
+        "Germany": {
+          "transport": 1,
+          "battleship": 1
+        }
+      }
+    },
+    "17_sea_zone": {
+      "units": {
+        "United Kingdom": {
+          "destroyer": 1
+        }
+      }
+    },
+    "france": {
+      "units": {
+        "Germany": {
+          "infantry": 1
+        }
+      },
+      "owner": "Germany"
+    },
+    "germany": {
+      "units": {
+        "Germany": {
+          "bomber": 1,
+          "fighter": 1,
+          "infantry": 1
+        }
+      },
+      "owner": "Germany"
+    },
+    "northwestern_europe": {
+      "units": {
+        "Germany": {
+          "fighter": 1,
+          "infantry": 1
+        }
+      },
+      "owner": "Germany"
+    },
+    "italy": {
+      "units": {
+        "Germany": {
+          "infantry": 1
+        }
+      },
+      "owner": "Germany"
+    },
+    "bulgaria_romania": {
+      "units": {
+        "Germany": {
+          "infantry": 2,
+          "fighter": 1
+        }
+      },
+      "owner": "Germany"
+    },
+    "poland": {
+      "units": {
+        "Germany": {
+          "fighter": 1
+        }
+      },
+      "owner": "Germany"
+    },
+    "baltic_states": {
+      "units": {
+        "Germany": {
+          "infantry": 1
+        }
+      },
+      "owner": "Germany"
+    },
+    "finland": {
+      "units": {
+        "Germany": {
+          "infantry": 1
+        }
+      },
+      "owner": "Germany"
+    },
+    "norway": {
+      "units": {
+        "Germany": {
+          "infantry": 1,
+          "fighter": 1
+        }
+      },
+      "owner": "Germany"
+    },
+    "eastern_united_states": {
+      "units": {
+        "United States": {
+          "tank": 1,
+          "infantry": 2,
+          "artillery": 1,
+          "fighter": 1,
+          "bomber": 1
+        }
+      },
+      "owner": "United States"
+    },
+    "algeria": {
+      "units": {
+        "Germany": {
+          "infantry": 1
+        }
+      },
+      "owner": "Germany"
+    },
+    "eastern_canada": {
+      "units": {
+        "United Kingdom": {
+          "tank": 1
+        }
+      },
+      "owner": "United Kingdom"
+    },
+    "united_kingdom": {
+      "units": {
+        "United Kingdom": {
+          "infantry": 2,
+          "artillery": 1,
+          "tank": 1,
+          "fighter": 2,
+          "bomber": 1
+        }
+      },
+      "owner": "United Kingdom"
+    },
+    "southern_europe": {
+      "owner": "Germany"
+    },
+    "gibraltar": {
+      "owner": "United Kingdom"
+    },
+    "morocco": {
+      "owner": "Germany"
+    },
+    "brazil": {
+      "owner": "United States"
+    }
+  },
+  "objectives": [
+    {
+      "type": "destroy",
+      "territories": [
+        "17_sea_zone",
+        "15_sea_zone",
+        "14_sea_zone",
+        "13_sea_zone",
+        "9_sea_zone",
+        "8_sea_zone",
+        "7_sea_zone",
+        "6_sea_zone",
+        "5_sea_zone"
+      ]
+    }
+  ],
+  "checkTurn": 2,
+  "balance": {
+    "winRate": 0.767,
+    "games": 30,
+    "ai": 2
+  }
+}

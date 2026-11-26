@@ -15,8 +15,8 @@
 
   const PHASES = ['purchase', 'combatMove', 'combat', 'noncombatMove', 'place'];
   const PHASE_NAMES = {
-    purchase: 'Purchase', combatMove: 'Combat Move', combat: 'Battles',
-    noncombatMove: 'Noncombat Move', place: 'Place Units', gameOver: 'Game Over',
+    purchase: 'Buying', combatMove: 'Combat Moves', combat: 'Battling',
+    noncombatMove: 'Noncombat Moves', place: 'Unit Placement', gameOver: 'Game Over',
   };
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
@@ -465,7 +465,7 @@
     // ---------------- turn flow ----------------
     _startTurn() {
       const p = this.current();
-      this.s.phase = 'purchase';
+      this.s.phase = this.sc.purchase === false ? 'combatMove' : 'purchase';
       this.s.buy = {};
       this.s.battles = [];
       this.s.battle = null;
@@ -506,6 +506,10 @@
       }
       if (s.phase === 'noncombatMove') {
         const lost = this.crashAir();
+        if (this.sc.purchase === false && !Object.values(s.buy || {}).some((n) => n > 0) && !Object.values(s.powers[this.current()].unplaced || {}).some((n) => n > 0)) {
+          this.endTurn();
+          return { ok: true, lost };
+        }
         s.phase = 'place';
         return { ok: true, lost };
       }

@@ -467,15 +467,14 @@
       const us = (A.sc.setup[t.id] && A.sc.setup[t.id].units) || {};
       if (!play.has(t.id)) continue;
       const list = [];
-      const cargo = {};
       for (const p of Object.keys(us)) {
         for (const k of Object.keys(us[p])) {
-          if (t.type === 'sea' && R().units[k] && R().units[k].domain === 'land') { cargo[p] = (cargo[p] || 0) + us[p][k]; continue; }
-          const sel = A.msel && A.msel.from === t.id ? A.msel.n[p + '|' + k] || 0 : 0;
-          list.push({ o: p, t: k, n: us[p][k], dim: !R().units[k], sel: sel || undefined });
+          // land units in a sea zone are aboard that power's transports
+          const aboard = t.type === 'sea' && R().units[k] && R().units[k].domain === 'land';
+          const sel = !aboard && A.msel && A.msel.from === t.id ? A.msel.n[p + '|' + k] || 0 : 0;
+          list.push({ o: p, t: k, n: us[p][k], dim: !R().units[k], sel: sel || undefined, aboard });
         }
       }
-      for (const c of list) if (c.t === 'transport' && cargo[c.o]) { c.cargo = cargo[c.o]; cargo[c.o] = 0; }
       units[t.id] = list;
     }
     const objectives = {};
@@ -913,18 +912,30 @@
   /** IPCs per turn: the territories' value (the default), or an amount the author sets. */
   function incomeFields(p, pw, i, capitalOptions) {
     const land = landIncomeOf(p);
-    const set = pw.income != null;
+    const base = pw.income != null ? pw.income : land;
     const off = A.sc.income === false;
+    // the base starts as what the territories in play give; a different number is the author's own
     const note = off
-      ? `<span class="warnink">Income is off for this puzzle, so nobody collects any.</span> <button class="small link" data-incon>Turn income on</button>`
-      : !set ? ''
-        : pw.incomeFixed ? `${pw.income} every turn, whatever it captures or loses.`
-          : `${pw.income} to start. Captured territories add their value, lost ones take it away.`;
-    return `${field('IPCs per turn', `<select id="pw${i}inc" data-pw="${esc(p)}" data-k="incomeMode"><option value="">Territories (${land})</option><option value="set" ${set ? 'selected' : ''}>Set amount</option></select>`)}
-      ${set ? field('Amount per turn', `<input type="number" min="0" id="pw${i}amt" data-pw="${esc(p)}" data-k="income" value="${pw.income}">`) : ''}
+      ? `<span class="warnink">Income is off for this puzzle.</span> <button class="small link" data-incon>Turn income on</button>`
+      : pw.income != null && pw.income !== land ? `Territories in play give ${land}. <button class="small link" data-incbase="${esc(p)}">Use ${land}</button>` : '';
+    return `${field('Base IPCs per turn', `<input type="number" min="0" id="pw${i}inc" data-pw="${esc(p)}" data-k="income" value="${base}">`)}
       ${field('Capital', `<select id="pw${i}cap" data-pw="${esc(p)}" data-k="capital">${capitalOptions}</select>`)}
-      ${set ? `<label class="chk" style="grid-column:1/-1;margin:2px 0"><input type="checkbox" data-pw="${esc(p)}" data-k="incomeFixed" ${pw.incomeFixed ? 'checked' : ''}> The same every turn, whatever is captured or lost</label>` : ''}
+      <label class="chk" style="grid-column:1/-1;margin:4px 0 0"><input type="checkbox" data-pw="${esc(p)}" data-k="incomeMoves" ${pw.incomeFixed ? '' : 'checked'}> Captured or lost territories change income</label>
       ${note ? `<p class="hint" style="grid-column:1/-1;margin:2px 0 0">${note}</p>` : ''}`;
+  }
+  /**
+   * Stores a power's income from its card: nothing when it is the territories' value and changes with
+   * them (the default); otherwise the base amount, and incomeFixed when captures should not change it.
+   */
+  function setIncome(p, card) {
+    const pw = A.sc.powers[p];
+    const box = card.querySelector('[data-k="income"]');
+    const moves = card.querySelector('[data-k="incomeMoves"]').checked;
+    const land = landIncomeOf(p);
+    const base = box.value === '' ? land : Math.max(0, Math.round(+box.value || 0));
+    if (base === land && moves) { delete pw.income; delete pw.incomeFixed; return; }
+    pw.income = base;
+    if (moves) delete pw.incomeFixed; else pw.incomeFixed = true;
   }
   function powersPanel(el) {
     const sc = A.sc;
@@ -947,9 +958,7 @@
       const p = c.dataset.pw, k = c.dataset.k;
       if (k === 'money') sc.powers[p].money = Math.max(0, +c.value || 0);
       // a set amount starts from what the territories give now, so choosing it changes nothing until edited
-      else if (k === 'incomeMode') { if (c.value === 'set') sc.powers[p].income = landIncomeOf(p); else { delete sc.powers[p].income; delete sc.powers[p].incomeFixed; } }
-      else if (k === 'income') sc.powers[p].income = Math.max(0, Math.round(+c.value || 0));
-      else if (k === 'incomeFixed') { if (c.checked) sc.powers[p].incomeFixed = true; else delete sc.powers[p].incomeFixed; }
+      else if (k === 'income' || k === 'incomeMoves') setIncome(p, c.closest('.objbox'));
       else if (k === 'capital') { if (c.value === '') delete sc.powers[p].capital; else sc.powers[p].capital = c.value === '__none' ? null : c.value; }
       else sc.powers[p][k] = c.value;
     }));
@@ -968,6 +977,10 @@
     });
     $('pwAdd').onchange = (e) => { if (e.target.value) edit(() => ensurePower(e.target.value)); };
     el.querySelectorAll('[data-incon]').forEach((b) => b.onclick = () => edit(() => { sc.income = true; }));
+    el.querySelectorAll('[data-incbase]').forEach((b) => b.onclick = () => edit(() => {
+      const pw = sc.powers[b.dataset.incbase];
+      if (pw.incomeFixed) pw.income = landIncomeOf(b.dataset.incbase); else delete pw.income;
+    }));
     $('pwDefault').onclick = () => edit(() => { const o = mapOrder(); sc.turnOrder.sort((a, b) => idxOr(o, a) - idxOr(o, b)); });
   }
 
