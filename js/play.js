@@ -57,7 +57,7 @@
     if (!S.test && m && m.mode === 'free' && m.date === S.date && m.id === S.sc.id && dailyDone()) { S.mode = 'free'; S.key = freeKey(); }
     const saved = store.get(S.key);
     loadGame(S.key);
-    S.mv = new window.TacticleMapView($('map'), S.map, { onClick, onContext: () => clearSel(), onHover, onDblClick });
+    S.mv = new window.TacticleMapView($('map'), S.map, { onClick, onContext: () => clearSel(), onHover, onHoverMove: placeTip, onDblClick });
     S.mv.setFocus(S.sc.playable);
     S.fullFocus = true;
     if ($('map').clientWidth < 600) {
@@ -425,8 +425,18 @@
     else if (S.part && S.part[id]) html += `<div class="hint">Click: ${kindText(S.part[id].kind)} with ${unitsText(S.part[id].ids)} (the rest can't)</div>`;
     tip.innerHTML = html;
     tip.style.display = 'block';
-    tip.style.left = Math.min(ev.clientX + 14, innerWidth - 270) + 'px';
-    tip.style.top = (ev.clientY + 14) + 'px';
+    placeTip(ev);
+  }
+  /** Keep the hover text beside the pointer, flipped to the other side near the window's edges. */
+  function placeTip(ev) {
+    const tip = $('tip');
+    if (tip.style.display !== 'block') return;
+    const w = tip.offsetWidth, h = tip.offsetHeight, gap = 14;
+    let x = ev.clientX + gap, y = ev.clientY + gap;
+    if (x + w > innerWidth - 4) x = Math.max(4, ev.clientX - gap - w);
+    if (y + h > innerHeight - 4) y = Math.max(4, ev.clientY - gap - h);
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
   }
   function kindText(k) {
     return { move: 'move here', attack: 'attack (battle)', capture: 'capture', blitz: 'blitz through', load: 'load onto transport', unload: 'unload here', amphibious: 'amphibious assault' }[k] || k;
@@ -707,7 +717,12 @@
       const noRoom = !Object.keys(g.factories()).length;
       if (g.phase === 'purchase' && (S.sc.purchase === false || noRoom || (pw.money < 3 && !Object.keys(pw.unplaced || {}).length))) {
         g.commitPurchase(); g.nextPhase(); save(); render();
-        toast(noRoom ? 'No factory in play, so there is nothing to buy this turn' : 'Not enough IPCs to buy anything this turn');
+        if (!noRoom && S.sc.purchase !== false) toast('Not enough IPCs to buy anything this turn');
+      }
+      // the last battle is over: straight on to noncombat moves
+      if (g.phase === 'combat' && !g.s.battle && !g.s.battles.length) {
+        g.nextPhase(); S.undo = []; save(); render();
+        return;
       }
       if (g.phase === 'combat' && !g.s.battle && g.s.battles.length === 1 && (g.s.battleCount || 1) === 1) fight(g.s.battles[0]);
       else if (g.phase === 'combat' && !g.s.battle && g.s.battles.length) toast('Pick your next battle');
