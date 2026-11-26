@@ -59,7 +59,9 @@
     "Germany": {
       "team": "Axis",
       "controller": "human",
-      "money": 0
+      "money": 12,
+      "income": 0,
+      "incomeFixed": true
     },
     "United Kingdom": {
       "team": "Allies",
@@ -89,7 +91,8 @@
         "Germany": {
           "submarine": 2,
           "transport": 1,
-          "destroyer": 1
+          "destroyer": 1,
+          "cruiser": 1
         }
       }
     },
@@ -171,7 +174,8 @@
         "Germany": {
           "bomber": 1,
           "fighter": 1,
-          "infantry": 1
+          "infantry": 1,
+          "factory": 1
         }
       },
       "owner": "Germany"
@@ -309,5 +313,6 @@
     "winRate": 0.767,
     "games": 30,
     "ai": 2
-  }
+  },
+  "fleet": "basic"
 }
