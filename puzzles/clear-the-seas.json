@@ -146,7 +146,8 @@
       "units": {
         "Germany": {
           "transport": 1,
-          "battleship": 1
+          "battleship": 1,
+          "destroyer": 1
         }
       }
     },
