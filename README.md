@@ -63,7 +63,9 @@ can tell when an update has reached your browser. Bump it with each change that 
 - Turn: **Buying → Combat Moves → Battling → Noncombat Moves → Unit Placement**, then
   income. The phase's name heads the side panel, and its button reads "End Buying", "End
   Combat Moves", "End Battling", "End Noncombat Moves" or "End Unit Placement". A puzzle
-  without buying has no Buying or Unit Placement phase. The computer then takes its turns with
+  without buying has no Buying or Unit Placement phase, and a side with no factory in play skips
+  both (the purchase screen is skipped without a message). After the last battle the game goes
+  straight on to Noncombat Moves. The computer then takes its turns with
   animated moves (with a "Skip" button).
 - Selecting units:
   - Tap a **unit icon** to pick all of that unit type there. Tap it again to drop one,
@@ -446,8 +448,9 @@ it uncleared (`seaOccupy`). A genetic search (`tools/ai_evolve.js --genes …`) 
 other fleet settings (`seaHold`, `subDive`, `seaBuy`) on 24 variants of Clear the Seas found
 `seaOccupy` was the one that mattered. On 16 held-out variants the player side's win rate fell from
 about 70% to 29% (41 games turned to losses, 2 to wins); on the general scenarios nothing changed.
-A puzzle balanced against the earlier fleets can keep them with `"fleet": "basic"` (Clear the Seas
-does).
+Every computer opponent uses it in clear-the-sea puzzles, including `"opponent": "earlier"`; the
+`"fleet": "basic"` opt-out was removed, so Clear the Seas now plays against it too (its stored
+balance figure dates from before).
 
 **Strikes.** The computer attacks exposed units without its usual odds when the expected trade gains
 at least 8 IPC and destroys at least 2.5 times what it loses (`strike`); aircraft that can still fly

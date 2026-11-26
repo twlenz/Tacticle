@@ -356,6 +356,9 @@ test('AI: settings follow the role (the side defending objectives gets the defen
   assert.deepEqual(AI.opponentOptions({ opponent: 'earlier' }), { roles: false });
   const old = new AI(capture, AI.opponentOptions({ opponent: 'earlier' }));
   assert.equal(old.opts.deadZone, AI.DEFAULTS.deadZone);
+  // every opponent keeps clear-the-sea target zones occupied, the earlier one included
+  assert.equal(old.opts.seaOccupy, true);
+  assert.equal(new AI(capture, AI.opponentOptions({})).opts.seaOccupy, true);
 });
 
 test('results: the calibration curve is fitted in log-odds, so the gap shrinks near 0% and 100%', () => {
