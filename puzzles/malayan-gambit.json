@@ -7,27 +7,28 @@
   "author": "Tacticle",
   "map": "total_world_war",
   "ruleset": "1942",
+  "difficulty": "medium",
   "playable": [
-    "saigon",
-    "brunei",
-    "french_indochina",
-    "thailand",
-    "borneo",
-    "hong_kong",
-    "malay",
-    "southern_thailand",
-    "phillippines",
-    "luzon",
-    "94_sea_zone",
-    "91_sea_zone",
+    "127_sea_zone",
     "128_sea_zone",
+    "129_sea_zone",
+    "87_sea_zone",
+    "91_sea_zone",
+    "92_sea_zone",
     "93_sea_zone",
+    "94_sea_zone",
     "95_sea_zone",
     "96_sea_zone",
-    "87_sea_zone",
-    "92_sea_zone",
-    "127_sea_zone",
-    "129_sea_zone"
+    "borneo",
+    "brunei",
+    "french_indochina",
+    "hong_kong",
+    "luzon",
+    "malay",
+    "phillippines",
+    "saigon",
+    "southern_thailand",
+    "thailand"
   ],
   "maxTurns": 2,
   "winCheck": "turnEnd",
@@ -113,8 +114,11 @@
       "owner": "United Kingdom",
       "units": {
         "United Kingdom": {
-          "infantry": 8,
-          "aaa": 1
+          "infantry": 10,
+          "aaa": 1,
+          "tank": 1,
+          "fighter": 1,
+          "bomber": 1
         }
       }
     },
@@ -144,9 +148,6 @@
         }
       }
     },
-    "94_sea_zone": {
-      "units": {}
-    },
     "91_sea_zone": {
       "units": {
         "Japan": {
@@ -165,9 +166,6 @@
         }
       }
     },
-    "93_sea_zone": {
-      "units": {}
-    },
     "95_sea_zone": {
       "units": {
         "Japan": {
@@ -183,12 +181,6 @@
         }
       }
     },
-    "87_sea_zone": {
-      "units": {}
-    },
-    "92_sea_zone": {
-      "units": {}
-    },
     "127_sea_zone": {
       "units": {
         "United Kingdom": {
@@ -196,9 +188,6 @@
           "cruiser": 1
         }
       }
-    },
-    "129_sea_zone": {
-      "units": {}
     }
   },
   "objectives": [
@@ -217,6 +206,5 @@
     "naval": true,
     "mapUnits": true,
     "winRate": 0.5
-  },
-  "difficulty": "medium"
+  }
 }
