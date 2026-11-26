@@ -309,6 +309,5 @@
     "winRate": 0.767,
     "games": 30,
     "ai": 2
-  },
-  "fleet": "basic"
+  }
 }

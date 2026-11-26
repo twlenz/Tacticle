@@ -247,6 +247,16 @@ test('aircraft cannot land in territory captured this turn', () => {
   assert.match(r.error, /return/);
 });
 
+test('no factory in play: noncombat moves end the turn, with no placement phase', () => {
+  const g = newGame();
+  g.s.terr.A1.u = g.s.terr.A1.u.filter((u) => u.t !== 'factory');
+  g.commitPurchase();
+  g.nextPhase(); g.nextPhase();
+  assert.equal(g.phase, 'noncombatMove');
+  g.nextPhase();
+  assert.notEqual(g.current(), 'Germany', 'the turn passed without a placement phase');
+});
+
 test('purchase, placement at factory with capacity, income', () => {
   const g = newGame();
   assert.ok(g.buy('infantry', 4).ok);

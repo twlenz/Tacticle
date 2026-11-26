@@ -959,7 +959,7 @@
     // fleets, in sea zones the player must clear (any unit left there keeps the zone):
     seaHold: 0, // 0–1: how readily ships stay and fight instead of fleeing (0 = flee below even odds)
     subDive: 0, // 0–1: how readily defending subs submerge (0 = only when the attacker wins 75% or more)
-    seaOccupy: false, // send a spare ship into any such zone left empty
+    seaOccupy: true, // send a spare ship into any such zone left empty
     seaBuy: false, // buy submarines for such zones next to a factory and place them there
   };
   /**
@@ -968,7 +968,7 @@
    * 50% over 360 held-out games. It makes a poor attacker, so the attacking side keeps the defaults.
    */
   AI.ROLES = {
-    defend: { swingOdds: 0.79, objOdds: 1.13, trimSlack: 1.31, garrison: 1.63, counter: 0.47, deadZone: 1.77, objGuard: 3, frontPull: 2.58, seaOccupy: true },
+    defend: { swingOdds: 0.79, objOdds: 1.13, trimSlack: 1.31, garrison: 1.63, counter: 0.47, deadZone: 1.77, objGuard: 3, frontPull: 2.58 },
     attack: {},
   };
   /** Candidate policies for lookahead (settings on top of the role's). */
@@ -981,8 +981,8 @@
   ];
   AI.VERSION = 2;
   /** Settings a puzzle asks for: "opponent": "earlier" keeps the strategy from before the role settings. */
-  // "fleet": "basic" keeps the fleets from before seaOccupy (for puzzles balanced against them)
-  AI.opponentOptions = (sc) => Object.assign(sc && sc.opponent === 'earlier' ? { roles: false } : {}, sc && sc.fleet === 'basic' ? { seaOccupy: false } : {});
+  // every opponent keeps clear-the-sea target zones occupied (seaOccupy), whatever its strategy
+  AI.opponentOptions = (sc) => (sc && sc.opponent === 'earlier' ? { roles: false } : {});
 
   // queue entries of type 'shown' were already executed during planning; report them one by one
   const baseDo = AI.prototype._do;

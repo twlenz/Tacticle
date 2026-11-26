@@ -171,6 +171,8 @@
       window.addEventListener('pointermove', (ev) => {
         if (!pts.has(ev.pointerId)) {
           if (this.opts.onHover) { this._hoverEv = ev; const id = this._idAt(ev); if (id !== this._hover) { this._hover = id; this.opts.onHover(id, ev); } }
+          // the hover text follows the pointer inside a territory too
+          if (this.opts.onHoverMove && this._hover) this.opts.onHoverMove(ev);
           return;
         }
         pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });

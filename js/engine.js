@@ -506,7 +506,10 @@
       }
       if (s.phase === 'noncombatMove') {
         const lost = this.crashAir();
-        if (this.sc.purchase === false && !Object.values(s.buy || {}).some((n) => n > 0) && !Object.values(s.powers[this.current()].unplaced || {}).some((n) => n > 0)) {
+        const nothingBought = this.sc.purchase === false && !Object.values(s.buy || {}).some((n) => n > 0) && !Object.values(s.powers[this.current()].unplaced || {}).some((n) => n > 0);
+        // no industrial complex: nothing can be placed (a bought factory still could be), so the turn ends here
+        const noFactory = !Object.keys(this.factories()).length && !(s.buy && s.buy.factory > 0);
+        if (nothingBought || noFactory) {
           this.endTurn();
           return { ok: true, lost };
         }
