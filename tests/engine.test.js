@@ -835,3 +835,61 @@ test('validation of the new objectives', () => {
   assert.ok(v({ winCheck: 'turn', checkTurn: 9 }).some((x) => /checked on/.test(x)));
   assert.deepEqual(v({ objectives: [{ type: 'bank', ipc: 30 }, { side: 'opponent', type: 'damage', inflict: 10 }] }), []);
 });
+
+// ---- unloading from a sea zone with a battle still to fight: the landing waits on that battle
+function landingGame(s2Enemy, iOwner, fleet) {
+  const g = seaGame({
+    S1: { units: { Germany: Object.assign({ transport: 1 }, fleet || { destroyer: 1 }) } },
+    S2: { units: { 'United Kingdom': s2Enemy } },
+    I: { owner: iOwner, units: {} },
+  }, 5);
+  g.nextPhase(); // combat move
+  assert.ok(g.move('A1', ids(g, 'A1', 'infantry'), 'S1').ok);
+  const fleetIds = g.units('S1').filter((u) => u.o === 'Germany' && !u.tr).map((u) => u.id);
+  const r = g.move('S1', fleetIds, 'S2');
+  assert.ok(r.ok, r.error);
+  const cargo = g.units('S2').filter((u) => u.tr).map((u) => u.id);
+  const u = g.move('S2', cargo, 'I');
+  assert.ok(u.ok, u.error);
+  g.nextPhase(); // combat
+  assert.equal(g.phase, 'combat');
+  return { g, cargo };
+}
+const fightTo = (g, id, decide) => { assert.ok(g.startBattle(id).ok); g.autoResolve(decide); const res = g.s.battle.result; g.closeBattle(); return res; };
+
+test('amphibious assault: the sea battle comes first, and a lost one destroys the troops waiting to land', () => {
+  const { g, cargo } = landingGame({ battleship: 3 }, 'United Kingdom');
+  assert.ok(g.s.battles.includes('I'), 'the landing is declared');
+  assert.ok(!g.readyBattles().includes('I'), 'it waits on the sea battle');
+  assert.equal(g.startBattle('I').ok, false);
+  const res = fightTo(g, 'S2');
+  assert.notEqual(res, 'attacker');
+  for (const id of cargo) assert.equal(g.unit(id), null, 'troops do not land');
+  assert.ok(!g.s.battles.includes('I'), 'the landing is called off');
+  assert.equal(g.s.terr.I.o, 'United Kingdom');
+});
+
+test('a sea battle that is won lets the declared landing go ahead', () => {
+  const { g, cargo } = landingGame({ destroyer: 1 }, 'United Kingdom', { battleship: 3 });
+  assert.equal(fightTo(g, 'S2'), 'attacker');
+  for (const id of cargo) assert.equal(g.whereIs(id), 'I');
+  assert.ok(g.readyBattles().includes('I'));
+  fightTo(g, 'I');
+  assert.equal(g.s.terr.I.o, 'Germany');
+  assert.ok(g.units('I').every((u) => !u.seaWait));
+});
+
+test('unloading into friendly territory from a contested sea zone also depends on the sea battle', () => {
+  const { g, cargo } = landingGame({ battleship: 3 }, 'Germany');
+  assert.ok(!g.s.battles.includes('I'));
+  for (const id of cargo) assert.equal(g.whereIs(id), 'I', 'declared');
+  assert.notEqual(fightTo(g, 'S2'), 'attacker');
+  for (const id of cargo) assert.equal(g.unit(id), null, 'lost with the failed sea battle');
+});
+
+test('troops waiting to land sink with their transport even if the sea battle is won', () => {
+  const { g, cargo } = landingGame({ destroyer: 1 }, 'Germany', { battleship: 1 });
+  const tr = g.units('S2').find((u) => u.t === 'transport');
+  g._kill(tr);
+  for (const id of cargo) assert.equal(g.unit(id), null);
+});

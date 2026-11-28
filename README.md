@@ -79,7 +79,10 @@ can tell when an update has reached your browser. Bump it with each change that 
   infantry selected too, say): tapping it moves those, and the rest stay where they are.
   Moving land units into a sea zone loads them onto your transport. Units aboard show as
   their own icons with a dashed frame, right after their transport; tap them (or the
-  transport, or the sea zone) and then a coast to unload. Drag to pan, pinch or scroll to zoom, <kbd>Esc</kbd> cancels,
+  transport, or the sea zone) and then a coast to unload. Unloading from a sea zone where you are
+  attacking enemy warships declares the landing (or the move ashore into your own territory):
+  the sea battle is fought first, and if it is not won, or the units' transport sinks, the
+  units that were waiting to land are destroyed. Drag to pan, pinch or scroll to zoom, <kbd>Esc</kbd> cancels,
   <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes a move.
 - Ending combat movement asks for confirmation in an in-page popup that lists the battles
   about to be fought.

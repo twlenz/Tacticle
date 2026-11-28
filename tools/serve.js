@@ -9,7 +9,7 @@
  *
  * API (localhost only):
  *   GET    /api/status              -> {ok, writable}
- *   GET    /api/puzzles             -> [{id, file, title, map, ruleset, maxTurns, mtime}]
+ *   GET    /api/puzzles             -> [{id, file, title, map, ruleset, maxTurns, edited, mtime}]
  *   PUT    /api/puzzles/<id>        body: scenario JSON  -> writes puzzles/<id>.json, refreshes puzzles/index.json
  *   DELETE /api/puzzles/<id>
  *   PUT    /api/schedule            body: schedule JSON  -> writes schedule.json
@@ -68,7 +68,7 @@ function listPuzzles() {
     const file = path.join(dir, f);
     try {
       const j = JSON.parse(fs.readFileSync(file, 'utf8'));
-      return { id: j.id || f.replace(/\.json$/, ''), file: 'puzzles/' + f, title: j.title || '', map: j.map, ruleset: j.ruleset, maxTurns: j.maxTurns, difficulty: j.difficulty || (j.generator && j.generator.difficulty) || '', mtime: fs.statSync(file).mtimeMs };
+      return { id: j.id || f.replace(/\.json$/, ''), file: 'puzzles/' + f, title: j.title || '', map: j.map, ruleset: j.ruleset, maxTurns: j.maxTurns, difficulty: j.difficulty || (j.generator && j.generator.difficulty) || '', edited: j.edited || new Date(fs.statSync(file).mtimeMs).toISOString(), mtime: fs.statSync(file).mtimeMs };
     } catch (e) {
       return { id: f.replace(/\.json$/, ''), file: 'puzzles/' + f, error: String(e.message) };
     }

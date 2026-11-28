@@ -477,7 +477,7 @@
         for (const u of t.u) {
           if (u.o !== p) continue;
           u.ml = this.def(u).move;
-          delete u.cm; delete u.f; delete u.mv; delete u.prev; delete u.amph; delete u.unl; delete u.trWas; delete u.loaded; delete u.sub;
+          delete u.cm; delete u.f; delete u.mv; delete u.prev; delete u.amph; delete u.seaWait; delete u.unl; delete u.trWas; delete u.loaded; delete u.sub;
         }
       }
       this.log(`${p}: turn ${this.s.round} begins`);
@@ -1040,6 +1040,9 @@
           u.ml = 0; u.mv = true; u.prev = from;
           if (combat) u.cm = true;
           if (r.kind === 'amphibious') u.amph = from;
+          // unloading from a contested sea zone only goes ahead if that sea battle is won: until then the
+          // units are tied to it, and are lost if it fails or their transport sinks (see _resolveLandings)
+          if (combat && this.hostileSurface(from, p)) u.seaWait = from;
           this._moveUnit(u, from, to);
           moved.push(u);
           continue;
@@ -1597,7 +1600,11 @@
       // cargo sinks with its transport
       if (this.def(u).transport) {
         for (const c of list.filter((x) => x.tr === u.id)) { this._recordLoss(c); list.splice(list.indexOf(c), 1); }
-        // units that already landed from this transport stay ashore
+        // units unloaded from it whose sea battle is still being fought had not really left: they sink too
+        for (const id of Object.keys(this.s.terr)) {
+          const ashore = this.s.terr[id].u;
+          for (const c of ashore.filter((x) => x.trWas === u.id && x.seaWait)) { this._recordLoss(c); ashore.splice(ashore.indexOf(c), 1); }
+        }
       }
       this._recordLoss(u);
       list.splice(list.indexOf(u), 1);
@@ -1846,37 +1853,34 @@
       this.s.lastBattle = { id: b.id, result, lostA, lostD, att: p, round: this.s.round };
       return { ok: true };
     }
-    /** After a sea battle: landings from that zone go ahead, go back aboard, or sink. */
+    /**
+     * After a sea battle: units unloaded from that zone this combat move (amphibious assaults and moves
+     * into friendly territory) go ahead only if the zone was cleared. Otherwise they are destroyed, and
+     * landings left with no attackers are dropped from the battle list.
+     */
     _resolveLandings(zone, cleared) {
-      const p = this.s.battle.att;
-      if (cleared && !this.hostileSurface(zone, p)) {
-        // landings into empty enemy territory now capture
-        for (const id of this.s.battles) {
-          if (this.B.isSea(id)) continue;
-          const landers = this.units(id).filter((u) => u.o === p && u.amph === zone);
-          if (landers.length && !this.enemies(id, p).some((e) => !this.def(e).infrastructure)) {
-            // handled when that battle is started (it has no defenders)
-          }
-        }
-        return;
-      }
+      const b = this.s.battle;
+      const p = b.att;
+      const ok = cleared && !this.hostileSurface(zone, p);
+      let lost = 0;
       for (const id of Object.keys(this.s.terr)) {
         if (this.B.isSea(id)) continue;
-        for (const u of this.units(id).filter((x) => x.o === p && x.amph === zone)) {
-          const tr = this.unit(u.trWas);
-          if (tr) {
-            const at = this.whereIs(tr.id);
-            this._moveUnit(u, id, at);
-            u.tr = tr.id; delete u.amph;
-          } else {
-            const list = this.s.terr[id].u;
-            this._recordLoss(u);
-            list.splice(list.indexOf(u), 1);
-          }
+        for (const u of this.units(id).filter((x) => x.o === p && x.seaWait === zone)) {
+          if (ok && this.unit(u.trWas)) { delete u.seaWait; continue; }
+          const list = this.s.terr[id].u;
+          this._recordLoss(u);
+          list.splice(list.indexOf(u), 1);
+          b.lost = b.lost || { A: {}, D: {} };
+          b.lost.A[u.t] = (b.lost.A[u.t] || 0) + 1;
+          lost++;
         }
-        if (this.s.battles.includes(id) && !this.units(id).some((u) => u.o === p && u.cm)) {
+        if (this.s.battles.includes(id) && id !== b.id && !this.units(id).some((u) => u.o === p && u.cm)) {
           this.s.battles.splice(this.s.battles.indexOf(id), 1);
         }
+      }
+      if (lost) {
+        b.lines.push(`${lost} unit${lost === 1 ? '' : 's'} waiting to land from ${this.B.name(zone)} ${lost === 1 ? 'is' : 'are'} lost`);
+        this.log(`${p} loses ${lost} unit${lost === 1 ? '' : 's'} that could not land from ${this.B.name(zone)}`);
       }
     }
     /** Close the finished battle and drop it from the list. */

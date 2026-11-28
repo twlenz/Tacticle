@@ -34,13 +34,16 @@
     try { A.maps = (await getJSON('maps/index.json')).maps || []; } catch (e) { A.maps = [{ id: 'world1942', name: 'World 1942', file: 'maps/world1942.json' }]; }
     await refreshPuzzles();
     try { A.schedule = await getJSON('schedule.json'); } catch (e) { A.schedule = { epoch: D.today(), days: {} }; }
-    // without a server, schedule changes made earlier in this browser are kept until downloaded
+    // without a server, schedule changes made earlier in this browser are kept until downloaded, but
+    // only while the published schedule is still the one they were made from: once it has changed
+    // (published from another device, say), the published schedule wins
     A.schedule.days = A.schedule.days || {};
-    const schedDraft = !A.server && store.get(SCHED_DRAFT);
-    if (schedDraft && schedDraft.days) {
-      const same = scheduleText() === JSON.stringify(Object.assign({ epoch: schedDraft.epoch }, schedDraft.fallback === 'latest' ? { fallback: 'latest' } : {}, { days: sortObj(schedDraft.days) }), null, 2);
-      if (same) store.del(SCHED_DRAFT); // already published
-      else A.schedule = schedDraft;
+    A.schedPublished = scheduleText();
+    const schedDraft = store.get(SCHED_DRAFT);
+    if (schedDraft) {
+      const keep = !A.server && schedDraft.base === A.schedPublished && schedDraft.schedule && schedDraft.schedule.days;
+      if (keep && scheduleText(schedDraft.schedule) !== A.schedPublished) A.schedule = schedDraft.schedule;
+      else store.del(SCHED_DRAFT); // already published, out of date, or from before drafts kept their base
     }
     // maps imported in this browser (no server to save them to) are listed too
     if (LM && !A.server) for (const m of await LM.list()) if (!A.maps.some((x) => x.id === m.id)) A.maps.push({ id: m.id, name: m.name, file: `maps/${m.id}.json`, local: true });
@@ -1350,6 +1353,21 @@
     }).join('')}</table>
       <p class="hint">${cal && fit ? `On average players won <b>${Math.abs(cal.gap)} points ${cal.gap >= 0 ? 'more' : 'less'}</b> often than the balance check predicted (${cal.players} players on ${cal.puzzles} puzzle${cal.puzzles === 1 ? '' : 's'} with at least 5 players and a balance check). The gap is not the same at every rate, so it is fitted as a curve: a balance check of ${[0.2, 0.5, 0.8].map((x) => `${Math.round(x * 100)}% → ${Math.round(100 * RS.realFromSim(fit, x))}%`).join(', ')} for players. The Generate tab can aim for that.` : 'Not enough results yet: a puzzle needs at least 5 players and a saved balance check (run one in this tab, or generate the puzzle) to count.'}</p>`;
   }
+  /**
+   * Saved puzzles in the order the pickers list them: never scheduled first, then scheduled only on
+   * days still to come, then already played (scheduled on today or earlier); most recently edited first
+   * within each group.
+   */
+  function puzzlesByUse() {
+    const today = D.today();
+    const group = {};
+    for (const d of Object.keys(A.schedule.days)) {
+      const f = A.schedule.days[d];
+      group[f] = Math.max(group[f] || 0, d <= today ? 2 : 1);
+    }
+    const t = (p) => Date.parse(p.edited || '') || 0;
+    return A.puzzles.slice().sort((a, b) => (group[a.file] || 0) - (group[b.file] || 0) || t(b) - t(a) || String(a.id).localeCompare(String(b.id)));
+  }
   function tabSchedule(el) {
     const sch = A.schedule;
     const today = D.today();
@@ -1364,7 +1382,8 @@
       const e = D.entryFor(sch, d);
       return e && e.replay ? `— replay: ${e.file.replace(/^puzzles\/|\.json$/g, '')}` : '— (nothing to replay yet)';
     };
-    const opts = (sel, d) => `<option value="">${esc(replayLabel(d))}</option>` + A.puzzles.map((p) => `<option value="${esc(p.file)}" ${sel === p.file ? 'selected' : ''}>${esc(p.id)}${used[p.file] ? ' ✓' : ''}</option>`).join('') + (sel && !files.includes(sel) ? `<option selected value="${esc(sel)}">${esc(sel)} (missing)</option>` : '');
+    const ordered = puzzlesByUse();
+    const opts = (sel, d) => `<option value="">${esc(replayLabel(d))}</option>` + ordered.map((p) => `<option value="${esc(p.file)}" ${sel === p.file ? 'selected' : ''}>${esc(p.id)}${used[p.file] ? ' ✓' : ''}</option>`).join('') + (sel && !files.includes(sel) ? `<option selected value="${esc(sel)}">${esc(sel)} (missing)</option>` : '');
     const focus = A.schedFocus && files.includes(A.schedFocus.file) ? A.schedFocus : null;
     const free = firstFree(D.addDays(today, 1));
     el.innerHTML = `<h2 style="margin-top:0">Schedule</h2>${focus ? `<div class="objbox on"><b>Schedule “${esc(focus.title || focus.file)}”</b>${used[focus.file] ? ' <span class="hint">(already scheduled ✓)</span>' : ''}<div class="actions"><button class="primary small" id="schPut" style="flex:none">Put it on ${esc(free)}</button><button class="small" id="schFocusX">Done</button></div><p class="hint" style="margin:0">Or pick it in any day's list below.</p></div>` : ''}<p class="hint">One puzzle per day, by the player's local date. Puzzle numbers count from the first day. Saved puzzles marked ✓ are already scheduled.</p>
@@ -1400,6 +1419,7 @@
       store.del(SCHED_DRAFT);
       try { A.schedule = await getJSON('schedule.json'); } catch (e) { A.schedule = { epoch: D.today(), days: {} }; }
       A.schedule.days = A.schedule.days || {};
+      A.schedPublished = scheduleText();
       A.schedDirty = false;
       renderTab();
     };
@@ -1408,8 +1428,9 @@
   // ---- the schedule saves itself: through the local server or a connected folder; otherwise it is
   // kept in this browser (it survives a reload) until it is downloaded
   const SCHED_DRAFT = 'tacticle:scheduleDraft';
-  function scheduleText() {
-    return JSON.stringify(Object.assign({ epoch: A.schedule.epoch }, A.schedule.fallback === 'latest' ? { fallback: 'latest' } : {}, { days: sortObj(A.schedule.days) }), null, 2);
+  function scheduleText(sch) {
+    sch = sch || A.schedule;
+    return JSON.stringify(Object.assign({ epoch: sch.epoch }, sch.fallback === 'latest' ? { fallback: 'latest' } : {}, { days: sortObj(sch.days || {}) }), null, 2);
   }
   function scheduleChanged() {
     A.schedDirty = true;
@@ -1418,7 +1439,9 @@
       clearTimeout(A.schedTimer);
       A.schedTimer = setTimeout(() => saveSchedule(true), 400);
     } else {
-      store.set(SCHED_DRAFT, JSON.parse(scheduleText()));
+      const text = scheduleText();
+      if (text === A.schedPublished) store.del(SCHED_DRAFT);
+      else store.set(SCHED_DRAFT, { base: A.schedPublished, schedule: JSON.parse(text) });
       A.schedState = 'local';
       A.schedDirty = false; // kept in this browser
     }
@@ -1441,7 +1464,7 @@
       ${!A.server && window.showDirectoryPicker ? `<div class="actions"><button id="fDir">${A.dir ? 'Folder connected ✓' : 'Connect repository folder…'}</button></div>` : ''}
       ${unopenedHtml()}
       <div class="h">Saved puzzles (${A.puzzles.length})</div>
-      <div class="list plist">${A.puzzles.map((p) => `<div class="urow ${p.id === A.sc.id ? 'cur' : ''}"><span class="nm">${esc(p.title || p.id)}<small>${esc(p.id)} · ${esc(p.map || '')} · ${esc(p.ruleset || '')} · ${p.maxTurns || '?'} turns${Object.values(A.schedule.days).includes(p.file) ? ' · scheduled' : ''}</small></span><button class="small" data-load="${esc(p.file)}">Open</button>${A.server ? `<button class="small" data-delp="${esc(p.id)}">✕</button>` : ''}</div>`).join('') || '<p class="hint">None yet.</p>'}</div>`;
+      <div class="list plist">${puzzlesByUse().map((p) => `<div class="urow ${p.id === A.sc.id ? 'cur' : ''}"><span class="nm">${esc(p.title || p.id)}<small>${esc(p.id)} · ${esc(p.map || '')} · ${esc(p.ruleset || '')} · ${p.maxTurns || '?'} turns${Object.values(A.schedule.days).includes(p.file) ? ' · scheduled' : ''}</small></span><button class="small" data-load="${esc(p.file)}">Open</button>${A.server ? `<button class="small" data-delp="${esc(p.id)}">✕</button>` : ''}</div>`).join('') || '<p class="hint">None yet.</p>'}</div>`;
     $('fNew').onclick = async () => { if (!await okToReplace('Start a new puzzle?')) return; await loadScenario(newScenario(A.map.id), false); A.savedJSON = null; A.savedAs = null; goPage('select'); };
     $('fSaveAs').onclick = saveAsDialog;
     $('fDl').onclick = () => download((A.sc.id || 'puzzle') + '.json', JSON.stringify(pruned(A.sc), null, 2));
@@ -1561,6 +1584,8 @@
     if (!sc.id) { toast('Give the puzzle a file name first'); return false; }
     const errs = validate().filter((m) => m.level === 'error');
     if (errs.length && !await ask('Save a puzzle with problems?', `<ul>${errs.map((e) => `<li>${esc(e.msg)}</li>`).join('')}</ul><p>Players cannot start it until these are fixed. The Test step lists them with links to the step that fixes each.</p>`, 'Save anyway', 'Don\'t save', true)) return false;
+    const was = sc.edited;
+    sc.edited = new Date().toISOString(); // orders the puzzle lists (most recently edited first)
     const data = pruned(sc);
     const text = JSON.stringify(data, null, 2);
     try {
@@ -1572,21 +1597,25 @@
       } else if (A.dir) {
         await writeFile(['puzzles', sc.id + '.json'], text);
         await refreshPuzzles();
-        if (!A.puzzles.some((p) => p.id === sc.id)) A.puzzles.push({ id: sc.id, file: `puzzles/${sc.id}.json`, title: sc.title, map: sc.map, ruleset: sc.ruleset, maxTurns: sc.maxTurns });
+        if (!A.puzzles.some((p) => p.id === sc.id)) A.puzzles.push({ id: sc.id, file: `puzzles/${sc.id}.json`, title: sc.title, map: sc.map, ruleset: sc.ruleset, maxTurns: sc.maxTurns, edited: sc.edited });
+        A.puzzles.find((p) => p.id === sc.id).edited = sc.edited;
         await writeFile(['puzzles', 'index.json'], JSON.stringify({ puzzles: A.puzzles }, null, 2));
         toast(`Saved puzzles/${sc.id}.json`);
       } else {
         download(sc.id + '.json', text);
-        if (!A.puzzles.some((p) => p.id === sc.id)) A.puzzles.push({ id: sc.id, file: `puzzles/${sc.id}.json`, title: sc.title, map: sc.map, ruleset: sc.ruleset, maxTurns: sc.maxTurns });
+        if (!A.puzzles.some((p) => p.id === sc.id)) A.puzzles.push({ id: sc.id, file: `puzzles/${sc.id}.json`, title: sc.title, map: sc.map, ruleset: sc.ruleset, maxTurns: sc.maxTurns, edited: sc.edited });
         toast('Downloaded. Copy it into puzzles/ in the repository.');
       }
       A.savedJSON = JSON.stringify(data);
       const kept = A.puzzles.find((p) => p.id === sc.id);
       await refreshPuzzles();
       if (kept && !A.puzzles.some((p) => p.id === sc.id)) A.puzzles.push(kept); // a download is not listed by the site yet
+      const listed = A.puzzles.find((p) => p.id === sc.id);
+      if (listed) listed.edited = sc.edited; // the site's index lags behind a download
       renderAll();
       return true;
     } catch (e) {
+      sc.edited = was;
       A.dockMsg = 'Not saved: ' + e.message;
       toast('Save failed: ' + e.message, 4000);
       renderDock();
@@ -1604,7 +1633,7 @@
         if (!r.ok) throw new Error((await r.json()).error);
       } else if (A.dir) await writeFile(['schedule.json'], text);
       else download('schedule.json', text);
-      if (A.server || A.dir) { A.schedState = 'saved'; store.del(SCHED_DRAFT); }
+      if (A.server || A.dir) { A.schedState = 'saved'; A.schedPublished = text; store.del(SCHED_DRAFT); }
       A.schedDirty = false;
       if (!quiet) toast(A.server || A.dir ? 'Schedule saved' : 'Downloaded schedule.json; put it in the repository root');
     } catch (e) {
